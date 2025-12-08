@@ -1,0 +1,51 @@
+# Lilypad Development Guide
+
+This document outlines how to develop Lilypad, a Rust-based password manager. It explains the planned architecture, recommended workflows, and steps to build, run, and test the project. All documentation and code must be written in English for now; additional languages will be introduced later.
+
+## Development Steps
+1. **Set up tooling**
+   - Install Rust (stable) 1.78 or newer with `cargo` via [`rustup`](https://rustup.rs/).
+   - Add the `rustfmt` and `clippy` components: `rustup component add rustfmt clippy`.
+   - Install optional helpers such as `cargo-edit` for managing dependencies.
+2. **Create the workspace layout**
+   - Initialize a Cargo workspace with crates for `core` (cryptography and secrets domain), `storage` (local and synced persistence), and `interfaces` (CLI, TUI, or desktop frontends).
+   - Add shared tooling configuration (e.g., `rustfmt.toml`, `clippy.toml`) at the workspace root.
+3. **Implement core functionality**
+   - Define domain models for vaults, entries, key material, and audit logs.
+   - Integrate cryptographic primitives (key derivation, encryption/decryption, secure random generation) using vetted crates.
+   - Implement secure storage backends (local file-based vaults first, optional remote sync later).
+   - Provide validation, error handling, and logging instrumentation.
+4. **Develop user interfaces**
+   - Build an initial command-line interface for creating vaults, adding/retrieving secrets, and rotating keys.
+   - Plan for additional interfaces (e.g., TUI/desktop) while ensuring consistent UX across platforms.
+5. **Quality and distribution**
+   - Add automated tests for core logic and CLI behavior.
+   - Wire up continuous integration for formatting, linting, testing, and security scanning.
+   - Prepare release packaging and artifact signing once stability improves.
+
+## Architecture Overview
+- **Core crate**: Owns cryptographic workflows (key derivation, encryption, integrity checks), data models, and domain services.
+- **Storage crate**: Handles persistence for vaults, including file-based storage with future support for encrypted synchronization providers.
+- **Interface crates**: Provide user interactions (initially CLI), translating user intent into core operations while preserving security guarantees.
+- **Shared utilities**: Common helpers for configuration loading, logging, telemetry, and error reporting.
+
+This modular structure keeps cryptography and storage concerns isolated from UI layers, making it easier to audit, test, and swap components without risking regressions in sensitive areas.
+
+## Development Workflow
+- **Build**: `cargo build` to compile all crates in the workspace.
+- **Format**: `cargo fmt --all` to ensure consistent style.
+- **Lint**: `cargo clippy --all-targets --all-features -- -D warnings` to keep the codebase warning-free.
+- **Test**: `cargo test` for unit and integration coverage; add feature flags to exercise optional components.
+- **Run**: `cargo run --bin lilypad-cli -- <args>` once the CLI crate exists.
+- **Security checks**: Periodically audit dependencies with `cargo audit` and review cryptographic usage against current best practices.
+
+Run these commands locally and in CI to keep changes safe and consistent. Update the workflow as new tooling or checks are introduced.
+
+## Extending This Document
+As Lilypad evolves, expand this guide with:
+- Detailed module overviews and diagrams for new components.
+- Migration notes when making storage or cryptography changes.
+- Platform-specific setup guides and troubleshooting tips.
+- Localization and internationalization guidelines once additional languages are supported.
+
+Maintaining clear, English-language documentation now will reduce friction as the team grows and prepares for multilingual support later.
