@@ -18,6 +18,10 @@ This document outlines how to develop Lilypad, a Rust-based password manager. It
 4. **Develop user interfaces**
    - Build an initial command-line interface for creating vaults, adding/retrieving secrets, and rotating keys.
    - Plan for additional interfaces (e.g., TUI/desktop) while ensuring consistent UX across platforms.
+   - Choose frameworks that match deployment needs:
+     - CLI: `clap` or `lexopt` for argument parsing; pair with `indicatif` for progress UI where helpful.
+     - TUI: `ratatui` with `crossterm` offers portable terminal widgets and keyboard handling.
+     - Desktop GUI: `Tauri` provides a lightweight shell with strong sandboxing; `egui` is a solid choice for a pure-Rust immediate mode UI.
 5. **Quality and distribution**
    - Add automated tests for core logic and CLI behavior.
    - Wire up continuous integration for formatting, linting, testing, and security scanning.
@@ -39,6 +43,17 @@ This modular structure keeps cryptography and storage concerns isolated from UI 
 - **Run**: `cargo run --bin lilypad-cli -- <args>` once the CLI crate exists.
 - **Security checks**: Periodically audit dependencies with `cargo audit` and review cryptographic usage against current best practices.
 
+### Interface Quality Checklist
+- **Accessibility**: Provide keyboard-first navigation in CLI/TUI flows and ensure GUI widgets have descriptive labels and shortcuts.
+- **Themeability**: Keep colors and typography configurable; expose a small theming API for GUI/TUI builds instead of hardcoding styles.
+- **State boundaries**: Route user intent through the interface crate and avoid leaking GUI/TUI state into core or storage crates.
+- **Offline defaults**: Design flows to work without network access; prompt before enabling any sync-related features.
+
+### Testing Guidance
+- Add snapshot-style tests for CLI/TUI output where possible to keep UX stable.
+- Mock storage backends and cryptographic primitives in integration tests to avoid leaking secrets and to keep tests deterministic.
+- Include smoke tests for GUI builds that validate window creation, theming hooks, and menu actions without requiring a real backend.
+
 Run these commands locally and in CI to keep changes safe and consistent. Update the workflow as new tooling or checks are introduced.
 
 ## Extending This Document
@@ -47,5 +62,7 @@ As Lilypad evolves, expand this guide with:
 - Migration notes when making storage or cryptography changes.
 - Platform-specific setup guides and troubleshooting tips.
 - Localization and internationalization guidelines once additional languages are supported.
+
+When introducing a new interface, add a short section describing how its theming, shortcut mapping, and security prompts map onto the shared core workflows.
 
 Maintaining clear, English-language documentation now will reduce friction as the team grows and prepares for multilingual support later.

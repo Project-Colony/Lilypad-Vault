@@ -15,11 +15,14 @@ Lilypad must be organized as a modular Rust codebase rather than a single monoli
 - `core/` or `domain/`: Data models, vault domain logic, and shared services used across interfaces and storage.
 - `shared/` or `utils/`: Cross-cutting utilities (logging, telemetry, error handling) that should stay minimal to avoid dependency sprawl.
 
+Within the `ui/` area, create subfolders per interface type (`cli/`, `tui/`, `desktop/`) so that platform-specific assets, theming hooks, and interaction models can evolve independently.
+
 ## Folder Documentation Convention
 Every folder must contain a short Markdown file named after the folder. Each of these files should:
 1. **Describe the purpose** of the folder.
 2. **List the typical files and logic** it contains.
 3. **Capture maintenance notes** for future contributors (e.g., invariants, testing expectations, or dependency constraints).
+4. **Interface-specific guidance**: For UI folders, include theming, accessibility, and shortcut conventions so that CLI/TUI/GUI builds remain consistent.
 
 Examples:
 - `config/config.md` documents configuration formats, loaders, and safety considerations.
