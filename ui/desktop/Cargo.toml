@@ -1,0 +1,12 @@
+[package]
+name = "lilypad-desktop"
+version = "0.1.0"
+edition = "2021"
+authors = ["Lilypad Contributors"]
+license = "Apache-2.0"
+description = "Lilypad desktop GUI built with egui/eframe"
+
+[dependencies]
+eframe = { version = "0.33.2", default-features = true, features = ["wgpu"] }
+egui = "0.33.2"
+webbrowser = "1.0.6"
