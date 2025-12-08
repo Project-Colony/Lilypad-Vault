@@ -9,4 +9,5 @@ description = "Lilypad desktop GUI built with egui/eframe"
 [dependencies]
 eframe = { version = "0.33.2", default-features = true, features = ["wgpu"] }
 egui = "0.33.2"
+directories = "5.0.1"
 webbrowser = "1.0.6"
