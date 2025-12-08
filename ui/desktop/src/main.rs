@@ -1,6 +1,6 @@
 use directories::ProjectDirs;
 use eframe::{egui, App};
-use egui::{Align2, Color32, RichText};
+use egui::{Align2, Color32, CornerRadius, RichText};
 use std::fs;
 
 fn main() -> eframe::Result<()> {
@@ -14,10 +14,12 @@ fn main() -> eframe::Result<()> {
 
 struct LilypadApp {
     show_welcome: bool,
+    vault_unlocked: bool,
     search_query: String,
     selected_category: usize,
     status_message: Option<String>,
     welcome_ack_path: Option<std::path::PathBuf>,
+    master_password: String,
 }
 
 impl Default for LilypadApp {
@@ -33,6 +35,11 @@ impl App for LilypadApp {
             return;
         }
 
+        if !self.vault_unlocked {
+            self.render_unlock_screen(ctx);
+            return;
+        }
+
         self.render_header(ctx);
         self.render_sidebar(ctx);
         self.render_main_panel(ctx);
@@ -44,10 +51,12 @@ impl LilypadApp {
     fn new() -> Self {
         let mut app = Self {
             show_welcome: true,
+            vault_unlocked: false,
             search_query: String::new(),
             selected_category: 0,
             status_message: None,
             welcome_ack_path: None,
+            master_password: String::new(),
         };
 
         if let Some(project_dirs) = ProjectDirs::from("", "", "Lilypad") {
@@ -94,6 +103,136 @@ impl LilypadApp {
                     }
                 });
             });
+    }
+
+    fn render_unlock_screen(&mut self, ctx: &egui::Context) {
+        let background = Color32::from_rgb(14, 22, 33);
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(background))
+            .show(ctx, |ui| {
+                ui.vertical_centered(|ui| {
+                    ui.add_space(40.0);
+                    let card_frame = egui::Frame::new()
+                        .fill(Color32::from_rgb(24, 36, 54))
+                        .stroke(egui::Stroke::new(1.0, Color32::from_rgb(45, 78, 120)))
+                        .corner_radius(CornerRadius::from(12.0))
+                        .inner_margin(egui::Margin::same(24));
+
+                    ui.allocate_ui_with_layout(
+                        ui.available_size(),
+                        egui::Layout::top_down(egui::Align::Center),
+                        |ui| {
+                            ui.add_space(32.0);
+                            ui.label(
+                                RichText::new("Unlock Lilypad Vault")
+                                    .size(28.0)
+                                    .strong()
+                                    .color(Color32::from_rgb(205, 225, 255)),
+                            );
+                            ui.add_space(8.0);
+                            ui.label(
+                                RichText::new(
+                                    "Secure your workspace with a strong master password before accessing your vault.",
+                                )
+                                .color(Color32::from_gray(200)),
+                            );
+                            ui.add_space(24.0);
+
+                            card_frame.show(ui, |ui| {
+                                ui.vertical(|ui| {
+                                    ui.label(
+                                        RichText::new("Master Password")
+                                            .size(16.0)
+                                            .color(Color32::from_rgb(185, 210, 240)),
+                                    );
+                                    ui.add_space(6.0);
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut self.master_password)
+                                            .password(true)
+                                            .hint_text("Enter your master password"),
+                                    );
+                                    ui.add_space(12.0);
+
+                                    let requirements = self.password_requirements();
+                                    let all_met = self.password_meets_requirements();
+
+                                    ui.label(RichText::new("Password requirements").strong());
+                                    ui.add_space(4.0);
+                                    for (label, satisfied) in requirements {
+                                        let color = if satisfied {
+                                            Color32::from_rgb(111, 207, 151)
+                                        } else {
+                                            Color32::from_rgb(240, 105, 105)
+                                        };
+                                        ui.horizontal(|ui| {
+                                            ui.colored_label(color, if satisfied { "✔" } else { "○" });
+                                            ui.label(RichText::new(label).color(Color32::from_gray(220)));
+                                        });
+                                    }
+
+                                    ui.add_space(16.0);
+                                    let button = egui::Button::new(
+                                        RichText::new("Unlock Vault")
+                                            .strong()
+                                            .color(Color32::from_rgb(16, 22, 32)),
+                                    )
+                                    .fill(if all_met {
+                                        Color32::from_rgb(111, 207, 151)
+                                    } else {
+                                        Color32::from_rgb(70, 94, 124)
+                                    })
+                                    .min_size(egui::vec2(240.0, 36.0))
+                                    .corner_radius(8.0);
+
+                                    if ui.add_enabled(all_met, button).clicked() {
+                                        self.vault_unlocked = true;
+                                        self.status_message = Some("Vault unlocked".to_string());
+                                    }
+
+                                    ui.add_space(8.0);
+                                    ui.label(
+                                        RichText::new(
+                                            "Use a password manager-friendly secret to keep your vault secure.",
+                                        )
+                                        .color(Color32::from_gray(180))
+                                        .italics(),
+                                    );
+                                });
+                            });
+                            ui.add_space(40.0);
+                        },
+                    );
+                });
+            });
+    }
+
+    fn password_requirements(&self) -> [(&'static str, bool); 4] {
+        [
+            (
+                "At least 12 characters",
+                self.master_password.chars().count() >= 12,
+            ),
+            (
+                "Contains a lowercase letter",
+                self.master_password.chars().any(|c| c.is_ascii_lowercase()),
+            ),
+            (
+                "Contains an uppercase letter",
+                self.master_password.chars().any(|c| c.is_ascii_uppercase()),
+            ),
+            (
+                "Contains a special character",
+                self.master_password
+                    .chars()
+                    .any(|c| !c.is_ascii_alphanumeric() && !c.is_whitespace()),
+            ),
+        ]
+    }
+
+    fn password_meets_requirements(&self) -> bool {
+        self.password_requirements()
+            .iter()
+            .all(|(_, satisfied)| *satisfied)
     }
 
     fn render_header(&mut self, ctx: &egui::Context) {
