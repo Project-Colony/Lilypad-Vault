@@ -1,5 +1,7 @@
+use directories::ProjectDirs;
 use eframe::{egui, App};
 use egui::{Align2, Color32, RichText};
+use std::fs;
 
 fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions::default();
@@ -15,16 +17,12 @@ struct LilypadApp {
     search_query: String,
     selected_category: usize,
     status_message: Option<String>,
+    welcome_ack_path: Option<std::path::PathBuf>,
 }
 
 impl Default for LilypadApp {
     fn default() -> Self {
-        Self {
-            show_welcome: true,
-            search_query: String::new(),
-            selected_category: 0,
-            status_message: None,
-        }
+        Self::new()
     }
 }
 
@@ -43,6 +41,29 @@ impl App for LilypadApp {
 }
 
 impl LilypadApp {
+    fn new() -> Self {
+        let mut app = Self {
+            show_welcome: true,
+            search_query: String::new(),
+            selected_category: 0,
+            status_message: None,
+            welcome_ack_path: None,
+        };
+
+        if let Some(project_dirs) = ProjectDirs::from("", "", "Lilypad") {
+            let welcome_ack_path = project_dirs.config_dir().join("welcome_ack");
+            app.welcome_ack_path = Some(welcome_ack_path.clone());
+
+            if let Ok(contents) = fs::read_to_string(&welcome_ack_path) {
+                if contents.trim() == "acknowledged=true" {
+                    app.show_welcome = false;
+                }
+            }
+        }
+
+        app
+    }
+
     fn render_welcome_modal(&mut self, ctx: &egui::Context) {
         let painter = ctx.layer_painter(egui::LayerId::new(
             egui::Order::Background,
@@ -62,6 +83,7 @@ impl LilypadApp {
 
                 ui.horizontal(|ui| {
                     if ui.button(RichText::new("Continue to Lilypad").strong()).clicked() {
+                        self.persist_welcome_acknowledgement();
                         self.show_welcome = false;
                     }
 
@@ -139,5 +161,20 @@ impl LilypadApp {
                 ui.label("Ready");
             }
         });
+    }
+
+    fn persist_welcome_acknowledgement(&mut self) {
+        if let Some(path) = &self.welcome_ack_path {
+            if let Some(parent) = path.parent() {
+                if let Err(error) = fs::create_dir_all(parent) {
+                    self.status_message = Some(format!("Unable to prepare config folder: {error}"));
+                    return;
+                }
+            }
+
+            if let Err(error) = fs::write(path, "acknowledged=true") {
+                self.status_message = Some(format!("Unable to save welcome state: {error}"));
+            }
+        }
     }
 }
