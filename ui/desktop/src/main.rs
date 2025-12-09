@@ -319,75 +319,60 @@ impl LilypadApp {
     }
 
     fn render_main_panel(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            self.section_container(ui, |this, ui| match this.selected_category {
-                1 => {
-                    ui.heading("Password generator");
-                    ui.separator();
-                    ui.label(
-                        "Create strong, randomized passwords directly from Lilypad before storing them in your vault.",
-                    );
-                    ui.add_space(8.0);
-                    this.render_password_generator(ui, ctx);
-                }
-                2 => {
-                    ui.heading("Alerts");
-                    ui.separator();
-                    ui.label(
-                        "Stay ahead of security issues. Alerts will summarize important notices about your vault activity and account safety.",
-                    );
-                    ui.add_space(8.0);
-                    ui.label("No alerts to show yet. Check back soon.");
-                }
-                3 => {
-                    ui.heading("Account");
-                    ui.separator();
-                    ui.label(
-                        "Manage your profile, device approvals, and preferences in one place.",
-                    );
-                    ui.add_space(8.0);
-                    ui.label("Account controls are coming soon.");
-                }
-                4 => {
-                    ui.heading("Security");
-                    ui.separator();
-                    ui.label(
-                        "Centralize security options such as session locks and recovery methods.",
-                    );
-                    ui.add_space(8.0);
-                    ui.label("Security controls will appear here when available.");
-                }
-                _ => {
-                    ui.heading("Credentials");
-                    ui.separator();
-                    ui.label(
-                        "This area will list stored items. Use the Add Entry action to populate the vault.",
-                    );
-                    ui.add_space(8.0);
-                    ui.group(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("Example: Email Account").strong());
-                            ui.separator();
-                            ui.label("user@example.com");
-                        });
-                        ui.label("Last updated: pending");
+        egui::CentralPanel::default().show(ctx, |ui| match self.selected_category {
+            1 => {
+                ui.heading("Password generator");
+                ui.separator();
+                ui.label(
+                    "Create strong, randomized passwords directly from Lilypad before storing them in your vault.",
+                );
+                ui.add_space(8.0);
+                self.render_password_generator(ui, ctx);
+            }
+            2 => {
+                ui.heading("Alerts");
+                ui.separator();
+                ui.label(
+                    "Stay ahead of security issues. Alerts will summarize important notices about your vault activity and account safety.",
+                );
+                ui.add_space(8.0);
+                ui.label("No alerts to show yet. Check back soon.");
+            }
+            3 => {
+                ui.heading("Account");
+                ui.separator();
+                ui.label(
+                    "Manage your profile, device approvals, and preferences in one place.",
+                );
+                ui.add_space(8.0);
+                ui.label("Account controls are coming soon.");
+            }
+            4 => {
+                ui.heading("Security");
+                ui.separator();
+                ui.label(
+                    "Centralize security options such as session locks and recovery methods.",
+                );
+                ui.add_space(8.0);
+                ui.label("Security controls will appear here when available.");
+            }
+            _ => {
+                ui.heading("Credentials");
+                ui.separator();
+                ui.label(
+                    "This area will list stored items. Use the Add Entry action to populate the vault.",
+                );
+                ui.add_space(8.0);
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Example: Email Account").strong());
+                        ui.separator();
+                        ui.label("user@example.com");
                     });
-                }
-            });
+                    ui.label("Last updated: pending");
+                });
+            }
         });
-    }
-
-    fn section_container<R>(
-        &mut self,
-        ui: &mut egui::Ui,
-        add_content: impl FnOnce(&mut Self, &mut egui::Ui) -> R,
-    ) -> R {
-        let max_width: f32 = 680.0;
-        ui.vertical_centered(|ui| {
-            ui.set_width(max_width.min(ui.available_width()));
-            add_content(self, ui)
-        })
-        .inner
     }
 
     fn render_password_generator(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
