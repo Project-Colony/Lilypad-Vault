@@ -1,6 +1,7 @@
 use directories::ProjectDirs;
 use eframe::{egui, App};
-use egui::{Align2, Color32, CornerRadius, RichText};
+use egui::{Align2, Color32, CornerRadius, OutputCommand, RichText};
+use rand::Rng;
 use std::fs;
 
 fn main() -> eframe::Result<()> {
@@ -20,6 +21,12 @@ struct LilypadApp {
     status_message: Option<String>,
     welcome_ack_path: Option<std::path::PathBuf>,
     master_password: String,
+    generated_password: String,
+    generator_length: usize,
+    generator_lowercase: bool,
+    generator_uppercase: bool,
+    generator_digits: bool,
+    generator_symbols: bool,
 }
 
 impl Default for LilypadApp {
@@ -57,6 +64,12 @@ impl LilypadApp {
             status_message: None,
             welcome_ack_path: None,
             master_password: String::new(),
+            generated_password: String::new(),
+            generator_length: 16,
+            generator_lowercase: true,
+            generator_uppercase: true,
+            generator_digits: true,
+            generator_symbols: true,
         };
 
         if let Some(project_dirs) = ProjectDirs::from("", "", "Lilypad") {
@@ -289,7 +302,145 @@ impl LilypadApp {
                 });
                 ui.label("Last updated: pending");
             });
+
+            ui.add_space(16.0);
+            ui.separator();
+            ui.heading("Password generator");
+            ui.label(
+                "Create strong, randomized passwords directly from Lilypad before storing them in your vault.",
+            );
+            ui.add_space(8.0);
+            self.render_password_generator(ui, ctx);
         });
+    }
+
+    fn render_password_generator(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Length").strong());
+                ui.add(
+                    egui::Slider::new(&mut self.generator_length, 8..=64)
+                        .text("characters")
+                        .step_by(1.0),
+                );
+            });
+
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.generator_lowercase, "Lowercase (abc)");
+                ui.checkbox(&mut self.generator_uppercase, "Uppercase (ABC)");
+            });
+            ui.horizontal(|ui| {
+                ui.checkbox(&mut self.generator_digits, "Digits (0-9)");
+                ui.checkbox(&mut self.generator_symbols, "Symbols (!#$)");
+            });
+
+            let generation_possible = self.generator_lowercase
+                || self.generator_uppercase
+                || self.generator_digits
+                || self.generator_symbols;
+
+            let (strength_label, strength_color) = self.generator_strength();
+
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Strength").strong());
+                ui.colored_label(strength_color, strength_label);
+            });
+
+            ui.add_space(6.0);
+            let generate_button = egui::Button::new(
+                RichText::new("Generate password")
+                    .strong()
+                    .color(Color32::from_rgb(16, 22, 32)),
+            )
+            .fill(Color32::from_rgb(111, 207, 151))
+            .min_size(egui::vec2(200.0, 32.0));
+
+            if ui
+                .add_enabled(generation_possible, generate_button)
+                .clicked()
+            {
+                if let Some(password) = self.generate_password() {
+                    self.generated_password = password.clone();
+                    self.status_message = Some("New password generated".to_string());
+                    ctx.send_cmd(OutputCommand::CopyText(password.clone()));
+                }
+            }
+
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("Generated password").strong());
+                if ui.button("Copy").clicked() {
+                    let password = self.generated_password.clone();
+                    ctx.send_cmd(OutputCommand::CopyText(password));
+                    self.status_message = Some("Password copied to clipboard".to_string());
+                }
+            });
+
+            ui.add(
+                egui::TextEdit::singleline(&mut self.generated_password)
+                    .password(true)
+                    .hint_text("Generate a password to display it here"),
+            );
+        });
+    }
+
+    fn generate_password(&self) -> Option<String> {
+        let mut charset = String::new();
+        if self.generator_lowercase {
+            charset.push_str("abcdefghijklmnopqrstuvwxyz");
+        }
+        if self.generator_uppercase {
+            charset.push_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+        }
+        if self.generator_digits {
+            charset.push_str("0123456789");
+        }
+        if self.generator_symbols {
+            charset.push_str("!#$%&()*+,-./:;<=>?@[]^_{|}~");
+        }
+
+        if charset.is_empty() {
+            return None;
+        }
+
+        let mut rng = rand::thread_rng();
+        let generated: String = (0..self.generator_length)
+            .map(|_| {
+                let idx = rng.gen_range(0..charset.len());
+                charset.chars().nth(idx).unwrap_or('A')
+            })
+            .collect();
+
+        Some(generated)
+    }
+
+    fn generator_strength(&self) -> (&'static str, Color32) {
+        let mut score = 0;
+        let length = self.generator_length as u32;
+
+        if length >= 12 {
+            score += 1;
+        }
+        if length >= 20 {
+            score += 1;
+        }
+        if self.generator_lowercase && self.generator_uppercase {
+            score += 1;
+        }
+        if self.generator_digits {
+            score += 1;
+        }
+        if self.generator_symbols {
+            score += 1;
+        }
+
+        match score {
+            0 | 1 => ("Weak", Color32::from_rgb(240, 105, 105)),
+            2 | 3 => ("Moderate", Color32::from_rgb(255, 193, 107)),
+            4 => ("Strong", Color32::from_rgb(111, 207, 151)),
+            _ => ("Very strong", Color32::from_rgb(76, 175, 80)),
+        }
     }
 
     fn render_status_bar(&mut self, ctx: &egui::Context) {
