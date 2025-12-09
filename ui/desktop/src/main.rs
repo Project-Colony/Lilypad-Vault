@@ -282,7 +282,7 @@ impl LilypadApp {
 
         egui::TopBottomPanel::bottom("navigation_bar")
             .frame(
-                egui::Frame::none()
+                egui::Frame::NONE
                     .fill(background)
                     .stroke(egui::Stroke::new(1.0, Color32::from_gray(210)))
                     .inner_margin(Margin::symmetric(12, 8)),
