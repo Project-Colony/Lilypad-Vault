@@ -1,6 +1,6 @@
 use directories::ProjectDirs;
 use eframe::{egui, App};
-use egui::{Align2, Color32, CornerRadius, OutputCommand, RichText};
+use egui::{Align2, Color32, CornerRadius, Margin, OutputCommand, RichText};
 use rand::Rng;
 use std::fs;
 
@@ -48,8 +48,8 @@ impl App for LilypadApp {
         }
 
         self.render_header(ctx);
-        self.render_sidebar(ctx);
         self.render_main_panel(ctx);
+        self.render_navigation_bar(ctx);
         self.render_status_bar(ctx);
     }
 }
@@ -268,34 +268,59 @@ impl LilypadApp {
         });
     }
 
-    fn render_sidebar(&mut self, ctx: &egui::Context) {
-        let categories = [
-            "All Items",
-            "Logins",
-            "Secure Notes",
-            "Cards",
-            "Identities",
-            "Password Generator",
+    fn render_navigation_bar(&mut self, ctx: &egui::Context) {
+        let nav_items = [
+            ("Vault", "🗄️"),
+            ("Generator", "⚙️"),
+            ("Alerts", "🔔"),
+            ("Account", "👤"),
+            ("Security", "🛡️"),
         ];
 
-        egui::SidePanel::left("sidebar")
-            .resizable(true)
-            .min_width(180.0)
+        let background = Color32::from_rgb(245, 247, 250);
+        let accent = Color32::from_rgb(70, 118, 190);
+
+        egui::TopBottomPanel::bottom("navigation_bar")
+            .frame(
+                egui::Frame::none()
+                    .fill(background)
+                    .stroke(egui::Stroke::new(1.0, Color32::from_gray(210)))
+                    .inner_margin(Margin::symmetric(12, 8)),
+            )
             .show(ctx, |ui| {
-                ui.heading("Vaults");
-                ui.separator();
-                for (index, label) in categories.iter().enumerate() {
-                    let selected = self.selected_category == index;
-                    if ui.selectable_label(selected, *label).clicked() {
-                        self.selected_category = index;
+                ui.set_height(96.0);
+                ui.horizontal_centered(|ui| {
+                    for (index, (label, icon)) in nav_items.iter().enumerate() {
+                        let selected = self.selected_category == index;
+                        let text = format!("{icon}\n{label}");
+                        let text_color = if selected {
+                            Color32::from_rgb(16, 28, 46)
+                        } else {
+                            Color32::from_gray(60)
+                        };
+
+                        let button = egui::Button::new(
+                            RichText::new(text).size(15.0).strong().color(text_color),
+                        )
+                        .min_size(egui::vec2(108.0, 70.0))
+                        .fill(if selected {
+                            accent
+                        } else {
+                            Color32::from_white_alpha(0)
+                        })
+                        .corner_radius(12.0);
+
+                        if ui.add(button).clicked() {
+                            self.selected_category = index;
+                        }
                     }
-                }
+                });
             });
     }
 
     fn render_main_panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| match self.selected_category {
-            5 => {
+            1 => {
                 ui.heading("Password generator");
                 ui.separator();
                 ui.label(
@@ -303,6 +328,33 @@ impl LilypadApp {
                 );
                 ui.add_space(8.0);
                 self.render_password_generator(ui, ctx);
+            }
+            2 => {
+                ui.heading("Alerts");
+                ui.separator();
+                ui.label(
+                    "Stay ahead of security issues. Alerts will summarize important notices about your vault activity and account safety.",
+                );
+                ui.add_space(8.0);
+                ui.label("No alerts to show yet. Check back soon.");
+            }
+            3 => {
+                ui.heading("Account");
+                ui.separator();
+                ui.label(
+                    "Manage your profile, device approvals, and preferences in one place.",
+                );
+                ui.add_space(8.0);
+                ui.label("Account controls are coming soon.");
+            }
+            4 => {
+                ui.heading("Security");
+                ui.separator();
+                ui.label(
+                    "Centralize security options such as session locks and recovery methods.",
+                );
+                ui.add_space(8.0);
+                ui.label("Security controls will appear here when available.");
             }
             _ => {
                 ui.heading("Credentials");
