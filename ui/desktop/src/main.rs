@@ -151,68 +151,78 @@ impl LilypadApp {
                             );
                             ui.add_space(24.0);
 
-                            card_frame.show(ui, |ui| {
-                                ui.vertical(|ui| {
-                                    ui.label(
-                                        RichText::new("Master Password")
-                                            .size(16.0)
-                                            .color(Color32::from_rgb(185, 210, 240)),
-                                    );
-                                    ui.add_space(6.0);
-                                    ui.add(
-                                        egui::TextEdit::singleline(&mut self.master_password)
-                                            .password(true)
-                                            .hint_text("Enter your master password"),
-                                    );
-                                    ui.add_space(12.0);
+                            ui.horizontal_centered(|ui| {
+                                ui.set_min_width(420.0);
+                                card_frame.show(ui, |ui| {
+                                    ui.vertical(|ui| {
+                                        ui.label(
+                                            RichText::new("Master Password")
+                                                .size(16.0)
+                                                .color(Color32::from_rgb(185, 210, 240)),
+                                        );
+                                        ui.add_space(6.0);
+                                        ui.add(
+                                            egui::TextEdit::singleline(&mut self.master_password)
+                                                .password(true)
+                                                .hint_text("Enter your master password"),
+                                        );
+                                        ui.add_space(12.0);
 
-                                    let requirements = self.password_requirements();
-                                    let all_met = self.password_meets_requirements();
+                                        let requirements = self.password_requirements();
+                                        let all_met = self.password_meets_requirements();
 
-                                    ui.label(RichText::new("Password requirements").strong());
-                                    ui.add_space(4.0);
-                                    for (label, satisfied) in requirements {
-                                        let color = if satisfied {
+                                        ui.label(RichText::new("Password requirements").strong());
+                                        ui.add_space(4.0);
+                                        for (label, satisfied) in requirements {
+                                            let color = if satisfied {
+                                                Color32::from_rgb(111, 207, 151)
+                                            } else {
+                                                Color32::from_rgb(240, 105, 105)
+                                            };
+                                            ui.horizontal(|ui| {
+                                                ui.colored_label(
+                                                    color,
+                                                    if satisfied { "✔" } else { "○" },
+                                                );
+                                                ui.label(
+                                                    RichText::new(label)
+                                                        .color(Color32::from_gray(220)),
+                                                );
+                                            });
+                                        }
+
+                                        ui.add_space(16.0);
+                                        let button = egui::Button::new(
+                                            RichText::new("Unlock Vault")
+                                                .strong()
+                                                .color(Color32::from_rgb(16, 22, 32)),
+                                        )
+                                        .fill(if all_met {
                                             Color32::from_rgb(111, 207, 151)
                                         } else {
-                                            Color32::from_rgb(240, 105, 105)
-                                        };
-                                        ui.horizontal(|ui| {
-                                            ui.colored_label(color, if satisfied { "✔" } else { "○" });
-                                            ui.label(RichText::new(label).color(Color32::from_gray(220)));
-                                        });
-                                    }
+                                            Color32::from_rgb(70, 94, 124)
+                                        })
+                                        .min_size(egui::vec2(240.0, 36.0))
+                                        .corner_radius(8.0);
 
-                                    ui.add_space(16.0);
-                                    let button = egui::Button::new(
-                                        RichText::new("Unlock Vault")
-                                            .strong()
-                                            .color(Color32::from_rgb(16, 22, 32)),
-                                    )
-                                    .fill(if all_met {
-                                        Color32::from_rgb(111, 207, 151)
-                                    } else {
-                                        Color32::from_rgb(70, 94, 124)
-                                    })
-                                    .min_size(egui::vec2(240.0, 36.0))
-                                    .corner_radius(8.0);
+                                        if ui.add_enabled(all_met, button).clicked() {
+                                            self.vault_unlocked = true;
+                                            self.status_message =
+                                                Some("Vault unlocked".to_string());
+                                        }
 
-                                    if ui.add_enabled(all_met, button).clicked() {
-                                        self.vault_unlocked = true;
-                                        self.status_message = Some("Vault unlocked".to_string());
-                                    }
-
-                                    ui.add_space(8.0);
-                                    ui.label(
-                                        RichText::new(
-                                            "Use a password manager-friendly secret to keep your vault secure.",
-                                        )
-                                        .color(Color32::from_gray(180))
-                                        .italics(),
-                                    );
+                                        ui.add_space(8.0);
+                                        ui.label(
+                                            RichText::new(
+                                                "Use a password manager-friendly secret to keep your vault secure.",
+                                            )
+                                            .color(Color32::from_gray(180))
+                                            .italics(),
+                                        );
+                                    });
                                 });
                             });
-                            ui.add_space(40.0);
+                            ui.add_space(36.0);
                         },
                     );
                 });
