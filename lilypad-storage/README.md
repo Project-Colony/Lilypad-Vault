@@ -11,9 +11,10 @@ disque. Le format est versionné pour permettre des migrations futures.
 
 Structure d'un fichier de coffre (`<data_dir>/vaults/<nom>.lily`) :
 
-Le fichier commence par un en-tête magique `LILYPAD_VAULT_V1` suivi du JSON
-chiffré. Les fichiers `.json` existants restent pris en charge pour
-compatibilité, mais les nouveaux coffres sont écrits en `.lily`.
+Le fichier commence par un en-tête magique `LILYPAD_VAULT_V1` suivi d'une ligne
+lisible indiquant qu'il s'agit d'un coffre chiffré, puis du JSON chiffré. Les
+fichiers `.json` existants restent pris en charge pour compatibilité, mais les
+nouveaux coffres sont écrits en `.lily`.
 
 ```json
 {

@@ -7,7 +7,8 @@ use std::path::PathBuf;
 
 const VAULT_EXTENSION: &str = "lily";
 const LEGACY_EXTENSION: &str = "json";
-const VAULT_HEADER: &[u8] = b"LILYPAD_VAULT_V1\n";
+const LEGACY_VAULT_HEADER: &[u8] = b"LILYPAD_VAULT_V1\n";
+const VAULT_HEADER: &[u8] = b"LILYPAD_VAULT_V1\n# Lilypad vault (encrypted)\n";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StoreStatus {
@@ -86,6 +87,8 @@ impl LocalStore {
         let bytes = fs::read(&path)?;
         let stored_bytes = if bytes.starts_with(VAULT_HEADER) {
             &bytes[VAULT_HEADER.len()..]
+        } else if bytes.starts_with(LEGACY_VAULT_HEADER) {
+            &bytes[LEGACY_VAULT_HEADER.len()..]
         } else if bytes.starts_with(b"{") {
             bytes.as_slice()
         } else {
