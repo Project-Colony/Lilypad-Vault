@@ -936,7 +936,7 @@ impl LilypadApp {
         }
         let (key, key_file) = self.load_or_create_key(password)?;
         let vault = self.load_or_create_vault(&key, &key_file)?;
-        let entries = self.entries_from_vault(&vault, &key)?;
+        let entries = Self::entries_from_vault(&vault, &key)?;
         self.vault_entries = entries;
         self.vault = Some(vault);
         self.vault_key = Some(key);
@@ -974,11 +974,11 @@ impl LilypadApp {
             vault.add_entry(Entry::new(title, ciphertext))?;
         }
         self.store.save_vault(vault, key)?;
-        self.vault_entries = self.entries_from_vault(vault, key)?;
+        self.vault_entries = Self::entries_from_vault(vault, key)?;
         Ok(())
     }
 
-    fn entries_from_vault(&self, vault: &Vault, key: &KeyMaterial) -> Result<Vec<VaultEntry>> {
+    fn entries_from_vault(vault: &Vault, key: &KeyMaterial) -> Result<Vec<VaultEntry>> {
         let mut entries = Vec::with_capacity(vault.entries.len());
         for entry in &vault.entries {
             let plaintext = decrypt(key, &entry.ciphertext)?;
