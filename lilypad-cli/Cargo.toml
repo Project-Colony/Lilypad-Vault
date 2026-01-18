@@ -1,0 +1,11 @@
+[package]
+name = "lilypad-cli"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+lilypad-core = { path = "../lilypad-core" }
+lilypad-storage = { path = "../lilypad-storage" }
