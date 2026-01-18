@@ -20,12 +20,7 @@ struct Cli {
     #[arg(long, value_name = "DIR")]
     data_dir: Option<String>,
     /// Master password (or LILYPAD_MASTER_PASSWORD environment variable)
-    #[arg(
-        long,
-        value_name = "PASSWORD",
-        env = "LILYPAD_MASTER_PASSWORD",
-        global = true
-    )]
+    #[arg(long, value_name = "PASSWORD", global = true)]
     master_password: Option<String>,
     #[command(subcommand)]
     command: Commands,
@@ -110,6 +105,9 @@ enum KeyFile {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    let master_password = cli
+        .master_password
+        .or_else(|| std::env::var("LILYPAD_MASTER_PASSWORD").ok());
     let mut config = default_config();
     if let Some(data_dir) = cli.data_dir {
         if data_dir.trim().is_empty() {
@@ -128,7 +126,7 @@ fn main() -> Result<()> {
             &config,
             &vault,
             use_master_password,
-            cli.master_password.as_deref(),
+            master_password.as_deref(),
         ),
         Commands::Add {
             vault,
@@ -140,18 +138,14 @@ fn main() -> Result<()> {
             &vault,
             &label,
             &value,
-            cli.master_password.as_deref(),
+            master_password.as_deref(),
         ),
         Commands::List { vault } => {
-            list_entries(&store, &config, &vault, cli.master_password.as_deref())
+            list_entries(&store, &config, &vault, master_password.as_deref())
         }
-        Commands::Get { vault, label } => get_entry(
-            &store,
-            &config,
-            &vault,
-            &label,
-            cli.master_password.as_deref(),
-        ),
+        Commands::Get { vault, label } => {
+            get_entry(&store, &config, &vault, &label, master_password.as_deref())
+        }
         Commands::Update {
             vault,
             label,
@@ -162,22 +156,14 @@ fn main() -> Result<()> {
             &vault,
             &label,
             &value,
-            cli.master_password.as_deref(),
+            master_password.as_deref(),
         ),
-        Commands::Remove { vault, label } => remove_entry(
-            &store,
-            &config,
-            &vault,
-            &label,
-            cli.master_password.as_deref(),
-        ),
-        Commands::Search { vault, query } => search_entries(
-            &store,
-            &config,
-            &vault,
-            &query,
-            cli.master_password.as_deref(),
-        ),
+        Commands::Remove { vault, label } => {
+            remove_entry(&store, &config, &vault, &label, master_password.as_deref())
+        }
+        Commands::Search { vault, query } => {
+            search_entries(&store, &config, &vault, &query, master_password.as_deref())
+        }
     }
 }
 
@@ -202,12 +188,8 @@ fn init_vault(
         (key, KeyFile::Kdf { params })
     } else {
         let key = KeyMaterial::generate();
-        (
-            key,
-            KeyFile::Raw {
-                key_hex: encode_hex(key.as_bytes()),
-            },
-        )
+        let key_hex = encode_hex(key.as_bytes());
+        (key, KeyFile::Raw { key_hex })
     };
     save_key(&key_path, &key_file)?;
 
@@ -220,10 +202,7 @@ fn init_vault(
     let vault = Vault::new(vault, metadata);
     store.save_vault(&vault, &key)?;
 
-    println!(
-        "Vault '{}' initialized in {}.",
-        vault.name, config.data_dir
-    );
+    println!("Vault '{}' initialized in {}.", vault.name, config.data_dir);
     Ok(())
 }
 
@@ -363,12 +342,8 @@ fn save_key(path: &Path, key_file: &KeyFile) -> Result<()> {
 }
 
 fn load_key(path: &Path, master_password: Option<&str>) -> Result<KeyMaterial> {
-    let payload = fs::read(path).with_context(|| {
-        format!(
-            "key not found: {} (run `lilypad init`)",
-            path.display()
-        )
-    })?;
+    let payload = fs::read(path)
+        .with_context(|| format!("key not found: {} (run `lilypad init`)", path.display()))?;
     let key_file: KeyFile = serde_json::from_slice(&payload)?;
     match key_file {
         KeyFile::Raw { key_hex } => {
@@ -399,8 +374,7 @@ fn decode_hex(hex: &str) -> Result<Vec<u8>> {
     let mut bytes = Vec::with_capacity(value.len() / 2);
     for chunk in value.as_bytes().chunks(2) {
         let chunk_str = std::str::from_utf8(chunk)?;
-        let byte =
-            u8::from_str_radix(chunk_str, 16).map_err(|_| anyhow!("invalid hex key"))?;
+        let byte = u8::from_str_radix(chunk_str, 16).map_err(|_| anyhow!("invalid hex key"))?;
         bytes.push(byte);
     }
     Ok(bytes)

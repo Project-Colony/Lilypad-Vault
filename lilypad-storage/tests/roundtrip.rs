@@ -18,7 +18,9 @@ fn roundtrip_save_and_load_vault() {
     let metadata = KeyMetadata::new(&key, CryptoAlgorithm::XChaCha20Poly1305);
     let mut vault = Vault::new("primary", metadata);
     let ciphertext = encrypt(&key, b"bank-secret").expect("encrypt");
-    vault.add_entry(Entry::new("bank", ciphertext));
+    vault
+        .add_entry(Entry::new("bank", ciphertext))
+        .expect("add entry");
 
     store.save_vault(&vault, &key).expect("save");
     let payload = store.sync_payload("primary").expect("payload");
