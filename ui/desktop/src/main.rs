@@ -171,6 +171,36 @@ struct LilypadApp {
     generator_uppercase: bool,
     generator_digits: bool,
     generator_symbols: bool,
+    show_add_entry: bool,
+    show_settings: bool,
+    vault_entries: Vec<VaultEntry>,
+    entry_title: String,
+    entry_username: String,
+    entry_password: String,
+    entry_url: String,
+    entry_notes: String,
+    settings_theme_index: usize,
+    settings_auto_lock_minutes: u32,
+    settings_clipboard_timeout_seconds: u32,
+    settings_send_security_alerts: bool,
+    account_display_name: String,
+    account_email: String,
+    account_timezone: String,
+    account_two_factor_enabled: bool,
+    account_marketing_opt_in: bool,
+    security_auto_lock_minutes: u32,
+    security_require_master_on_copy: bool,
+    security_recovery_email: String,
+    security_trusted_devices: Vec<String>,
+}
+
+struct VaultEntry {
+    title: String,
+    username: String,
+    password: String,
+    url: String,
+    notes: String,
+    last_updated: String,
 }
 
 impl Default for LilypadApp {
@@ -195,6 +225,10 @@ impl App for LilypadApp {
         self.render_main_panel(ctx);
         self.render_navigation_bar(ctx);
         self.render_status_bar(ctx);
+
+        if self.show_settings {
+            self.render_settings_modal(ctx);
+        }
     }
 }
 
@@ -214,6 +248,37 @@ impl LilypadApp {
             generator_uppercase: true,
             generator_digits: true,
             generator_symbols: true,
+            show_add_entry: false,
+            show_settings: false,
+            vault_entries: vec![VaultEntry {
+                title: "Email Account".to_string(),
+                username: "user@example.com".to_string(),
+                password: "••••••••••".to_string(),
+                url: "https://mail.example.com".to_string(),
+                notes: "Primary inbox".to_string(),
+                last_updated: "2 hours ago".to_string(),
+            }],
+            entry_title: String::new(),
+            entry_username: String::new(),
+            entry_password: String::new(),
+            entry_url: String::new(),
+            entry_notes: String::new(),
+            settings_theme_index: 0,
+            settings_auto_lock_minutes: 10,
+            settings_clipboard_timeout_seconds: 30,
+            settings_send_security_alerts: true,
+            account_display_name: "Avery Quinn".to_string(),
+            account_email: "avery@lilypad.app".to_string(),
+            account_timezone: "Europe/Paris".to_string(),
+            account_two_factor_enabled: true,
+            account_marketing_opt_in: false,
+            security_auto_lock_minutes: 5,
+            security_require_master_on_copy: true,
+            security_recovery_email: "recovery@lilypad.app".to_string(),
+            security_trusted_devices: vec![
+                "MacBook Pro • Paris".to_string(),
+                "iPhone 15 • Bordeaux".to_string(),
+            ],
         };
 
         if let Some(project_dirs) = ProjectDirs::from("", "", "Lilypad") {
@@ -413,10 +478,11 @@ impl LilypadApp {
                 );
                 ui.separator();
                 if ui.button("Add Entry").clicked() {
-                    self.status_message = Some("Entry creation coming soon".to_string());
+                    self.show_add_entry = true;
+                    self.selected_category = 0;
                 }
                 if ui.button("Settings").clicked() {
-                    self.status_message = Some("Settings placeholder".to_string());
+                    self.show_settings = true;
                 }
             });
         });
@@ -530,38 +596,13 @@ impl LilypadApp {
                     ui.label("No alerts to show yet. Check back soon.");
                 }
                 3 => {
-                    ui.heading("Account");
-                    ui.separator();
-                    ui.label(
-                        "Manage your profile, device approvals, and preferences in one place.",
-                    );
-                    ui.add_space(8.0);
-                    ui.label("Account controls are coming soon.");
+                    this.render_account_section(ui);
                 }
                 4 => {
-                    ui.heading("Security");
-                    ui.separator();
-                    ui.label(
-                        "Centralize security options such as session locks and recovery methods.",
-                    );
-                    ui.add_space(8.0);
-                    ui.label("Security controls will appear here when available.");
+                    this.render_security_section(ui);
                 }
                 _ => {
-                    ui.heading("Credentials");
-                    ui.separator();
-                    ui.label(
-                        "This area will list stored items. Use the Add Entry action to populate the vault.",
-                    );
-                    ui.add_space(8.0);
-                    ui.group(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("Example: Email Account").strong());
-                            ui.separator();
-                            ui.label("user@example.com");
-                        });
-                        ui.label("Last updated: pending");
-                    });
+                    this.render_vault_section(ui, ctx);
                 }
             });
         });
@@ -584,6 +625,264 @@ impl LilypadApp {
             },
         )
         .inner
+    }
+
+    fn render_vault_section(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.heading("Credentials");
+        ui.separator();
+        ui.label("Store and manage your secure vault items in one place.");
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Quick actions").strong());
+            if ui.button("Add entry").clicked() {
+                self.show_add_entry = true;
+            }
+            if ui.button("Lock vault").clicked() {
+                self.vault_unlocked = false;
+                self.status_message = Some("Vault locked".to_string());
+            }
+        });
+
+        if self.show_add_entry {
+            ui.add_space(12.0);
+            self.render_add_entry_form(ui);
+        }
+
+        ui.add_space(16.0);
+        ui.label(RichText::new("Saved entries").strong());
+        ui.add_space(6.0);
+
+        let query = self.search_query.trim().to_lowercase();
+        let entries: Vec<&VaultEntry> = self
+            .vault_entries
+            .iter()
+            .filter(|entry| {
+                if query.is_empty() {
+                    true
+                } else {
+                    entry.title.to_lowercase().contains(&query)
+                        || entry.username.to_lowercase().contains(&query)
+                        || entry.url.to_lowercase().contains(&query)
+                }
+            })
+            .collect();
+
+        if entries.is_empty() {
+            ui.label("No entries match your search yet.");
+        } else {
+            for entry in entries {
+                ui.group(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(&entry.title).strong());
+                        ui.separator();
+                        ui.label(&entry.username);
+                    });
+                    if !entry.url.is_empty() {
+                        ui.label(format!("URL: {}", entry.url));
+                    }
+                    if !entry.notes.is_empty() {
+                        ui.label(format!("Notes: {}", entry.notes));
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label(format!("Last updated: {}", entry.last_updated));
+                        if ui.button("Copy password").clicked() {
+                            ctx.send_cmd(OutputCommand::CopyText(entry.password.clone()));
+                            self.status_message = Some("Password copied to clipboard".to_string());
+                        }
+                    });
+                });
+                ui.add_space(8.0);
+            }
+        }
+    }
+
+    fn render_add_entry_form(&mut self, ui: &mut egui::Ui) {
+        ui.group(|ui| {
+            ui.label(RichText::new("New vault entry").strong());
+            ui.add_space(6.0);
+            ui.label("Title");
+            ui.add(egui::TextEdit::singleline(&mut self.entry_title).hint_text("e.g. Bank login"));
+            ui.add_space(6.0);
+            ui.label("Username");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.entry_username)
+                    .hint_text("username or email"),
+            );
+            ui.add_space(6.0);
+            ui.label("Password");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.entry_password)
+                    .password(true)
+                    .hint_text("store a strong password"),
+            );
+            ui.add_space(6.0);
+            ui.label("Website");
+            ui.add(egui::TextEdit::singleline(&mut self.entry_url).hint_text("https://"));
+            ui.add_space(6.0);
+            ui.label("Notes");
+            ui.add(egui::TextEdit::multiline(&mut self.entry_notes).desired_rows(3));
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if ui.button("Use generated password").clicked() {
+                    self.entry_password = self.generated_password.clone();
+                }
+                if ui.button("Cancel").clicked() {
+                    self.show_add_entry = false;
+                }
+                let save_enabled = !self.entry_title.trim().is_empty()
+                    && !self.entry_password.trim().is_empty();
+                if ui
+                    .add_enabled(save_enabled, egui::Button::new("Save entry"))
+                    .clicked()
+                {
+                    let entry = VaultEntry {
+                        title: self.entry_title.trim().to_string(),
+                        username: self.entry_username.trim().to_string(),
+                        password: self.entry_password.trim().to_string(),
+                        url: self.entry_url.trim().to_string(),
+                        notes: self.entry_notes.trim().to_string(),
+                        last_updated: "Just now".to_string(),
+                    };
+                    self.vault_entries.insert(0, entry);
+                    self.entry_title.clear();
+                    self.entry_username.clear();
+                    self.entry_password.clear();
+                    self.entry_url.clear();
+                    self.entry_notes.clear();
+                    self.show_add_entry = false;
+                    self.status_message = Some("Entry saved to vault".to_string());
+                }
+            });
+        });
+    }
+
+    fn render_settings_modal(&mut self, ctx: &egui::Context) {
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("settings_overlay"),
+        ));
+        painter.rect_filled(ctx.available_rect(), 0.0, Color32::from_black_alpha(40));
+
+        egui::Window::new("Settings")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.label("Customize your Lilypad experience.");
+                ui.add_space(8.0);
+                ui.label(RichText::new("Appearance").strong());
+                egui::ComboBox::from_label("Theme")
+                    .selected_text(match self.settings_theme_index {
+                        1 => "Night Bloom",
+                        2 => "Pond Light",
+                        _ => "Classic Green",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.settings_theme_index, 0, "Classic Green");
+                        ui.selectable_value(&mut self.settings_theme_index, 1, "Night Bloom");
+                        ui.selectable_value(&mut self.settings_theme_index, 2, "Pond Light");
+                    });
+                ui.add_space(6.0);
+                ui.label(RichText::new("Vault protection").strong());
+                ui.add(
+                    egui::Slider::new(&mut self.settings_auto_lock_minutes, 1..=60)
+                        .text("Auto-lock (minutes)"),
+                );
+                ui.add(
+                    egui::Slider::new(&mut self.settings_clipboard_timeout_seconds, 10..=120)
+                        .text("Clipboard clear (seconds)"),
+                );
+                ui.checkbox(
+                    &mut self.settings_send_security_alerts,
+                    "Send security notifications",
+                );
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Close").clicked() {
+                        self.show_settings = false;
+                    }
+                    if ui.button("Save settings").clicked() {
+                        self.show_settings = false;
+                        self.status_message = Some("Settings updated".to_string());
+                    }
+                });
+            });
+    }
+
+    fn render_account_section(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Account");
+        ui.separator();
+        ui.label("Manage your profile, device approvals, and preferences in one place.");
+        ui.add_space(8.0);
+        ui.group(|ui| {
+            ui.label(RichText::new("Profile").strong());
+            ui.add_space(6.0);
+            ui.label("Display name");
+            ui.add(egui::TextEdit::singleline(&mut self.account_display_name));
+            ui.label("Email address");
+            ui.add(egui::TextEdit::singleline(&mut self.account_email));
+            ui.label("Time zone");
+            ui.add(egui::TextEdit::singleline(&mut self.account_timezone));
+            ui.add_space(6.0);
+            ui.checkbox(&mut self.account_two_factor_enabled, "Two-factor authentication");
+            ui.checkbox(
+                &mut self.account_marketing_opt_in,
+                "Product updates and tips",
+            );
+            ui.add_space(6.0);
+            if ui.button("Save profile").clicked() {
+                self.status_message = Some("Account profile saved".to_string());
+            }
+        });
+    }
+
+    fn render_security_section(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Security");
+        ui.separator();
+        ui.label("Centralize security options such as session locks and recovery methods.");
+        ui.add_space(8.0);
+        ui.group(|ui| {
+            ui.label(RichText::new("Session security").strong());
+            ui.add(
+                egui::Slider::new(&mut self.security_auto_lock_minutes, 1..=30)
+                    .text("Auto-lock (minutes)"),
+            );
+            ui.checkbox(
+                &mut self.security_require_master_on_copy,
+                "Require master password on copy",
+            );
+        });
+        ui.add_space(8.0);
+        ui.group(|ui| {
+            ui.label(RichText::new("Recovery").strong());
+            ui.label("Recovery email");
+            ui.add(egui::TextEdit::singleline(&mut self.security_recovery_email));
+            if ui.button("Update recovery email").clicked() {
+                self.status_message = Some("Recovery email updated".to_string());
+            }
+        });
+        ui.add_space(8.0);
+        ui.group(|ui| {
+            ui.label(RichText::new("Trusted devices").strong());
+            let mut remove_index: Option<usize> = None;
+            for (index, device) in self.security_trusted_devices.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.label(device);
+                    if ui.button("Revoke").clicked() {
+                        remove_index = Some(index);
+                    }
+                });
+            }
+            if let Some(index) = remove_index {
+                self.security_trusted_devices.remove(index);
+                self.status_message = Some("Device revoked".to_string());
+            }
+            if ui.button("Add current device").clicked() {
+                self.security_trusted_devices
+                    .push("New device • Active now".to_string());
+                self.status_message = Some("Device added".to_string());
+            }
+        });
     }
 
     fn render_password_generator(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
