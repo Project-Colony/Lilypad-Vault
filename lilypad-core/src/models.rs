@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::crypto::{Ciphertext, CryptoAlgorithm, KeyMaterial};
 use crate::errors::{CoreError, Result};
 use rand_core::{OsRng, RngCore};
+use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -11,17 +12,41 @@ pub struct Vault {
     pub entries: Vec<Entry>,
     pub key_metadata: KeyMetadata,
     #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub created_at: u64,
+    #[serde(default)]
+    pub updated_at: u64,
+    #[serde(default)]
+    pub last_accessed_at: Option<u64>,
+    #[serde(default)]
     pub audit_log: Vec<AuditEvent>,
 }
 
 impl Vault {
     pub fn new(name: impl Into<String>, key_metadata: KeyMetadata) -> Self {
+        let now = current_timestamp();
         Self {
             name: name.into(),
             entries: Vec::new(),
             key_metadata,
+            description: None,
+            created_at: now,
+            updated_at: now,
+            last_accessed_at: None,
             audit_log: Vec::new(),
         }
+    }
+
+    pub fn set_description(&mut self, description: Option<String>) {
+        self.description = description;
+        self.touch();
+        self.record_event(AuditEvent::new("vault_description_updated", None));
+    }
+
+    pub fn record_access(&mut self) {
+        self.last_accessed_at = Some(current_timestamp());
+        self.record_event(AuditEvent::new("vault_accessed", None));
     }
 
     pub fn add_entry(&mut self, entry: Entry) -> Result<()> {
@@ -41,6 +66,7 @@ impl Vault {
             )));
         }
         self.entries.push(entry);
+        self.touch();
         self.record_event(AuditEvent::new("entry_added", None));
         Ok(())
     }
@@ -53,6 +79,7 @@ impl Vault {
             .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
         entry.ciphertext = ciphertext;
         entry.updated_at = current_timestamp();
+        self.touch();
         self.record_event(AuditEvent::new("entry_updated", Some(label)));
         Ok(())
     }
@@ -64,8 +91,105 @@ impl Vault {
             .position(|entry| entry.label == label)
             .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
         let removed = self.entries.remove(index);
+        self.touch();
         self.record_event(AuditEvent::new("entry_removed", Some(label)));
         Ok(removed)
+    }
+
+    pub fn rename_entry(&mut self, label: &str, new_label: impl Into<String>) -> Result<()> {
+        let new_label = new_label.into();
+        if new_label.trim().is_empty() {
+            return Err(CoreError::InvalidInput(
+                "entry label cannot be empty".to_string(),
+            ));
+        }
+        if label == new_label {
+            return Ok(());
+        }
+        if self
+            .entries
+            .iter()
+            .any(|existing| existing.label == new_label)
+        {
+            return Err(CoreError::AlreadyExists(format!(
+                "entry label '{}' already exists",
+                new_label
+            )));
+        }
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.label == label)
+            .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
+        entry.label = new_label;
+        entry.updated_at = current_timestamp();
+        self.touch();
+        self.record_event(AuditEvent::new("entry_renamed", Some(&entry.label)));
+        Ok(())
+    }
+
+    pub fn update_entry_metadata(&mut self, label: &str, metadata: EntryMetadata) -> Result<()> {
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.label == label)
+            .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
+        entry.metadata = metadata;
+        entry.updated_at = current_timestamp();
+        self.touch();
+        self.record_event(AuditEvent::new("entry_metadata_updated", Some(label)));
+        Ok(())
+    }
+
+    pub fn set_entry_folder(&mut self, label: &str, folder: Option<String>) -> Result<()> {
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.label == label)
+            .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
+        entry.metadata.folder = folder;
+        entry.updated_at = current_timestamp();
+        self.touch();
+        self.record_event(AuditEvent::new("entry_folder_updated", Some(label)));
+        Ok(())
+    }
+
+    pub fn add_entry_tag(&mut self, label: &str, tag: impl Into<String>) -> Result<()> {
+        let tag = tag.into();
+        if tag.trim().is_empty() {
+            return Err(CoreError::InvalidInput("tag cannot be empty".to_string()));
+        }
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.label == label)
+            .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
+        if !entry.metadata.tags.iter().any(|existing| existing == &tag) {
+            entry.metadata.tags.push(tag);
+            entry.updated_at = current_timestamp();
+            self.touch();
+            self.record_event(AuditEvent::new("entry_tag_added", Some(label)));
+        }
+        Ok(())
+    }
+
+    pub fn remove_entry_tag(&mut self, label: &str, tag: &str) -> Result<()> {
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.label == label)
+            .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
+        let index = entry
+            .metadata
+            .tags
+            .iter()
+            .position(|existing| existing == tag)
+            .ok_or_else(|| CoreError::NotFound(format!("tag '{tag}'")))?;
+        entry.metadata.tags.remove(index);
+        entry.updated_at = current_timestamp();
+        self.touch();
+        self.record_event(AuditEvent::new("entry_tag_removed", Some(label)));
+        Ok(())
     }
 
     pub fn find_entry(&self, label: &str) -> Option<&Entry> {
@@ -80,11 +204,53 @@ impl Vault {
             .collect()
     }
 
+    pub fn entries_by_folder(&self, folder: &str) -> Vec<&Entry> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.metadata.folder.as_deref() == Some(folder))
+            .collect()
+    }
+
+    pub fn entries_by_tag(&self, tag: &str) -> Vec<&Entry> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.metadata.tags.iter().any(|value| value == tag))
+            .collect()
+    }
+
+    pub fn list_folders(&self) -> Vec<String> {
+        let mut folders = BTreeSet::new();
+        for entry in &self.entries {
+            if let Some(folder) = entry.metadata.folder.as_deref() {
+                if !folder.trim().is_empty() {
+                    folders.insert(folder.to_string());
+                }
+            }
+        }
+        folders.into_iter().collect()
+    }
+
+    pub fn list_tags(&self) -> Vec<String> {
+        let mut tags = BTreeSet::new();
+        for entry in &self.entries {
+            for tag in &entry.metadata.tags {
+                if !tag.trim().is_empty() {
+                    tags.insert(tag.to_string());
+                }
+            }
+        }
+        tags.into_iter().collect()
+    }
+
     fn record_event(&mut self, mut event: AuditEvent) {
         if event.timestamp == 0 {
             event.timestamp = current_timestamp();
         }
         self.audit_log.push(event);
+    }
+
+    fn touch(&mut self) {
+        self.updated_at = current_timestamp();
     }
 }
 
@@ -286,6 +452,8 @@ mod tests {
         let metadata = KeyMetadata::new(&key, CryptoAlgorithm::XChaCha20Poly1305);
         let vault = Vault::new("primary", metadata);
         assert_eq!(vault.entries.len(), 0);
+        assert!(vault.created_at > 0);
+        assert_eq!(vault.created_at, vault.updated_at);
     }
 
     #[test]
@@ -318,8 +486,17 @@ mod tests {
         assert!(vault.find_entry("email").is_some());
         let updated = encrypt(&key, b"new").expect("encrypt");
         vault.update_entry("email", updated).expect("update");
-        let removed = vault.remove_entry("email").expect("remove");
-        assert_eq!(removed.label, "email");
-        assert!(vault.find_entry("email").is_none());
+        vault
+            .add_entry_tag("email", "personal")
+            .expect("tag add");
+        vault
+            .set_entry_folder("email", Some("accounts".to_string()))
+            .expect("folder update");
+        vault.rename_entry("email", "primary").expect("rename");
+        assert_eq!(vault.list_tags(), vec!["personal".to_string()]);
+        assert_eq!(vault.list_folders(), vec!["accounts".to_string()]);
+        let removed = vault.remove_entry("primary").expect("remove");
+        assert_eq!(removed.label, "primary");
+        assert!(vault.find_entry("primary").is_none());
     }
 }
