@@ -688,17 +688,13 @@ impl LilypadApp {
         });
         ui.add_space(8.0);
         ui.vertical_centered(|ui| {
-            let button = egui::Button::new("Export .lily file")
-                .min_size(egui::vec2(220.0, 44.0));
+            let button = egui::Button::new("Export .lily file").min_size(egui::vec2(220.0, 44.0));
             if ui.add(button).clicked() {
                 self.export_vault_file();
             }
         });
         let export_path = vault_path_with_extension(&self.config, &self.active_vault, "lily");
-        ui.label(format!(
-            "Vault file location: {}",
-            export_path.display()
-        ));
+        ui.label(format!("Vault file location: {}", export_path.display()));
 
         if self.show_add_entry {
             ui.add_space(12.0);
@@ -762,8 +758,7 @@ impl LilypadApp {
             ui.add_space(6.0);
             ui.label("Username");
             ui.add(
-                egui::TextEdit::singleline(&mut self.entry_username)
-                    .hint_text("username or email"),
+                egui::TextEdit::singleline(&mut self.entry_username).hint_text("username or email"),
             );
             ui.add_space(6.0);
             ui.label("Password");
@@ -786,8 +781,8 @@ impl LilypadApp {
                 if ui.button("Cancel").clicked() {
                     self.show_add_entry = false;
                 }
-                let save_enabled = !self.entry_title.trim().is_empty()
-                    && !self.entry_password.trim().is_empty();
+                let save_enabled =
+                    !self.entry_title.trim().is_empty() && !self.entry_password.trim().is_empty();
                 if ui
                     .add_enabled(save_enabled, egui::Button::new("Save entry"))
                     .clicked()
@@ -803,9 +798,8 @@ impl LilypadApp {
                             self.status_message = Some("Entry saved to vault".to_string());
                         }
                         Err(error) => {
-                            self.status_message = Some(format!(
-                                "Unable to save entry to vault: {error}"
-                            ));
+                            self.status_message =
+                                Some(format!("Unable to save entry to vault: {error}"));
                         }
                     }
                 }
@@ -834,10 +828,8 @@ impl LilypadApp {
         }
         match fs::copy(&export_path, &target_path) {
             Ok(_) => {
-                self.status_message = Some(format!(
-                    "Exported .lily file to {}",
-                    target_path.display()
-                ));
+                self.status_message =
+                    Some(format!("Exported .lily file to {}", target_path.display()));
             }
             Err(error) => {
                 self.status_message = Some(format!(
@@ -916,7 +908,10 @@ impl LilypadApp {
             ui.label("Time zone");
             ui.add(egui::TextEdit::singleline(&mut self.account_timezone));
             ui.add_space(6.0);
-            ui.checkbox(&mut self.account_two_factor_enabled, "Two-factor authentication");
+            ui.checkbox(
+                &mut self.account_two_factor_enabled,
+                "Two-factor authentication",
+            );
             ui.checkbox(
                 &mut self.account_marketing_opt_in,
                 "Product updates and tips",
@@ -948,7 +943,9 @@ impl LilypadApp {
         ui.group(|ui| {
             ui.label(RichText::new("Recovery").strong());
             ui.label("Recovery email");
-            ui.add(egui::TextEdit::singleline(&mut self.security_recovery_email));
+            ui.add(egui::TextEdit::singleline(
+                &mut self.security_recovery_email,
+            ));
             if ui.button("Update recovery email").clicked() {
                 self.status_message = Some("Recovery email updated".to_string());
             }
@@ -1086,11 +1083,10 @@ impl LilypadApp {
         }
 
         let metadata = match key_file {
-            KeyFile::Kdf { .. } => KeyMetadata::new(key, CryptoAlgorithm::XChaCha20Poly1305)
-                .with_kdf("argon2id"),
-            KeyFile::Raw { .. } => {
-                KeyMetadata::new(key, CryptoAlgorithm::XChaCha20Poly1305)
+            KeyFile::Kdf { .. } => {
+                KeyMetadata::new(key, CryptoAlgorithm::XChaCha20Poly1305).with_kdf("argon2id")
             }
+            KeyFile::Raw { .. } => KeyMetadata::new(key, CryptoAlgorithm::XChaCha20Poly1305),
         };
         let vault = Vault::new(&self.active_vault, metadata);
         self.store.save_vault(&vault, key)?;
@@ -1319,8 +1315,7 @@ fn decode_hex(hex: &str) -> Result<Vec<u8>> {
     let mut bytes = Vec::with_capacity(value.len() / 2);
     for chunk in value.as_bytes().chunks(2) {
         let chunk_str = std::str::from_utf8(chunk)?;
-        let byte =
-            u8::from_str_radix(chunk_str, 16).map_err(|_| anyhow!("invalid hex string"))?;
+        let byte = u8::from_str_radix(chunk_str, 16).map_err(|_| anyhow!("invalid hex string"))?;
         bytes.push(byte);
     }
     Ok(bytes)
