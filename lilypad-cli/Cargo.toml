@@ -7,5 +7,8 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+clap.workspace = true
 lilypad-core = { path = "../lilypad-core" }
 lilypad-storage = { path = "../lilypad-storage" }
+serde.workspace = true
+serde_json.workspace = true
