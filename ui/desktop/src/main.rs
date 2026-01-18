@@ -302,25 +302,65 @@ impl LilypadApp {
                 ui.horizontal_centered(|ui| {
                     for (index, (label, icon)) in nav_items.iter().enumerate() {
                         let selected = self.selected_category == index;
-                        let text = format!("{icon}\n{label}");
                         let text_color = if selected {
                             Color32::from_rgb(16, 28, 46)
                         } else {
                             Color32::from_gray(60)
                         };
 
-                        let button = egui::Button::new(
-                            RichText::new(text).size(15.0).strong().color(text_color),
-                        )
-                        .min_size(egui::vec2(108.0, 70.0))
-                        .fill(if selected {
-                            accent
-                        } else {
-                            Color32::from_white_alpha(0)
-                        })
-                        .corner_radius(12.0);
+                        let desired_size = egui::vec2(108.0, 70.0);
+                        let (rect, response) =
+                            ui.allocate_exact_size(desired_size, egui::Sense::click());
 
-                        if ui.add(button).clicked() {
+                        if ui.is_rect_visible(rect) {
+                            let fill = if selected {
+                                accent
+                            } else {
+                                Color32::from_white_alpha(0)
+                            };
+                            let rounding = egui::CornerRadius::same(12);
+                            ui.painter().rect(
+                                rect,
+                                rounding,
+                                fill,
+                                egui::Stroke::NONE,
+                                egui::StrokeKind::Inside,
+                            );
+
+                            let icon_font = egui::FontId::proportional(22.0);
+                            let label_font = egui::FontId::proportional(14.0);
+                            let icon_galley = ui.fonts_mut(|fonts| {
+                                fonts.layout_no_wrap(icon.to_string(), icon_font, text_color)
+                            });
+                            let label_galley = ui.fonts_mut(|fonts| {
+                                fonts.layout_no_wrap(label.to_string(), label_font, text_color)
+                            });
+                            let spacing = 4.0;
+                            let icon_height = icon_galley.size().y;
+                            let label_height = label_galley.size().y;
+                            let total_height =
+                                icon_height + spacing + label_height;
+                            let start_y = rect.center().y - total_height / 2.0;
+
+                            ui.painter().galley(
+                                egui::pos2(
+                                    rect.center().x - icon_galley.size().x / 2.0,
+                                    start_y,
+                                ),
+                                icon_galley.clone(),
+                                text_color,
+                            );
+                            ui.painter().galley(
+                                egui::pos2(
+                                    rect.center().x - label_galley.size().x / 2.0,
+                                    start_y + icon_height + spacing,
+                                ),
+                                label_galley,
+                                text_color,
+                            );
+                        }
+
+                        if response.clicked() {
                             self.selected_category = index;
                         }
                     }
