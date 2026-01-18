@@ -3,6 +3,8 @@ use lilypad_core::{AppConfig, Entry, KeyMetadata, Vault};
 use lilypad_storage::LocalStore;
 use tempfile::tempdir;
 
+const VAULT_HEADER: &[u8] = b"LILYPAD_VAULT_V1\n";
+
 #[test]
 fn roundtrip_save_and_load_vault() {
     let dir = tempdir().expect("tempdir");
@@ -19,6 +21,8 @@ fn roundtrip_save_and_load_vault() {
     vault.add_entry(Entry::new("bank", ciphertext));
 
     store.save_vault(&vault, &key).expect("save");
+    let payload = store.sync_payload("primary").expect("payload");
+    assert!(payload.starts_with(VAULT_HEADER));
     let loaded = store.load_vault("primary", &key).expect("load");
 
     assert_eq!(vault, loaded);

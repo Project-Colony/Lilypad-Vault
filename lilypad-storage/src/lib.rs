@@ -2,7 +2,12 @@ use anyhow::{anyhow, Result};
 use lilypad_core::{decrypt, encrypt, AppConfig, KeyMaterial, KeyMetadata, Vault};
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
+
+const VAULT_EXTENSION: &str = "lily";
+const LEGACY_EXTENSION: &str = "json";
+const VAULT_HEADER: &[u8] = b"LILYPAD_VAULT_V1\n";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StoreStatus {
@@ -68,18 +73,28 @@ impl LocalStore {
             ciphertext,
         };
         let serialized = serde_json::to_vec_pretty(&stored)?;
+        let mut bytes = Vec::with_capacity(VAULT_HEADER.len() + serialized.len());
+        bytes.extend_from_slice(VAULT_HEADER);
+        bytes.extend_from_slice(&serialized);
         let path = self.vault_path(&vault.name)?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(path, serialized)?;
+        self.write_vault_file(&path, &bytes)?;
         Ok(())
     }
 
     pub fn load_vault(&self, name: &str, key: &KeyMaterial) -> Result<Vault> {
         let path = self.vault_path(name)?;
-        let bytes = fs::read(path)?;
-        let stored: StoredVault = serde_json::from_slice(&bytes)?;
+        let bytes = fs::read(&path)?;
+        let stored_bytes = if bytes.starts_with(VAULT_HEADER) {
+            &bytes[VAULT_HEADER.len()..]
+        } else if bytes.starts_with(b"{") {
+            bytes.as_slice()
+        } else {
+            return Err(anyhow!(
+                "vault file '{}' has an invalid header",
+                path.display()
+            ));
+        };
+        let stored: StoredVault = serde_json::from_slice(stored_bytes)?;
         if stored.key_metadata.key_id != key.key_id() {
             return Err(anyhow!(
                 "key id mismatch: expected {}, got {}",
@@ -96,7 +111,21 @@ impl LocalStore {
         if name.trim().is_empty() {
             return Err(anyhow!("vault name cannot be empty"));
         }
-        Ok(self.root.join("vaults").join(format!("{name}.json")))
+        let lily_path = self.vault_path_with_extension(name, VAULT_EXTENSION);
+        if lily_path.exists() {
+            return Ok(lily_path);
+        }
+        let legacy_path = self.vault_path_with_extension(name, LEGACY_EXTENSION);
+        if legacy_path.exists() {
+            return Ok(legacy_path);
+        }
+        Ok(lily_path)
+    }
+
+    fn vault_path_with_extension(&self, name: &str, extension: &str) -> PathBuf {
+        self.root
+            .join("vaults")
+            .join(format!("{name}.{extension}"))
     }
 
     pub fn sync_backend(&self) -> Option<&dyn SyncBackend> {
@@ -110,10 +139,25 @@ impl LocalStore {
 
     pub fn apply_sync_payload(&self, name: &str, payload: &[u8]) -> Result<()> {
         let path = self.vault_path(name)?;
+        self.write_vault_file(&path, payload)?;
+        Ok(())
+    }
+
+    fn write_vault_file(&self, path: &PathBuf, bytes: &[u8]) -> Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(path, payload)?;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+        }
+        file.write_all(bytes)?;
         Ok(())
     }
 }
