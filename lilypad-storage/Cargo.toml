@@ -9,3 +9,7 @@ license.workspace = true
 anyhow.workspace = true
 lilypad-core = { path = "../lilypad-core" }
 serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
