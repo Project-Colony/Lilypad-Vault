@@ -686,6 +686,16 @@ impl LilypadApp {
                 self.status_message = Some("Vault locked".to_string());
             }
         });
+        ui.add_space(8.0);
+        ui.vertical_centered(|ui| {
+            let button = egui::Button::new("Export .lily file")
+                .min_size(egui::vec2(220.0, 44.0));
+            if ui.add(button).clicked() {
+                self.open_vault_export_folder();
+            }
+        });
+        let export_path = vault_path_with_extension(&self.config, &self.active_vault, "lily");
+        ui.label(format!("Export location: {}", export_path.display()));
 
         if self.show_add_entry {
             ui.add_space(12.0);
@@ -798,6 +808,33 @@ impl LilypadApp {
                 }
             });
         });
+    }
+
+    fn open_vault_export_folder(&mut self) {
+        let export_path = vault_path_with_extension(&self.config, &self.active_vault, "lily");
+        if !export_path.exists() {
+            self.status_message = Some("No .lily file found yet.".to_string());
+            return;
+        }
+        let Some(parent) = export_path.parent() else {
+            self.status_message = Some("Unable to locate export folder.".to_string());
+            return;
+        };
+        let url = format!("file://{}", parent.display());
+        match webbrowser::open(&url) {
+            Ok(()) => {
+                self.status_message = Some(format!(
+                    "Export folder opened: {}",
+                    parent.display()
+                ));
+            }
+            Err(error) => {
+                self.status_message = Some(format!(
+                    "Unable to open export folder {}: {error}",
+                    parent.display()
+                ));
+            }
+        }
     }
 
     fn render_settings_modal(&mut self, ctx: &egui::Context) {
