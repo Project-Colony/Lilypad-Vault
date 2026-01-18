@@ -116,15 +116,18 @@ impl Vault {
                 new_label
             )));
         }
-        let entry = self
-            .entries
-            .iter_mut()
-            .find(|entry| entry.label == label)
-            .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
-        entry.label = new_label;
-        entry.updated_at = current_timestamp();
+        let event_label = {
+            let entry = self
+                .entries
+                .iter_mut()
+                .find(|entry| entry.label == label)
+                .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
+            entry.label = new_label;
+            entry.updated_at = current_timestamp();
+            entry.label.clone()
+        };
         self.touch();
-        self.record_event(AuditEvent::new("entry_renamed", Some(&entry.label)));
+        self.record_event(AuditEvent::new("entry_renamed", Some(&event_label)));
         Ok(())
     }
 
