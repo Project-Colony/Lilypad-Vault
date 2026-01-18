@@ -1,6 +1,6 @@
 # lilypad-cli
 
-Interface en ligne de commande pour interagir avec Lilypad.
+Command-line interface for interacting with Lilypad.
 
 ## Usage
 
@@ -8,25 +8,25 @@ Interface en ligne de commande pour interagir avec Lilypad.
 cargo run -p lilypad-cli -- --help
 ```
 
-## Commandes
+## Commands
 
 ```bash
-# Initialiser un coffre et générer une clé locale
+# Initialize a vault and generate a local key
 cargo run -p lilypad-cli -- init primary
 
-# Ajouter une entrée chiffrée
-cargo run -p lilypad-cli -- add primary email "mot-de-passe"
+# Add an encrypted entry
+cargo run -p lilypad-cli -- add primary email "password"
 
-# Lister les entrées
+# List entries
 cargo run -p lilypad-cli -- list primary
 
-# Lire une entrée
+# Read an entry
 cargo run -p lilypad-cli -- get primary email
 ```
 
 ## Options
 
 ```bash
-# Changer le dossier de stockage (par défaut: .lilypad)
+# Change the storage directory (default: .lilypad)
 cargo run -p lilypad-cli -- --data-dir .data init primary
 ```
