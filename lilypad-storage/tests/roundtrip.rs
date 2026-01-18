@@ -3,7 +3,7 @@ use lilypad_core::{AppConfig, Entry, KeyMetadata, Vault};
 use lilypad_storage::LocalStore;
 use tempfile::tempdir;
 
-const VAULT_HEADER: &[u8] = b"LILYPAD_VAULT_V1\n";
+const VAULT_HEADER: &[u8] = b"LILYPAD_VAULT_V1\n# Lilypad vault (encrypted)\n";
 
 #[test]
 fn roundtrip_save_and_load_vault() {
