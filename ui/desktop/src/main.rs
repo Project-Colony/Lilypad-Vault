@@ -1,9 +1,6 @@
 use directories::ProjectDirs;
 use eframe::{egui, App};
-use egui::{
-    Align2, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, Margin, OutputCommand,
-    RichText,
-};
+use egui::{Align2, Color32, CornerRadius, Margin, OutputCommand, RichText};
 use rand::Rng;
 use std::fs;
 
@@ -12,114 +9,8 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Lilypad Desktop",
         native_options,
-        Box::new(|cc| {
-            configure_fonts(&cc.egui_ctx);
-            Ok(Box::<LilypadApp>::default())
-        }),
+        Box::new(|_cc| Ok(Box::<LilypadApp>::default())),
     )
-}
-
-fn configure_fonts(ctx: &egui::Context) {
-    let mut fonts = FontDefinitions::default();
-
-    fonts.font_data.insert(
-        "JetBrainsMono-Regular".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-Regular.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-Medium".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-Medium.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-SemiBold".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-SemiBold.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-Bold".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-Bold.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-ExtraBold".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-ExtraBold.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-Light".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-Light.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-ExtraLight".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-ExtraLight.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-Thin".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-Thin.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-Italic".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-Italic.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-MediumItalic".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-MediumItalic.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-SemiBoldItalic".to_string(),
-        FontData::from_static(include_bytes!(
-            "../../Assets/Fonts/JetBrainsMono-SemiBoldItalic.ttf"
-        )),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-BoldItalic".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-BoldItalic.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-ExtraBoldItalic".to_string(),
-        FontData::from_static(include_bytes!(
-            "../../Assets/Fonts/JetBrainsMono-ExtraBoldItalic.ttf"
-        )),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-LightItalic".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-LightItalic.ttf")),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-ExtraLightItalic".to_string(),
-        FontData::from_static(include_bytes!(
-            "../../Assets/Fonts/JetBrainsMono-ExtraLightItalic.ttf"
-        )),
-    );
-    fonts.font_data.insert(
-        "JetBrainsMono-ThinItalic".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-ThinItalic.ttf")),
-    );
-
-    let mix = vec![
-        "JetBrainsMono-Regular",
-        "JetBrainsMono-Medium",
-        "JetBrainsMono-SemiBold",
-        "JetBrainsMono-Bold",
-        "JetBrainsMono-ExtraBold",
-        "JetBrainsMono-Light",
-        "JetBrainsMono-ExtraLight",
-        "JetBrainsMono-Thin",
-        "JetBrainsMono-Italic",
-        "JetBrainsMono-MediumItalic",
-        "JetBrainsMono-SemiBoldItalic",
-        "JetBrainsMono-BoldItalic",
-        "JetBrainsMono-ExtraBoldItalic",
-        "JetBrainsMono-LightItalic",
-        "JetBrainsMono-ExtraLightItalic",
-        "JetBrainsMono-ThinItalic",
-    ];
-
-    fonts
-        .families
-        .insert(FontFamily::Proportional, mix.iter().map(|name| (*name).to_string()).collect());
-    fonts
-        .families
-        .insert(FontFamily::Monospace, mix.iter().map(|name| (*name).to_string()).collect());
-
-    ctx.set_fonts(fonts);
 }
 
 struct LilypadApp {
