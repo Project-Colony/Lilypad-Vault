@@ -12,14 +12,14 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Parser)]
 #[command(
     name = "lilypad",
-    about = "CLI minimale pour gérer des coffres Lilypad.",
+    about = "Minimal CLI for managing Lilypad vaults.",
     long_about = None
 )]
 struct Cli {
-    /// Dossier de stockage (par défaut: .lilypad)
+    /// Storage directory (default: .lilypad)
     #[arg(long, value_name = "DIR")]
     data_dir: Option<String>,
-    /// Mot de passe maître (ou variable d'environnement LILYPAD_MASTER_PASSWORD)
+    /// Master password (or LILYPAD_MASTER_PASSWORD environment variable)
     #[arg(
         long,
         value_name = "PASSWORD",
@@ -33,69 +33,69 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Initialise un coffre et génère une clé locale.
+    /// Initialize a vault and generate a local key.
     Init {
-        /// Nom du coffre à créer
+        /// Vault name to create
         #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Utiliser un mot de passe maître au lieu d'une clé aléatoire
+        /// Use a master password instead of a random key
         #[arg(long)]
         use_master_password: bool,
     },
-    /// Ajoute une entrée chiffrée à un coffre.
+    /// Add an encrypted entry to a vault.
     Add {
-        /// Nom du coffre à mettre à jour
+        /// Vault name to update
         #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Libellé de l'entrée
+        /// Entry label
         #[arg(value_parser = non_empty_value)]
         label: String,
-        /// Valeur à chiffrer
+        /// Value to encrypt
         #[arg(value_parser = non_empty_value)]
         value: String,
     },
-    /// Liste les entrées d'un coffre.
+    /// List entries in a vault.
     List {
-        /// Nom du coffre à inspecter
+        /// Vault name to inspect
         #[arg(value_parser = non_empty_value)]
         vault: String,
     },
-    /// Récupère une entrée d'un coffre.
+    /// Fetch an entry from a vault.
     Get {
-        /// Nom du coffre à lire
+        /// Vault name to read
         #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Libellé de l'entrée
+        /// Entry label
         #[arg(value_parser = non_empty_value)]
         label: String,
     },
-    /// Met à jour la valeur d'une entrée existante.
+    /// Update the value of an existing entry.
     Update {
-        /// Nom du coffre à mettre à jour
+        /// Vault name to update
         #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Libellé de l'entrée
+        /// Entry label
         #[arg(value_parser = non_empty_value)]
         label: String,
-        /// Nouvelle valeur
+        /// New value
         #[arg(value_parser = non_empty_value)]
         value: String,
     },
-    /// Supprime une entrée d'un coffre.
+    /// Remove an entry from a vault.
     Remove {
-        /// Nom du coffre à mettre à jour
+        /// Vault name to update
         #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Libellé de l'entrée
+        /// Entry label
         #[arg(value_parser = non_empty_value)]
         label: String,
     },
-    /// Recherche des entrées par libellé.
+    /// Search entries by label.
     Search {
-        /// Nom du coffre à inspecter
+        /// Vault name to inspect
         #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Mot-clé
+        /// Keyword
         #[arg(value_parser = non_empty_value)]
         query: String,
     },
@@ -113,7 +113,7 @@ fn main() -> Result<()> {
     let mut config = default_config();
     if let Some(data_dir) = cli.data_dir {
         if data_dir.trim().is_empty() {
-            return Err(anyhow!("data_dir ne peut pas être vide"));
+            return Err(anyhow!("data_dir cannot be empty"));
         }
         config.data_dir = data_dir;
     }
@@ -190,12 +190,12 @@ fn init_vault(
 ) -> Result<()> {
     let key_path = key_path(config);
     if key_path.exists() {
-        return Err(anyhow!("clé déjà initialisée dans {}", key_path.display()));
+        return Err(anyhow!("key already initialized at {}", key_path.display()));
     }
 
     let (key, key_file) = if use_master_password {
         let password = master_password.ok_or_else(|| {
-            anyhow!("mot de passe maître requis (--master-password ou LILYPAD_MASTER_PASSWORD)")
+            anyhow!("master password required (--master-password or LILYPAD_MASTER_PASSWORD)")
         })?;
         let params = KeyDerivationParams::generate();
         let key = derive_key(password, &params)?;
@@ -221,7 +221,7 @@ fn init_vault(
     store.save_vault(&vault, &key)?;
 
     println!(
-        "Coffre '{}' initialisé dans {}.",
+        "Vault '{}' initialized in {}.",
         vault.name, config.data_dir
     );
     Ok(())
@@ -238,11 +238,11 @@ fn add_entry(
     let key = load_key(&key_path(config), master_password)?;
     let mut vault = store
         .load_vault(vault_name, &key)
-        .with_context(|| format!("coffre introuvable: {vault_name}"))?;
+        .with_context(|| format!("vault not found: {vault_name}"))?;
     let ciphertext = encrypt(&key, value.as_bytes())?;
     vault.add_entry(Entry::new(label, ciphertext))?;
     store.save_vault(&vault, &key)?;
-    println!("Entrée '{label}' ajoutée au coffre '{vault_name}'.");
+    println!("Entry '{label}' added to vault '{vault_name}'.");
     Ok(())
 }
 
@@ -255,14 +255,14 @@ fn list_entries(
     let key = load_key(&key_path(config), master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
-        .with_context(|| format!("coffre introuvable: {vault_name}"))?;
+        .with_context(|| format!("vault not found: {vault_name}"))?;
     if vault.entries.is_empty() {
-        println!("Aucune entrée dans '{vault_name}'.");
+        println!("No entries in '{vault_name}'.");
         return Ok(());
     }
-    println!("Entrées dans '{vault_name}':");
+    println!("Entries in '{vault_name}':");
     for entry in &vault.entries {
-        println!("- {} (maj: {})", entry.label, entry.updated_at);
+        println!("- {} (updated: {})", entry.label, entry.updated_at);
     }
     Ok(())
 }
@@ -277,10 +277,10 @@ fn get_entry(
     let key = load_key(&key_path(config), master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
-        .with_context(|| format!("coffre introuvable: {vault_name}"))?;
+        .with_context(|| format!("vault not found: {vault_name}"))?;
     let entry = vault
         .find_entry(label)
-        .ok_or_else(|| anyhow!("entrée '{label}' introuvable"))?;
+        .ok_or_else(|| anyhow!("entry '{label}' not found"))?;
     let plaintext = decrypt(&key, &entry.ciphertext)?;
     println!("{}", String::from_utf8_lossy(&plaintext));
     Ok(())
@@ -297,13 +297,13 @@ fn update_entry(
     let key = load_key(&key_path(config), master_password)?;
     let mut vault = store
         .load_vault(vault_name, &key)
-        .with_context(|| format!("coffre introuvable: {vault_name}"))?;
+        .with_context(|| format!("vault not found: {vault_name}"))?;
     let ciphertext = encrypt(&key, value.as_bytes())?;
     vault
         .update_entry(label, ciphertext)
-        .with_context(|| format!("entrée '{label}' introuvable"))?;
+        .with_context(|| format!("entry '{label}' not found"))?;
     store.save_vault(&vault, &key)?;
-    println!("Entrée '{label}' mise à jour.");
+    println!("Entry '{label}' updated.");
     Ok(())
 }
 
@@ -317,12 +317,12 @@ fn remove_entry(
     let key = load_key(&key_path(config), master_password)?;
     let mut vault = store
         .load_vault(vault_name, &key)
-        .with_context(|| format!("coffre introuvable: {vault_name}"))?;
+        .with_context(|| format!("vault not found: {vault_name}"))?;
     vault
         .remove_entry(label)
-        .with_context(|| format!("entrée '{label}' introuvable"))?;
+        .with_context(|| format!("entry '{label}' not found"))?;
     store.save_vault(&vault, &key)?;
-    println!("Entrée '{label}' supprimée.");
+    println!("Entry '{label}' removed.");
     Ok(())
 }
 
@@ -336,13 +336,13 @@ fn search_entries(
     let key = load_key(&key_path(config), master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
-        .with_context(|| format!("coffre introuvable: {vault_name}"))?;
+        .with_context(|| format!("vault not found: {vault_name}"))?;
     let matches = vault.search_entries(query);
     if matches.is_empty() {
-        println!("Aucune entrée ne correspond à '{query}'.");
+        println!("No entries match '{query}'.");
         return Ok(());
     }
-    println!("Résultats pour '{query}':");
+    println!("Results for '{query}':");
     for entry in matches {
         println!("- {}", entry.label);
     }
@@ -365,7 +365,7 @@ fn save_key(path: &Path, key_file: &KeyFile) -> Result<()> {
 fn load_key(path: &Path, master_password: Option<&str>) -> Result<KeyMaterial> {
     let payload = fs::read(path).with_context(|| {
         format!(
-            "clé introuvable: {} (exécutez `lilypad init`)",
+            "key not found: {} (run `lilypad init`)",
             path.display()
         )
     })?;
@@ -373,13 +373,13 @@ fn load_key(path: &Path, master_password: Option<&str>) -> Result<KeyMaterial> {
     match key_file {
         KeyFile::Raw { key_hex } => {
             let bytes = decode_hex(&key_hex)?;
-            KeyMaterial::from_bytes(&bytes).context("clé invalide")
+            KeyMaterial::from_bytes(&bytes).context("invalid key")
         }
         KeyFile::Kdf { params } => {
             let password = master_password.ok_or_else(|| {
-                anyhow!("mot de passe maître requis (--master-password ou LILYPAD_MASTER_PASSWORD)")
+                anyhow!("master password required (--master-password or LILYPAD_MASTER_PASSWORD)")
             })?;
-            derive_key(password, &params).context("kdf invalide")
+            derive_key(password, &params).context("invalid kdf")
         }
     }
 }
@@ -391,16 +391,16 @@ fn encode_hex(bytes: &[u8]) -> String {
 fn decode_hex(hex: &str) -> Result<Vec<u8>> {
     let value = hex.trim();
     if value.is_empty() {
-        return Err(anyhow!("clé vide"));
+        return Err(anyhow!("empty key"));
     }
     if value.len() % 2 != 0 {
-        return Err(anyhow!("clé hexadécimale invalide"));
+        return Err(anyhow!("invalid hex key"));
     }
     let mut bytes = Vec::with_capacity(value.len() / 2);
     for chunk in value.as_bytes().chunks(2) {
         let chunk_str = std::str::from_utf8(chunk)?;
         let byte =
-            u8::from_str_radix(chunk_str, 16).map_err(|_| anyhow!("clé hexadécimale invalide"))?;
+            u8::from_str_radix(chunk_str, 16).map_err(|_| anyhow!("invalid hex key"))?;
         bytes.push(byte);
     }
     Ok(bytes)
@@ -408,7 +408,7 @@ fn decode_hex(hex: &str) -> Result<Vec<u8>> {
 
 fn non_empty_value(value: &str) -> Result<String, String> {
     if value.trim().is_empty() {
-        return Err("la valeur ne peut pas être vide".to_string());
+        return Err("value cannot be empty".to_string());
     }
     Ok(value.to_string())
 }
