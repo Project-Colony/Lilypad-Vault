@@ -4,7 +4,11 @@ use std::fmt;
 pub enum CoreError {
     InvalidKeyLength { expected: usize, actual: usize },
     Crypto(String),
+    Kdf(String),
     Serialization(String),
+    NotFound(String),
+    AlreadyExists(String),
+    InvalidInput(String),
 }
 
 impl fmt::Display for CoreError {
@@ -15,7 +19,11 @@ impl fmt::Display for CoreError {
                 "invalid key length: expected {expected} bytes, got {actual} bytes"
             ),
             Self::Crypto(message) => write!(f, "crypto error: {message}"),
+            Self::Kdf(message) => write!(f, "kdf error: {message}"),
             Self::Serialization(message) => write!(f, "serialization error: {message}"),
+            Self::NotFound(message) => write!(f, "not found: {message}"),
+            Self::AlreadyExists(message) => write!(f, "already exists: {message}"),
+            Self::InvalidInput(message) => write!(f, "invalid input: {message}"),
         }
     }
 }

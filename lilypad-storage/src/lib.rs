@@ -96,10 +96,7 @@ impl LocalStore {
         if name.trim().is_empty() {
             return Err(anyhow!("vault name cannot be empty"));
         }
-        Ok(self
-            .root
-            .join("vaults")
-            .join(format!("{name}.json")))
+        Ok(self.root.join("vaults").join(format!("{name}.json")))
     }
 
     pub fn sync_backend(&self) -> Option<&dyn SyncBackend> {

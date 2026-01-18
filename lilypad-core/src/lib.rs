@@ -2,7 +2,9 @@ pub mod crypto;
 pub mod errors;
 pub mod models;
 
-pub use crypto::{decrypt, encrypt, Ciphertext, CryptoAlgorithm, KeyMaterial};
+pub use crypto::{
+    decrypt, derive_key, encrypt, Ciphertext, CryptoAlgorithm, KeyDerivationParams, KeyMaterial,
+};
 pub use errors::{CoreError, Result};
 pub use models::{Entry, KeyMetadata, Vault};
 

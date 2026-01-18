@@ -24,16 +24,24 @@ fn configure_fonts(ctx: &egui::Context) {
 
     fonts.font_data.insert(
         "JetBrainsMono-Regular".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-Regular.ttf")).into(),
+        FontData::from_static(include_bytes!(
+            "../../Assets/Fonts/JetBrainsMono-Regular.ttf"
+        ))
+        .into(),
     );
     fonts.font_data.insert(
         "JetBrainsMono-Medium".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-Medium.ttf")).into(),
+        FontData::from_static(include_bytes!(
+            "../../Assets/Fonts/JetBrainsMono-Medium.ttf"
+        ))
+        .into(),
     );
     fonts.font_data.insert(
         "JetBrainsMono-SemiBold".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-SemiBold.ttf"))
-            .into(),
+        FontData::from_static(include_bytes!(
+            "../../Assets/Fonts/JetBrainsMono-SemiBold.ttf"
+        ))
+        .into(),
     );
     fonts.font_data.insert(
         "JetBrainsMono-Bold".to_string(),
@@ -41,8 +49,10 @@ fn configure_fonts(ctx: &egui::Context) {
     );
     fonts.font_data.insert(
         "JetBrainsMono-ExtraBold".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-ExtraBold.ttf"))
-            .into(),
+        FontData::from_static(include_bytes!(
+            "../../Assets/Fonts/JetBrainsMono-ExtraBold.ttf"
+        ))
+        .into(),
     );
     fonts.font_data.insert(
         "JetBrainsMono-Light".to_string(),
@@ -50,8 +60,10 @@ fn configure_fonts(ctx: &egui::Context) {
     );
     fonts.font_data.insert(
         "JetBrainsMono-ExtraLight".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-ExtraLight.ttf"))
-            .into(),
+        FontData::from_static(include_bytes!(
+            "../../Assets/Fonts/JetBrainsMono-ExtraLight.ttf"
+        ))
+        .into(),
     );
     fonts.font_data.insert(
         "JetBrainsMono-Thin".to_string(),
@@ -59,12 +71,17 @@ fn configure_fonts(ctx: &egui::Context) {
     );
     fonts.font_data.insert(
         "JetBrainsMono-Italic".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-Italic.ttf")).into(),
+        FontData::from_static(include_bytes!(
+            "../../Assets/Fonts/JetBrainsMono-Italic.ttf"
+        ))
+        .into(),
     );
     fonts.font_data.insert(
         "JetBrainsMono-MediumItalic".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-MediumItalic.ttf"))
-            .into(),
+        FontData::from_static(include_bytes!(
+            "../../Assets/Fonts/JetBrainsMono-MediumItalic.ttf"
+        ))
+        .into(),
     );
     fonts.font_data.insert(
         "JetBrainsMono-SemiBoldItalic".to_string(),
@@ -75,8 +92,10 @@ fn configure_fonts(ctx: &egui::Context) {
     );
     fonts.font_data.insert(
         "JetBrainsMono-BoldItalic".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-BoldItalic.ttf"))
-            .into(),
+        FontData::from_static(include_bytes!(
+            "../../Assets/Fonts/JetBrainsMono-BoldItalic.ttf"
+        ))
+        .into(),
     );
     fonts.font_data.insert(
         "JetBrainsMono-ExtraBoldItalic".to_string(),
@@ -87,8 +106,10 @@ fn configure_fonts(ctx: &egui::Context) {
     );
     fonts.font_data.insert(
         "JetBrainsMono-LightItalic".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-LightItalic.ttf"))
-            .into(),
+        FontData::from_static(include_bytes!(
+            "../../Assets/Fonts/JetBrainsMono-LightItalic.ttf"
+        ))
+        .into(),
     );
     fonts.font_data.insert(
         "JetBrainsMono-ExtraLightItalic".to_string(),
@@ -99,8 +120,10 @@ fn configure_fonts(ctx: &egui::Context) {
     );
     fonts.font_data.insert(
         "JetBrainsMono-ThinItalic".to_string(),
-        FontData::from_static(include_bytes!("../../Assets/Fonts/JetBrainsMono-ThinItalic.ttf"))
-            .into(),
+        FontData::from_static(include_bytes!(
+            "../../Assets/Fonts/JetBrainsMono-ThinItalic.ttf"
+        ))
+        .into(),
     );
 
     let mix = vec![
@@ -122,12 +145,14 @@ fn configure_fonts(ctx: &egui::Context) {
         "JetBrainsMono-ThinItalic",
     ];
 
-    fonts
-        .families
-        .insert(FontFamily::Proportional, mix.iter().map(|name| (*name).to_string()).collect());
-    fonts
-        .families
-        .insert(FontFamily::Monospace, mix.iter().map(|name| (*name).to_string()).collect());
+    fonts.families.insert(
+        FontFamily::Proportional,
+        mix.iter().map(|name| (*name).to_string()).collect(),
+    );
+    fonts.families.insert(
+        FontFamily::Monospace,
+        mix.iter().map(|name| (*name).to_string()).collect(),
+    );
 
     ctx.set_fonts(fonts);
 }
@@ -457,15 +482,11 @@ impl LilypadApp {
                             let spacing = 4.0;
                             let icon_height = icon_galley.size().y;
                             let label_height = label_galley.size().y;
-                            let total_height =
-                                icon_height + spacing + label_height;
+                            let total_height = icon_height + spacing + label_height;
                             let start_y = rect.center().y - total_height / 2.0;
 
                             ui.painter().galley(
-                                egui::pos2(
-                                    rect.center().x - icon_galley.size().x / 2.0,
-                                    start_y,
-                                ),
+                                egui::pos2(rect.center().x - icon_galley.size().x / 2.0, start_y),
                                 icon_galley.clone(),
                                 text_color,
                             );
