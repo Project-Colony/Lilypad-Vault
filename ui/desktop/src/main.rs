@@ -1,11 +1,19 @@
+use anyhow::{anyhow, Context, Result};
 use directories::ProjectDirs;
 use eframe::{egui, App};
 use egui::{
     Align2, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, Margin, OutputCommand,
     RichText,
 };
+use lilypad_core::{
+    decrypt, default_config, derive_key, encrypt, AppConfig, CryptoAlgorithm, Entry,
+    KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
+};
+use lilypad_storage::LocalStore;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions::default();
@@ -157,6 +165,23 @@ fn configure_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
+const DEFAULT_VAULT_NAME: &str = "primary";
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum KeyFile {
+    Raw { key_hex: String },
+    Kdf { params: KeyDerivationParams },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct DesktopEntryPayload {
+    username: String,
+    password: String,
+    url: String,
+    notes: String,
+}
+
 struct LilypadApp {
     show_welcome: bool,
     vault_unlocked: bool,
@@ -166,6 +191,11 @@ struct LilypadApp {
     welcome_ack_path: Option<std::path::PathBuf>,
     master_password: String,
     generated_password: String,
+    config: AppConfig,
+    store: LocalStore,
+    active_vault: String,
+    vault: Option<Vault>,
+    vault_key: Option<KeyMaterial>,
     generator_length: usize,
     generator_lowercase: bool,
     generator_uppercase: bool,
@@ -201,6 +231,7 @@ struct VaultEntry {
     url: String,
     notes: String,
     last_updated: String,
+    updated_at: u64,
 }
 
 impl Default for LilypadApp {
@@ -234,6 +265,8 @@ impl App for LilypadApp {
 
 impl LilypadApp {
     fn new() -> Self {
+        let config = default_config();
+        let store = LocalStore::new(&config).expect("store init");
         let mut app = Self {
             show_welcome: true,
             vault_unlocked: false,
@@ -243,6 +276,11 @@ impl LilypadApp {
             welcome_ack_path: None,
             master_password: String::new(),
             generated_password: String::new(),
+            config,
+            store,
+            active_vault: DEFAULT_VAULT_NAME.to_string(),
+            vault: None,
+            vault_key: None,
             generator_length: 16,
             generator_lowercase: true,
             generator_uppercase: true,
@@ -250,14 +288,7 @@ impl LilypadApp {
             generator_symbols: true,
             show_add_entry: false,
             show_settings: false,
-            vault_entries: vec![VaultEntry {
-                title: "Email Account".to_string(),
-                username: "user@example.com".to_string(),
-                password: "••••••••••".to_string(),
-                url: "https://mail.example.com".to_string(),
-                notes: "Primary inbox".to_string(),
-                last_updated: "2 hours ago".to_string(),
-            }],
+            vault_entries: Vec::new(),
             entry_title: String::new(),
             entry_username: String::new(),
             entry_password: String::new(),
@@ -415,8 +446,18 @@ impl LilypadApp {
                                             .corner_radius(8.0);
 
                                             if ui.add_enabled(all_met, button).clicked() {
-                                                self.vault_unlocked = true;
-                                                self.status_message = Some("Vault unlocked".to_string());
+                                                match self.unlock_vault() {
+                                                    Ok(()) => {
+                                                        self.vault_unlocked = true;
+                                                        self.status_message =
+                                                            Some("Vault unlocked".to_string());
+                                                    }
+                                                    Err(error) => {
+                                                        self.status_message = Some(format!(
+                                                            "Unable to unlock vault: {error}"
+                                                        ));
+                                                    }
+                                                }
                                             }
 
                                             ui.add_space(8.0);
@@ -639,6 +680,9 @@ impl LilypadApp {
             }
             if ui.button("Lock vault").clicked() {
                 self.vault_unlocked = false;
+                self.vault = None;
+                self.vault_key = None;
+                self.vault_entries.clear();
                 self.status_message = Some("Vault locked".to_string());
             }
         });
@@ -735,22 +779,22 @@ impl LilypadApp {
                     .add_enabled(save_enabled, egui::Button::new("Save entry"))
                     .clicked()
                 {
-                    let entry = VaultEntry {
-                        title: self.entry_title.trim().to_string(),
-                        username: self.entry_username.trim().to_string(),
-                        password: self.entry_password.trim().to_string(),
-                        url: self.entry_url.trim().to_string(),
-                        notes: self.entry_notes.trim().to_string(),
-                        last_updated: "Just now".to_string(),
-                    };
-                    self.vault_entries.insert(0, entry);
-                    self.entry_title.clear();
-                    self.entry_username.clear();
-                    self.entry_password.clear();
-                    self.entry_url.clear();
-                    self.entry_notes.clear();
-                    self.show_add_entry = false;
-                    self.status_message = Some("Entry saved to vault".to_string());
+                    match self.save_entry_to_vault() {
+                        Ok(()) => {
+                            self.entry_title.clear();
+                            self.entry_username.clear();
+                            self.entry_password.clear();
+                            self.entry_url.clear();
+                            self.entry_notes.clear();
+                            self.show_add_entry = false;
+                            self.status_message = Some("Entry saved to vault".to_string());
+                        }
+                        Err(error) => {
+                            self.status_message = Some(format!(
+                                "Unable to save entry to vault: {error}"
+                            ));
+                        }
+                    }
                 }
             });
         });
@@ -883,6 +927,126 @@ impl LilypadApp {
                 self.status_message = Some("Device added".to_string());
             }
         });
+    }
+
+    fn unlock_vault(&mut self) -> Result<()> {
+        let password = self.master_password.trim();
+        if password.is_empty() {
+            return Err(anyhow!("master password is required"));
+        }
+        let (key, key_file) = self.load_or_create_key(password)?;
+        let vault = self.load_or_create_vault(&key, &key_file)?;
+        let entries = self.entries_from_vault(&vault, &key)?;
+        self.vault_entries = entries;
+        self.vault = Some(vault);
+        self.vault_key = Some(key);
+        Ok(())
+    }
+
+    fn save_entry_to_vault(&mut self) -> Result<()> {
+        let title = self.entry_title.trim();
+        if title.is_empty() {
+            return Err(anyhow!("title is required"));
+        }
+        let password = self.entry_password.trim();
+        if password.is_empty() {
+            return Err(anyhow!("password is required"));
+        }
+        let key = self
+            .vault_key
+            .as_ref()
+            .ok_or_else(|| anyhow!("vault key is unavailable"))?;
+        let vault = self
+            .vault
+            .as_mut()
+            .ok_or_else(|| anyhow!("vault is not loaded"))?;
+        let payload = DesktopEntryPayload {
+            username: self.entry_username.trim().to_string(),
+            password: password.to_string(),
+            url: self.entry_url.trim().to_string(),
+            notes: self.entry_notes.trim().to_string(),
+        };
+        let serialized = serde_json::to_vec(&payload)?;
+        let ciphertext = encrypt(key, &serialized)?;
+        if vault.find_entry(title).is_some() {
+            vault.update_entry(title, ciphertext)?;
+        } else {
+            vault.add_entry(Entry::new(title, ciphertext))?;
+        }
+        self.store.save_vault(vault, key)?;
+        self.vault_entries = self.entries_from_vault(vault, key)?;
+        Ok(())
+    }
+
+    fn entries_from_vault(&self, vault: &Vault, key: &KeyMaterial) -> Result<Vec<VaultEntry>> {
+        let mut entries = Vec::with_capacity(vault.entries.len());
+        for entry in &vault.entries {
+            let plaintext = decrypt(key, &entry.ciphertext)?;
+            let payload = Self::parse_entry_payload(&plaintext);
+            entries.push(VaultEntry {
+                title: entry.label.clone(),
+                username: payload.username,
+                password: payload.password,
+                url: payload.url,
+                notes: payload.notes,
+                last_updated: Self::format_timestamp(entry.updated_at),
+                updated_at: entry.updated_at,
+            });
+        }
+        entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        Ok(entries)
+    }
+
+    fn parse_entry_payload(plaintext: &[u8]) -> DesktopEntryPayload {
+        if let Ok(payload) = serde_json::from_slice::<DesktopEntryPayload>(plaintext) {
+            return payload;
+        }
+        DesktopEntryPayload {
+            username: String::new(),
+            password: String::from_utf8_lossy(plaintext).to_string(),
+            url: String::new(),
+            notes: String::new(),
+        }
+    }
+
+    fn format_timestamp(timestamp: u64) -> String {
+        if timestamp == 0 {
+            "Updated just now".to_string()
+        } else {
+            format!("Updated at {timestamp}")
+        }
+    }
+
+    fn load_or_create_key(&self, master_password: &str) -> Result<(KeyMaterial, KeyFile)> {
+        let path = key_path(&self.config);
+        if path.exists() {
+            return load_key(&path, master_password);
+        }
+        let params = KeyDerivationParams::generate();
+        let key = derive_key(master_password, &params)?;
+        let key_file = KeyFile::Kdf { params };
+        save_key(&path, &key_file)?;
+        Ok((key, key_file))
+    }
+
+    fn load_or_create_vault(&self, key: &KeyMaterial, key_file: &KeyFile) -> Result<Vault> {
+        if vault_exists(&self.config, &self.active_vault) {
+            return self
+                .store
+                .load_vault(&self.active_vault, key)
+                .context("vault file unreadable");
+        }
+
+        let metadata = match key_file {
+            KeyFile::Kdf { .. } => KeyMetadata::new(key, CryptoAlgorithm::XChaCha20Poly1305)
+                .with_kdf("argon2id"),
+            KeyFile::Raw { .. } => {
+                KeyMetadata::new(key, CryptoAlgorithm::XChaCha20Poly1305)
+            }
+        };
+        let vault = Vault::new(&self.active_vault, metadata);
+        self.store.save_vault(&vault, key)?;
+        Ok(vault)
     }
 
     fn render_password_generator(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -1040,4 +1204,76 @@ impl LilypadApp {
             }
         }
     }
+}
+
+fn key_path(config: &AppConfig) -> PathBuf {
+    PathBuf::from(&config.data_dir).join("key.json")
+}
+
+fn vault_exists(config: &AppConfig, name: &str) -> bool {
+    if name.trim().is_empty() {
+        return false;
+    }
+    let lily_path = vault_path_with_extension(config, name, "lily");
+    if lily_path.exists() {
+        return true;
+    }
+    let legacy_path = vault_path_with_extension(config, name, "json");
+    legacy_path.exists()
+}
+
+fn vault_path_with_extension(config: &AppConfig, name: &str, extension: &str) -> PathBuf {
+    PathBuf::from(&config.data_dir)
+        .join("vaults")
+        .join(format!("{name}.{extension}"))
+}
+
+fn save_key(path: &Path, key_file: &KeyFile) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let payload = serde_json::to_vec_pretty(key_file)?;
+    fs::write(path, payload)?;
+    Ok(())
+}
+
+fn load_key(path: &Path, master_password: &str) -> Result<(KeyMaterial, KeyFile)> {
+    let payload = fs::read(path).with_context(|| {
+        format!(
+            "key file not found: {} (run the CLI init first)",
+            path.display()
+        )
+    })?;
+    let key_file: KeyFile = serde_json::from_slice(&payload)?;
+    let key = match &key_file {
+        KeyFile::Raw { key_hex } => {
+            let bytes = decode_hex(key_hex)?;
+            KeyMaterial::from_bytes(&bytes).context("invalid key material")?
+        }
+        KeyFile::Kdf { params } => {
+            if master_password.trim().is_empty() {
+                return Err(anyhow!("master password is required"));
+            }
+            derive_key(master_password, params).context("invalid kdf params")?
+        }
+    };
+    Ok((key, key_file))
+}
+
+fn decode_hex(hex: &str) -> Result<Vec<u8>> {
+    let value = hex.trim();
+    if value.is_empty() {
+        return Err(anyhow!("key cannot be empty"));
+    }
+    if value.len() % 2 != 0 {
+        return Err(anyhow!("invalid hex string"));
+    }
+    let mut bytes = Vec::with_capacity(value.len() / 2);
+    for chunk in value.as_bytes().chunks(2) {
+        let chunk_str = std::str::from_utf8(chunk)?;
+        let byte =
+            u8::from_str_radix(chunk_str, 16).map_err(|_| anyhow!("invalid hex string"))?;
+        bytes.push(byte);
+    }
+    Ok(bytes)
 }
