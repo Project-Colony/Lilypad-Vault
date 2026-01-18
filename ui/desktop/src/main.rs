@@ -691,11 +691,14 @@ impl LilypadApp {
             let button = egui::Button::new("Export .lily file")
                 .min_size(egui::vec2(220.0, 44.0));
             if ui.add(button).clicked() {
-                self.open_vault_export_folder();
+                self.export_vault_file();
             }
         });
         let export_path = vault_path_with_extension(&self.config, &self.active_vault, "lily");
-        ui.label(format!("Export location: {}", export_path.display()));
+        ui.label(format!(
+            "Vault file location: {}",
+            export_path.display()
+        ));
 
         if self.show_add_entry {
             ui.add_space(12.0);
@@ -810,28 +813,36 @@ impl LilypadApp {
         });
     }
 
-    fn open_vault_export_folder(&mut self) {
+    fn export_vault_file(&mut self) {
         let export_path = vault_path_with_extension(&self.config, &self.active_vault, "lily");
         if !export_path.exists() {
             self.status_message = Some("No .lily file found yet.".to_string());
             return;
         }
-        let Some(parent) = export_path.parent() else {
-            self.status_message = Some("Unable to locate export folder.".to_string());
+        let mut dialog = rfd::FileDialog::new()
+            .add_filter("Lilypad vault", &["lily"])
+            .set_file_name(format!("{}.lily", self.active_vault.trim()));
+        if let Some(parent) = export_path.parent() {
+            dialog = dialog.set_directory(parent);
+        }
+        let Some(mut target_path) = dialog.save_file() else {
+            self.status_message = Some("Export cancelled.".to_string());
             return;
         };
-        let url = format!("file://{}", parent.display());
-        match webbrowser::open(&url) {
-            Ok(()) => {
+        if target_path.extension().and_then(|ext| ext.to_str()) != Some("lily") {
+            target_path.set_extension("lily");
+        }
+        match fs::copy(&export_path, &target_path) {
+            Ok(_) => {
                 self.status_message = Some(format!(
-                    "Export folder opened: {}",
-                    parent.display()
+                    "Exported .lily file to {}",
+                    target_path.display()
                 ));
             }
             Err(error) => {
                 self.status_message = Some(format!(
-                    "Unable to open export folder {}: {error}",
-                    parent.display()
+                    "Unable to export .lily file to {}: {error}",
+                    target_path.display()
                 ));
             }
         }
