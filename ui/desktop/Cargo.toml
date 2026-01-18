@@ -7,14 +7,14 @@ license = "Apache-2.0"
 description = "Lilypad desktop GUI built with egui/eframe"
 
 [dependencies]
-eframe = { version = "0.33.2", default-features = true, features = ["wgpu"] }
-egui = "0.33.2"
-directories = "5.0.1"
+eframe = { version = "0.33.3", default-features = true, features = ["wgpu"] }
+egui = "0.33.3"
+directories = "6.0.0"
 webbrowser = "1.0.6"
-rfd = "0.14.1"
+rfd = "0.17.2"
 rand = "0.8.5"
-anyhow = "1.0.95"
+anyhow = "1.0.100"
 lilypad-core = { path = "../../lilypad-core" }
 lilypad-storage = { path = "../../lilypad-storage" }
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.138"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
