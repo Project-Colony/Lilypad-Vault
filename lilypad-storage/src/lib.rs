@@ -126,13 +126,61 @@ impl LocalStore {
     }
 
     fn vault_path_with_extension(&self, name: &str, extension: &str) -> PathBuf {
-        self.root
-            .join("vaults")
-            .join(format!("{name}.{extension}"))
+        self.root.join("vaults").join(format!("{name}.{extension}"))
     }
 
     pub fn sync_backend(&self) -> Option<&dyn SyncBackend> {
         self.sync.as_deref()
+    }
+
+    pub fn list_vaults(&self) -> Result<Vec<String>> {
+        let vaults_dir = self.root.join("vaults");
+        if !vaults_dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut names = Vec::new();
+        for entry in fs::read_dir(vaults_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if let Some(extension) = path.extension().and_then(|value| value.to_str()) {
+                if extension == VAULT_EXTENSION || extension == LEGACY_EXTENSION {
+                    if let Some(stem) = path.file_stem().and_then(|value| value.to_str()) {
+                        names.push(stem.to_string());
+                    }
+                }
+            }
+        }
+        names.sort();
+        names.dedup();
+        Ok(names)
+    }
+
+    pub fn delete_vault(&self, name: &str) -> Result<()> {
+        let path = self.vault_path(name)?;
+        if !path.exists() {
+            return Err(anyhow!("vault '{name}' does not exist"));
+        }
+        fs::remove_file(path)?;
+        Ok(())
+    }
+
+    pub fn rename_vault(&self, from: &str, to: &str) -> Result<()> {
+        if to.trim().is_empty() {
+            return Err(anyhow!("vault name cannot be empty"));
+        }
+        let from_path = self.vault_path(from)?;
+        if !from_path.exists() {
+            return Err(anyhow!("vault '{from}' does not exist"));
+        }
+        let to_path = self.vault_path_with_extension(to, VAULT_EXTENSION);
+        if to_path.exists() {
+            return Err(anyhow!("vault '{to}' already exists"));
+        }
+        if let Some(parent) = to_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::rename(from_path, to_path)?;
+        Ok(())
     }
 
     pub fn sync_payload(&self, name: &str) -> Result<Vec<u8>> {

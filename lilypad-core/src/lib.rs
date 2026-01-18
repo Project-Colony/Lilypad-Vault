@@ -6,7 +6,7 @@ pub use crypto::{
     decrypt, derive_key, encrypt, Ciphertext, CryptoAlgorithm, KeyDerivationParams, KeyMaterial,
 };
 pub use errors::{CoreError, Result};
-pub use models::{Entry, KeyMetadata, Vault};
+pub use models::{Attachment, Entry, EntryMetadata, EntrySecret, EntryType, KeyMetadata, Vault};
 
 mod config {
     use serde::{Deserialize, Serialize};
