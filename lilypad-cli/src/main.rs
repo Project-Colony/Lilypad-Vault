@@ -284,6 +284,9 @@ enum Commands {
         /// Import format: lily, json, csv
         #[arg(long, value_parser = non_empty_value)]
         format: String,
+        /// Source password manager: lilypad, lastpass, bitwarden, 1password, chrome, firefox, dashlane, keepass
+        #[arg(long, default_value = "lilypad")]
+        source: String,
     },
     /// Rotate the vault encryption key.
     RotateKey {
@@ -412,6 +415,131 @@ struct CsvEntry {
     password: String,
     notes: String,
     totp_secret: String,
+}
+
+// LastPass CSV format: url,username,password,totp,extra,name,grouping,fav
+#[derive(Debug, Deserialize)]
+struct LastPassEntry {
+    url: String,
+    username: String,
+    password: String,
+    totp: String,
+    extra: String,
+    name: String,
+    grouping: String,
+    #[serde(default)]
+    fav: String,
+}
+
+// Bitwarden CSV format: folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp
+#[derive(Debug, Deserialize)]
+struct BitwardenEntry {
+    folder: String,
+    #[serde(default)]
+    favorite: String,
+    #[serde(rename = "type")]
+    entry_type: String,
+    name: String,
+    notes: String,
+    #[serde(default)]
+    fields: String,
+    #[serde(default)]
+    reprompt: String,
+    #[serde(default)]
+    login_uri: String,
+    #[serde(default)]
+    login_username: String,
+    #[serde(default)]
+    login_password: String,
+    #[serde(default)]
+    login_totp: String,
+}
+
+// 1Password CSV format: Title,Url,Username,Password,Notes,OTPAuth
+#[derive(Debug, Deserialize)]
+struct OnePasswordEntry {
+    #[serde(rename = "Title")]
+    title: String,
+    #[serde(rename = "Url", default)]
+    url: String,
+    #[serde(rename = "Username", default)]
+    username: String,
+    #[serde(rename = "Password", default)]
+    password: String,
+    #[serde(rename = "Notes", default)]
+    notes: String,
+    #[serde(rename = "OTPAuth", default)]
+    otp_auth: String,
+}
+
+// Chrome CSV format: name,url,username,password,note
+#[derive(Debug, Deserialize)]
+struct ChromeEntry {
+    name: String,
+    url: String,
+    username: String,
+    password: String,
+    #[serde(default)]
+    note: String,
+}
+
+// Firefox CSV format: url,username,password,httpRealm,formActionOrigin,guid,timeCreated,timeLastUsed,timePasswordChanged
+#[derive(Debug, Deserialize)]
+struct FirefoxEntry {
+    url: String,
+    username: String,
+    password: String,
+    #[serde(rename = "httpRealm", default)]
+    http_realm: String,
+    #[serde(rename = "formActionOrigin", default)]
+    form_action_origin: String,
+    #[serde(default)]
+    guid: String,
+    #[serde(rename = "timeCreated", default)]
+    time_created: String,
+    #[serde(rename = "timeLastUsed", default)]
+    time_last_used: String,
+    #[serde(rename = "timePasswordChanged", default)]
+    time_password_changed: String,
+}
+
+// Dashlane CSV format: username,username2,username3,title,password,note,url,category,otpSecret
+#[derive(Debug, Deserialize)]
+struct DashlaneEntry {
+    username: String,
+    #[serde(default)]
+    username2: String,
+    #[serde(default)]
+    username3: String,
+    title: String,
+    password: String,
+    #[serde(default)]
+    note: String,
+    #[serde(default)]
+    url: String,
+    #[serde(default)]
+    category: String,
+    #[serde(rename = "otpSecret", default)]
+    otp_secret: String,
+}
+
+// KeePass CSV format: Group,Title,Username,Password,URL,Notes,TOTP
+#[derive(Debug, Deserialize)]
+struct KeePassEntry {
+    #[serde(rename = "Group", default)]
+    group: String,
+    #[serde(rename = "Title")]
+    title: String,
+    #[serde(rename = "Username", default)]
+    username: String,
+    #[serde(rename = "Password", default)]
+    password: String,
+    #[serde(rename = "URL", default)]
+    url: String,
+    #[serde(rename = "Notes", default)]
+    notes: String,
+    #[serde(rename = "TOTP", default)]
+    totp: String,
 }
 
 fn main() -> Result<()> {
@@ -553,12 +681,14 @@ fn main() -> Result<()> {
             vault,
             input,
             format,
+            source,
         } => import_vault(
             &store,
             &config,
             &vault,
             &input,
             &format,
+            &source,
             master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::RotateKey {
@@ -1161,9 +1291,12 @@ fn import_vault(
     vault_name: &str,
     input: &str,
     format: &str,
+    source: &str,
     master_password: Option<&str>,
 ) -> Result<()> {
     let format = format.to_lowercase();
+    let source = source.to_lowercase();
+
     if format == "lily" {
         let payload = fs::read(input)?;
         store.apply_sync_payload(vault_name, &payload)?;
@@ -1180,53 +1313,49 @@ fn import_vault(
         }
     };
 
+    let mut imported_count = 0;
+
     match format.as_str() {
         "json" => {
             let payload = fs::read(input)?;
             let import: VaultExport = serde_json::from_slice(&payload)?;
             for entry in import.entries {
-                // Validate imported entry data
                 validate_import_entry(&entry.label, &entry.secret, &entry.metadata)?;
                 upsert_entry(&mut vault, &key, &entry.label, entry.metadata, entry.secret)?;
+                imported_count += 1;
             }
         }
         "csv" => {
-            let mut reader = ReaderBuilder::new().from_path(input)?;
-            for result in reader.deserialize() {
-                let record: CsvEntry = result?;
-                let metadata = build_metadata(
-                    if record.username.is_empty() {
-                        None
-                    } else {
-                        Some(record.username)
-                    },
-                    if record.url.is_empty() {
-                        None
-                    } else {
-                        Some(record.url)
-                    },
-                    parse_tags(&record.tags),
-                    if record.folder.is_empty() {
-                        None
-                    } else {
-                        Some(record.folder)
-                    },
-                    if record.entry_type.is_empty() {
-                        None
-                    } else {
-                        Some(record.entry_type)
-                    },
-                )?;
-                let mut secret = EntrySecret::new(record.password);
-                if !record.notes.is_empty() {
-                    secret.notes = Some(record.notes);
+            match source.as_str() {
+                "lilypad" => {
+                    imported_count = import_lilypad_csv(&mut vault, &key, input)?;
                 }
-                if !record.totp_secret.is_empty() {
-                    secret.totp_secret = Some(record.totp_secret);
+                "lastpass" => {
+                    imported_count = import_lastpass_csv(&mut vault, &key, input)?;
                 }
-                // Validate imported entry data
-                validate_import_entry(&record.label, &secret, &metadata)?;
-                upsert_entry(&mut vault, &key, &record.label, metadata, secret)?;
+                "bitwarden" => {
+                    imported_count = import_bitwarden_csv(&mut vault, &key, input)?;
+                }
+                "1password" | "onepassword" => {
+                    imported_count = import_1password_csv(&mut vault, &key, input)?;
+                }
+                "chrome" | "google" => {
+                    imported_count = import_chrome_csv(&mut vault, &key, input)?;
+                }
+                "firefox" => {
+                    imported_count = import_firefox_csv(&mut vault, &key, input)?;
+                }
+                "dashlane" => {
+                    imported_count = import_dashlane_csv(&mut vault, &key, input)?;
+                }
+                "keepass" => {
+                    imported_count = import_keepass_csv(&mut vault, &key, input)?;
+                }
+                _ => {
+                    return Err(anyhow!(
+                        "Unsupported source: {source}. Supported sources: lilypad, lastpass, bitwarden, 1password, chrome, firefox, dashlane, keepass"
+                    ));
+                }
             }
         }
         _ => {
@@ -1235,8 +1364,305 @@ fn import_vault(
     }
 
     store.save_vault(&vault, &key)?;
-    println!("Vault '{vault_name}' updated from {input}.");
+    println!("✓ Imported {imported_count} entries from {source} into vault '{vault_name}'.");
     Ok(())
+}
+
+/// Import from Lilypad's native CSV format
+fn import_lilypad_csv(vault: &mut Vault, key: &KeyMaterial, input: &str) -> Result<usize> {
+    let mut reader = ReaderBuilder::new().from_path(input)?;
+    let mut count = 0;
+    for result in reader.deserialize() {
+        let record: CsvEntry = result?;
+        let metadata = build_metadata(
+            if record.username.is_empty() { None } else { Some(record.username) },
+            if record.url.is_empty() { None } else { Some(record.url) },
+            parse_tags(&record.tags),
+            if record.folder.is_empty() { None } else { Some(record.folder) },
+            if record.entry_type.is_empty() { None } else { Some(record.entry_type) },
+        )?;
+        let mut secret = EntrySecret::new(record.password);
+        if !record.notes.is_empty() {
+            secret.notes = Some(record.notes);
+        }
+        if !record.totp_secret.is_empty() {
+            secret.totp_secret = Some(record.totp_secret);
+        }
+        validate_import_entry(&record.label, &secret, &metadata)?;
+        upsert_entry(vault, key, &record.label, metadata, secret)?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Import from LastPass CSV export
+/// Format: url,username,password,totp,extra,name,grouping,fav
+fn import_lastpass_csv(vault: &mut Vault, key: &KeyMaterial, input: &str) -> Result<usize> {
+    let mut reader = ReaderBuilder::new().from_path(input)?;
+    let mut count = 0;
+    for result in reader.deserialize() {
+        let record: LastPassEntry = result?;
+
+        // Use 'name' as the label, fallback to URL if empty
+        let label = if record.name.is_empty() {
+            extract_domain_from_url(&record.url).unwrap_or_else(|| "Unnamed Entry".to_string())
+        } else {
+            record.name
+        };
+
+        let metadata = build_metadata(
+            if record.username.is_empty() { None } else { Some(record.username) },
+            if record.url.is_empty() { None } else { Some(record.url) },
+            Vec::new(), // LastPass uses grouping, not tags
+            if record.grouping.is_empty() { None } else { Some(record.grouping) },
+            None, // No explicit type in LastPass export
+        )?;
+
+        let mut secret = EntrySecret::new(record.password);
+        if !record.extra.is_empty() {
+            secret.notes = Some(record.extra);
+        }
+        if !record.totp.is_empty() {
+            // LastPass stores TOTP as otpauth:// URL, extract the secret
+            secret.totp_secret = Some(extract_totp_secret(&record.totp));
+        }
+
+        validate_import_entry(&label, &secret, &metadata)?;
+        upsert_entry(vault, key, &label, metadata, secret)?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Import from Bitwarden CSV export
+/// Format: folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp
+fn import_bitwarden_csv(vault: &mut Vault, key: &KeyMaterial, input: &str) -> Result<usize> {
+    let mut reader = ReaderBuilder::new().from_path(input)?;
+    let mut count = 0;
+    for result in reader.deserialize() {
+        let record: BitwardenEntry = result?;
+
+        // Skip non-login entries (cards, identities, secure notes without passwords)
+        if record.entry_type != "login" && record.login_password.is_empty() {
+            continue;
+        }
+
+        let metadata = build_metadata(
+            if record.login_username.is_empty() { None } else { Some(record.login_username) },
+            if record.login_uri.is_empty() { None } else { Some(record.login_uri) },
+            Vec::new(),
+            if record.folder.is_empty() { None } else { Some(record.folder) },
+            Some(record.entry_type),
+        )?;
+
+        let mut secret = EntrySecret::new(record.login_password);
+        if !record.notes.is_empty() {
+            secret.notes = Some(record.notes);
+        }
+        if !record.login_totp.is_empty() {
+            secret.totp_secret = Some(extract_totp_secret(&record.login_totp));
+        }
+
+        validate_import_entry(&record.name, &secret, &metadata)?;
+        upsert_entry(vault, key, &record.name, metadata, secret)?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Import from 1Password CSV export
+/// Format: Title,Url,Username,Password,Notes,OTPAuth
+fn import_1password_csv(vault: &mut Vault, key: &KeyMaterial, input: &str) -> Result<usize> {
+    let mut reader = ReaderBuilder::new().from_path(input)?;
+    let mut count = 0;
+    for result in reader.deserialize() {
+        let record: OnePasswordEntry = result?;
+
+        let metadata = build_metadata(
+            if record.username.is_empty() { None } else { Some(record.username) },
+            if record.url.is_empty() { None } else { Some(record.url) },
+            Vec::new(),
+            None,
+            None,
+        )?;
+
+        let mut secret = EntrySecret::new(record.password);
+        if !record.notes.is_empty() {
+            secret.notes = Some(record.notes);
+        }
+        if !record.otp_auth.is_empty() {
+            secret.totp_secret = Some(extract_totp_secret(&record.otp_auth));
+        }
+
+        validate_import_entry(&record.title, &secret, &metadata)?;
+        upsert_entry(vault, key, &record.title, metadata, secret)?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Import from Chrome/Google Password Manager CSV export
+/// Format: name,url,username,password,note
+fn import_chrome_csv(vault: &mut Vault, key: &KeyMaterial, input: &str) -> Result<usize> {
+    let mut reader = ReaderBuilder::new().from_path(input)?;
+    let mut count = 0;
+    for result in reader.deserialize() {
+        let record: ChromeEntry = result?;
+
+        // Use 'name' as label, fallback to domain from URL
+        let label = if record.name.is_empty() {
+            extract_domain_from_url(&record.url).unwrap_or_else(|| "Unnamed Entry".to_string())
+        } else {
+            record.name
+        };
+
+        let metadata = build_metadata(
+            if record.username.is_empty() { None } else { Some(record.username) },
+            if record.url.is_empty() { None } else { Some(record.url) },
+            Vec::new(),
+            None,
+            None,
+        )?;
+
+        let mut secret = EntrySecret::new(record.password);
+        if !record.note.is_empty() {
+            secret.notes = Some(record.note);
+        }
+
+        validate_import_entry(&label, &secret, &metadata)?;
+        upsert_entry(vault, key, &label, metadata, secret)?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Import from Firefox CSV export
+/// Format: url,username,password,httpRealm,formActionOrigin,guid,timeCreated,timeLastUsed,timePasswordChanged
+fn import_firefox_csv(vault: &mut Vault, key: &KeyMaterial, input: &str) -> Result<usize> {
+    let mut reader = ReaderBuilder::new().from_path(input)?;
+    let mut count = 0;
+    for result in reader.deserialize() {
+        let record: FirefoxEntry = result?;
+
+        // Use domain from URL as label
+        let label = extract_domain_from_url(&record.url).unwrap_or_else(|| "Unnamed Entry".to_string());
+
+        let metadata = build_metadata(
+            if record.username.is_empty() { None } else { Some(record.username) },
+            if record.url.is_empty() { None } else { Some(record.url) },
+            Vec::new(),
+            None,
+            None,
+        )?;
+
+        let secret = EntrySecret::new(record.password);
+
+        validate_import_entry(&label, &secret, &metadata)?;
+        upsert_entry(vault, key, &label, metadata, secret)?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Import from Dashlane CSV export
+/// Format: username,username2,username3,title,password,note,url,category,otpSecret
+fn import_dashlane_csv(vault: &mut Vault, key: &KeyMaterial, input: &str) -> Result<usize> {
+    let mut reader = ReaderBuilder::new().from_path(input)?;
+    let mut count = 0;
+    for result in reader.deserialize() {
+        let record: DashlaneEntry = result?;
+
+        let metadata = build_metadata(
+            if record.username.is_empty() { None } else { Some(record.username) },
+            if record.url.is_empty() { None } else { Some(record.url) },
+            Vec::new(),
+            if record.category.is_empty() { None } else { Some(record.category) },
+            None,
+        )?;
+
+        let mut secret = EntrySecret::new(record.password);
+        if !record.note.is_empty() {
+            secret.notes = Some(record.note);
+        }
+        if !record.otp_secret.is_empty() {
+            secret.totp_secret = Some(record.otp_secret);
+        }
+
+        validate_import_entry(&record.title, &secret, &metadata)?;
+        upsert_entry(vault, key, &record.title, metadata, secret)?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Import from KeePass CSV export
+/// Format: Group,Title,Username,Password,URL,Notes,TOTP
+fn import_keepass_csv(vault: &mut Vault, key: &KeyMaterial, input: &str) -> Result<usize> {
+    let mut reader = ReaderBuilder::new().from_path(input)?;
+    let mut count = 0;
+    for result in reader.deserialize() {
+        let record: KeePassEntry = result?;
+
+        let metadata = build_metadata(
+            if record.username.is_empty() { None } else { Some(record.username) },
+            if record.url.is_empty() { None } else { Some(record.url) },
+            Vec::new(),
+            if record.group.is_empty() { None } else { Some(record.group) },
+            None,
+        )?;
+
+        let mut secret = EntrySecret::new(record.password);
+        if !record.notes.is_empty() {
+            secret.notes = Some(record.notes);
+        }
+        if !record.totp.is_empty() {
+            secret.totp_secret = Some(extract_totp_secret(&record.totp));
+        }
+
+        validate_import_entry(&record.title, &secret, &metadata)?;
+        upsert_entry(vault, key, &record.title, metadata, secret)?;
+        count += 1;
+    }
+    Ok(count)
+}
+
+/// Extract domain from URL for use as label
+fn extract_domain_from_url(url: &str) -> Option<String> {
+    if url.is_empty() {
+        return None;
+    }
+    // Try to extract domain from URL
+    let url = url.trim();
+    let without_scheme = url
+        .strip_prefix("https://")
+        .or_else(|| url.strip_prefix("http://"))
+        .unwrap_or(url);
+
+    let domain = without_scheme.split('/').next()?;
+    let domain = domain.split(':').next()?; // Remove port if present
+
+    if domain.is_empty() {
+        None
+    } else {
+        Some(domain.to_string())
+    }
+}
+
+/// Extract TOTP secret from various formats (otpauth:// URL or raw secret)
+fn extract_totp_secret(totp_value: &str) -> String {
+    let totp_value = totp_value.trim();
+
+    // If it's an otpauth:// URL, extract the secret parameter
+    if totp_value.starts_with("otpauth://") {
+        if let Some(secret_start) = totp_value.find("secret=") {
+            let secret_part = &totp_value[secret_start + 7..];
+            let secret_end = secret_part.find('&').unwrap_or(secret_part.len());
+            return secret_part[..secret_end].to_string();
+        }
+    }
+
+    // Otherwise, return as-is (it's already a raw secret)
+    totp_value.to_string()
 }
 
 fn rotate_key(
