@@ -541,7 +541,8 @@ impl EntrySecret {
         let mut total_attachment_size = 0usize;
         for attachment in &self.attachments {
             attachment.validate()?;
-            total_attachment_size += attachment.data_base64.len();
+            // Use decoded size for accurate total calculation
+            total_attachment_size += attachment.decoded_size();
         }
 
         if total_attachment_size > MAX_TOTAL_ATTACHMENTS_SIZE {
@@ -580,6 +581,9 @@ impl Attachment {
     }
 
     /// Validates the attachment against size limits.
+    ///
+    /// The size limit is checked against the decoded (actual) data size,
+    /// not the base64-encoded string length.
     pub fn validate(&self) -> Result<()> {
         if self.filename.trim().is_empty() {
             return Err(CoreError::InvalidInput(
@@ -602,16 +606,28 @@ impl Attachment {
             ));
         }
 
-        if self.data_base64.len() > MAX_ATTACHMENT_SIZE {
+        // Calculate the decoded size from base64 length
+        // Base64 encoding: 4 chars encode 3 bytes, so decoded_size ≈ encoded_size * 3 / 4
+        // We account for padding by ignoring trailing '=' characters
+        let base64_len = self.data_base64.trim_end_matches('=').len();
+        let decoded_size = base64_len * 3 / 4;
+
+        if decoded_size > MAX_ATTACHMENT_SIZE {
             return Err(CoreError::InvalidInput(format!(
                 "attachment '{}' exceeds maximum size ({} bytes, max {} bytes)",
                 self.filename,
-                self.data_base64.len(),
+                decoded_size,
                 MAX_ATTACHMENT_SIZE
             )));
         }
 
         Ok(())
+    }
+
+    /// Returns the estimated decoded size of the attachment in bytes.
+    pub fn decoded_size(&self) -> usize {
+        let base64_len = self.data_base64.trim_end_matches('=').len();
+        base64_len * 3 / 4
     }
 }
 

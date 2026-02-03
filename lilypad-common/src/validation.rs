@@ -5,14 +5,10 @@
 
 use std::fmt;
 
-/// Maximum size for a single password (in bytes).
-pub const MAX_PASSWORD_SIZE: usize = 10 * 1024; // 10 KB
-
-/// Maximum size for notes field (in bytes).
-pub const MAX_NOTES_SIZE: usize = 100 * 1024; // 100 KB
-
-/// Maximum size for a single attachment (in bytes).
-pub const MAX_ATTACHMENT_SIZE: usize = 10 * 1024 * 1024; // 10 MB
+// Re-export size constants from lilypad-core for convenience
+pub use lilypad_core::{
+    MAX_ATTACHMENT_SIZE, MAX_NOTES_SIZE, MAX_PASSWORD_SIZE, MAX_TOTAL_ATTACHMENTS_SIZE,
+};
 
 /// Maximum total size for an entry (in bytes).
 pub const MAX_ENTRY_SIZE: usize = 50 * 1024 * 1024; // 50 MB

@@ -157,7 +157,7 @@ pub fn decrypt(key: &KeyMaterial, ciphertext: &Ciphertext) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decrypt, derive_key, encrypt, KeyDerivationParams, KeyMaterial};
+    use super::{decrypt, derive_key, encrypt, Ciphertext, KeyDerivationParams, KeyMaterial};
 
     #[test]
     fn encrypts_and_decrypts() {
@@ -181,5 +181,120 @@ mod tests {
         let params = KeyDerivationParams::generate();
         let key = derive_key("correct horse battery staple", &params).expect("derive");
         assert_eq!(key.as_bytes().len(), 32);
+    }
+
+    // Negative tests
+
+    #[test]
+    fn decrypt_with_wrong_key_fails() {
+        let key1 = KeyMaterial::generate();
+        let key2 = KeyMaterial::generate();
+        let message = b"secret-note";
+        let ciphertext = encrypt(&key1, message).expect("encrypt");
+
+        // Decrypting with a different key should fail
+        let result = decrypt(&key2, &ciphertext);
+        assert!(result.is_err(), "decryption with wrong key should fail");
+    }
+
+    #[test]
+    fn decrypt_with_corrupted_ciphertext_fails() {
+        let key = KeyMaterial::generate();
+        let message = b"secret-note";
+        let mut ciphertext = encrypt(&key, message).expect("encrypt");
+
+        // Corrupt the ciphertext data
+        if !ciphertext.data.is_empty() {
+            ciphertext.data[0] ^= 0xFF;
+        }
+
+        let result = decrypt(&key, &ciphertext);
+        assert!(result.is_err(), "decryption with corrupted ciphertext should fail");
+    }
+
+    #[test]
+    fn decrypt_with_corrupted_nonce_fails() {
+        let key = KeyMaterial::generate();
+        let message = b"secret-note";
+        let mut ciphertext = encrypt(&key, message).expect("encrypt");
+
+        // Corrupt the nonce
+        ciphertext.nonce[0] ^= 0xFF;
+
+        let result = decrypt(&key, &ciphertext);
+        assert!(result.is_err(), "decryption with corrupted nonce should fail");
+    }
+
+    #[test]
+    fn decrypt_with_truncated_ciphertext_fails() {
+        let key = KeyMaterial::generate();
+        let message = b"secret-note-that-is-longer-for-truncation";
+        let ciphertext = encrypt(&key, message).expect("encrypt");
+
+        // Truncate the ciphertext
+        let truncated = Ciphertext {
+            nonce: ciphertext.nonce,
+            data: ciphertext.data[..ciphertext.data.len() / 2].to_vec(),
+        };
+
+        let result = decrypt(&key, &truncated);
+        assert!(result.is_err(), "decryption with truncated ciphertext should fail");
+    }
+
+    #[test]
+    fn derive_key_with_empty_password_fails() {
+        let params = KeyDerivationParams::generate();
+        let result = derive_key("", &params);
+        assert!(result.is_err(), "key derivation with empty password should fail");
+    }
+
+    #[test]
+    fn derive_key_with_whitespace_password_fails() {
+        let params = KeyDerivationParams::generate();
+        let result = derive_key("   ", &params);
+        assert!(result.is_err(), "key derivation with whitespace-only password should fail");
+    }
+
+    #[test]
+    fn key_from_wrong_length_bytes_fails() {
+        // Too short
+        let result = KeyMaterial::from_bytes(&[0u8; 16]);
+        assert!(result.is_err(), "key from 16 bytes should fail");
+
+        // Too long
+        let result = KeyMaterial::from_bytes(&[0u8; 64]);
+        assert!(result.is_err(), "key from 64 bytes should fail");
+    }
+
+    #[test]
+    fn different_passwords_derive_different_keys() {
+        let params = KeyDerivationParams::generate();
+        let key1 = derive_key("password1", &params).expect("derive key1");
+        let key2 = derive_key("password2", &params).expect("derive key2");
+
+        assert_ne!(key1.as_bytes(), key2.as_bytes(), "different passwords should derive different keys");
+    }
+
+    #[test]
+    fn same_password_different_salts_derive_different_keys() {
+        let params1 = KeyDerivationParams::generate();
+        let params2 = KeyDerivationParams::generate();
+
+        let key1 = derive_key("same-password", &params1).expect("derive key1");
+        let key2 = derive_key("same-password", &params2).expect("derive key2");
+
+        assert_ne!(key1.as_bytes(), key2.as_bytes(), "same password with different salts should derive different keys");
+    }
+
+    #[test]
+    fn key_equality_is_constant_time() {
+        // This test ensures the PartialEq implementation using constant-time comparison
+        // We can't directly test timing, but we verify the comparison works correctly
+        let key1 = KeyMaterial::from_bytes(&[42u8; 32]).expect("key1");
+        let key2 = KeyMaterial::from_bytes(&[42u8; 32]).expect("key2");
+        let key3 = KeyMaterial::from_bytes(&[43u8; 32]).expect("key3");
+
+        assert_eq!(key1, key2, "equal keys should be equal");
+        assert_ne!(key1, key3, "different keys should not be equal");
     }
 }

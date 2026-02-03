@@ -14,9 +14,11 @@ csv.workspace = true
 lilypad-common = { path = "../lilypad-common" }
 lilypad-core = { path = "../lilypad-core" }
 lilypad-storage = { path = "../lilypad-storage" }
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 totp-rs.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 assert_cmd = "2.0"

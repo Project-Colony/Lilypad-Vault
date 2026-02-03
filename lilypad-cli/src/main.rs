@@ -11,13 +11,36 @@ use lilypad_common::{
 use lilypad_core::{
     decrypt, default_config, derive_key, encrypt, Attachment, Entry, EntryMetadata, EntrySecret,
     EntryType, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
+    MAX_NOTES_SIZE, MAX_PASSWORD_SIZE,
 };
 use lilypad_storage::LocalStore;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use totp_rs::{Algorithm, Secret, TOTP};
+use zeroize::Zeroize;
+
+/// A String wrapper that zeroizes its contents on drop.
+#[derive(Clone)]
+struct SecureString(String);
+
+impl SecureString {
+    fn new(s: String) -> Self {
+        Self(s)
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Drop for SecureString {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
 
 #[derive(Debug, Parser)]
 #[command(
@@ -123,6 +146,9 @@ enum Commands {
         /// Clipboard timeout in seconds
         #[arg(long, value_name = "SECONDS", default_value_t = 15)]
         clipboard_timeout: u64,
+        /// Show the password in plain text (hidden by default)
+        #[arg(long)]
+        show_password: bool,
     },
     /// Update the value of an existing entry.
     Update {
@@ -232,6 +258,42 @@ enum Commands {
         #[arg(value_parser = non_empty_value)]
         vault: String,
     },
+    /// Generate a random password.
+    Generate {
+        /// Password length
+        #[arg(long, short, default_value_t = 20)]
+        length: usize,
+        /// Include uppercase letters
+        #[arg(long, default_value_t = true)]
+        uppercase: bool,
+        /// Include lowercase letters
+        #[arg(long, default_value_t = true)]
+        lowercase: bool,
+        /// Include digits
+        #[arg(long, default_value_t = true)]
+        digits: bool,
+        /// Include special characters
+        #[arg(long, default_value_t = true)]
+        symbols: bool,
+        /// Copy to clipboard
+        #[arg(long)]
+        copy: bool,
+        /// Clipboard timeout in seconds
+        #[arg(long, value_name = "SECONDS", default_value_t = 15)]
+        clipboard_timeout: u64,
+    },
+    /// Export audit logs from a vault.
+    AuditLog {
+        /// Vault name to inspect
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
+        /// Output file path (prints to stdout if not specified)
+        #[arg(long)]
+        output: Option<String>,
+        /// Output format: json, csv
+        #[arg(long, default_value = "json")]
+        format: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -264,9 +326,11 @@ struct CsvEntry {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
+    // Wrap master password in SecureString for automatic zeroization on drop
     let master_password = cli
         .master_password
-        .or_else(|| std::env::var("LILYPAD_MASTER_PASSWORD").ok());
+        .or_else(|| std::env::var("LILYPAD_MASTER_PASSWORD").ok())
+        .map(SecureString::new);
     let mut config = default_config();
     if let Some(data_dir) = cli.data_dir {
         if data_dir.trim().is_empty() {
@@ -285,7 +349,7 @@ fn main() -> Result<()> {
             &config,
             &vault,
             use_master_password,
-            master_password.as_deref(),
+            master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::Vaults => list_vaults(&store),
         Commands::RenameVault { from, to } => rename_vault(&store, &from, &to),
@@ -316,16 +380,17 @@ fn main() -> Result<()> {
             entry_type,
             totp_secret,
             attachment,
-            master_password.as_deref(),
+            master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::List { vault } => {
-            list_entries(&store, &config, &vault, master_password.as_deref())
+            list_entries(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()))
         }
         Commands::Get {
             vault,
             label,
             copy,
             clipboard_timeout,
+            show_password,
         } => get_entry(
             &store,
             &config,
@@ -333,7 +398,8 @@ fn main() -> Result<()> {
             &label,
             copy,
             clipboard_timeout,
-            master_password.as_deref(),
+            show_password,
+            master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::Update {
             vault,
@@ -361,13 +427,13 @@ fn main() -> Result<()> {
             entry_type,
             totp_secret,
             attachment,
-            master_password.as_deref(),
+            master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::Remove { vault, label } => {
-            remove_entry(&store, &config, &vault, &label, master_password.as_deref())
+            remove_entry(&store, &config, &vault, &label, master_password.as_ref().map(|s| s.as_str()))
         }
         Commands::Search { vault, query } => {
-            search_entries(&store, &config, &vault, &query, master_password.as_deref())
+            search_entries(&store, &config, &vault, &query, master_password.as_ref().map(|s| s.as_str()))
         }
         Commands::Export {
             vault,
@@ -381,7 +447,7 @@ fn main() -> Result<()> {
             &output,
             &format,
             allow_plaintext,
-            master_password.as_deref(),
+            master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::Import {
             vault,
@@ -393,7 +459,7 @@ fn main() -> Result<()> {
             &vault,
             &input,
             &format,
-            master_password.as_deref(),
+            master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::RotateKey {
             vault,
@@ -404,15 +470,36 @@ fn main() -> Result<()> {
             &config,
             &vault,
             use_master_password,
-            new_master_password.as_deref(),
-            master_password.as_deref(),
+            new_master_password.as_ref().map(|s| s.as_str()),
+            master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::Totp { vault, label } => {
-            show_totp(&store, &config, &vault, &label, master_password.as_deref())
+            show_totp(&store, &config, &vault, &label, master_password.as_ref().map(|s| s.as_str()))
         }
         Commands::Audit { vault } => {
-            audit_vault(&store, &config, &vault, master_password.as_deref())
+            audit_vault(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()))
         }
+        Commands::Generate {
+            length,
+            uppercase,
+            lowercase,
+            digits,
+            symbols,
+            copy,
+            clipboard_timeout,
+        } => generate_password(length, uppercase, lowercase, digits, symbols, copy, clipboard_timeout),
+        Commands::AuditLog {
+            vault,
+            output,
+            format,
+        } => export_audit_log(
+            &store,
+            &config,
+            &vault,
+            output.as_deref(),
+            &format,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
     }
 }
 
@@ -579,6 +666,7 @@ fn get_entry(
     label: &str,
     copy: bool,
     clipboard_timeout: u64,
+    show_password: bool,
     master_password: Option<&str>,
 ) -> Result<()> {
     let (key, _) = load_key(&key_path(config), master_password)?;
@@ -603,12 +691,22 @@ fn get_entry(
     if !entry.metadata.tags.is_empty() {
         println!("Tags: {}", entry.metadata.tags.join(", "));
     }
-    println!("Password: {}", secret.password);
+    // Mask password by default for security (visible in terminal history/logs)
+    if show_password {
+        println!("Password: {}", secret.password);
+    } else {
+        println!("Password: ******** (use --show-password to reveal)");
+    }
     if let Some(notes) = &secret.notes {
         println!("Notes: {notes}");
     }
     if let Some(totp_secret) = &secret.totp_secret {
-        println!("TOTP secret: {totp_secret}");
+        // Also mask TOTP secret by default
+        if show_password {
+            println!("TOTP secret: {totp_secret}");
+        } else {
+            println!("TOTP secret: ******** (use --show-password to reveal)");
+        }
     }
     if !secret.attachments.is_empty() {
         println!("Attachments: {}", secret.attachments.len());
@@ -838,6 +936,8 @@ fn import_vault(
             let payload = fs::read(input)?;
             let import: VaultExport = serde_json::from_slice(&payload)?;
             for entry in import.entries {
+                // Validate imported entry data
+                validate_import_entry(&entry.label, &entry.secret, &entry.metadata)?;
                 upsert_entry(&mut vault, &key, &entry.label, entry.metadata, entry.secret)?;
             }
         }
@@ -875,6 +975,8 @@ fn import_vault(
                 if !record.totp_secret.is_empty() {
                     secret.totp_secret = Some(record.totp_secret);
                 }
+                // Validate imported entry data
+                validate_import_entry(&record.label, &secret, &metadata)?;
                 upsert_entry(&mut vault, &key, &record.label, metadata, secret)?;
             }
         }
@@ -1138,10 +1240,23 @@ fn encrypt_entry_secret(
 
 fn decrypt_entry_secret(key: &KeyMaterial, entry: &Entry) -> Result<EntrySecret> {
     let plaintext = decrypt(key, &entry.ciphertext)?;
+    // Try to deserialize as structured JSON first
     if let Ok(secret) = serde_json::from_slice::<EntrySecret>(&plaintext) {
         return Ok(secret);
     }
-    let password = String::from_utf8_lossy(&plaintext).to_string();
+    // Legacy format: plaintext is just the password as UTF-8 string
+    // Use proper UTF-8 conversion with error handling instead of lossy
+    let password = String::from_utf8(plaintext.clone()).map_err(|_| {
+        anyhow!(
+            "entry '{}' has corrupted data: invalid UTF-8 in legacy format",
+            entry.label
+        )
+    })?;
+    // Warn about legacy format so user knows to re-save the entry
+    eprintln!(
+        "Warning: entry '{}' is in legacy format. Consider updating it to migrate to new format.",
+        entry.label
+    );
     Ok(EntrySecret::new(password))
 }
 
@@ -1169,4 +1284,138 @@ fn non_empty_value(value: &str) -> Result<String, String> {
         return Err("value cannot be empty".to_string());
     }
     Ok(value.to_string())
+}
+
+fn generate_password(
+    length: usize,
+    uppercase: bool,
+    lowercase: bool,
+    digits: bool,
+    symbols: bool,
+    copy: bool,
+    clipboard_timeout: u64,
+) -> Result<()> {
+    if length == 0 {
+        return Err(anyhow!("password length must be greater than 0"));
+    }
+    if length > 1024 {
+        return Err(anyhow!("password length must be at most 1024"));
+    }
+    if !uppercase && !lowercase && !digits && !symbols {
+        return Err(anyhow!(
+            "at least one character set must be enabled (uppercase, lowercase, digits, symbols)"
+        ));
+    }
+
+    let mut charset = String::new();
+    if uppercase {
+        charset.push_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    }
+    if lowercase {
+        charset.push_str("abcdefghijklmnopqrstuvwxyz");
+    }
+    if digits {
+        charset.push_str("0123456789");
+    }
+    if symbols {
+        charset.push_str("!@#$%^&*()-_=+[]{}|;:,.<>?");
+    }
+
+    let charset_bytes = charset.as_bytes();
+    let mut rng = rand::thread_rng();
+    let password: String = (0..length)
+        .map(|_| {
+            let idx = rng.gen_range(0..charset_bytes.len());
+            charset_bytes[idx] as char
+        })
+        .collect();
+
+    // Display password strength
+    let strength = validate_password_strength(&password);
+    println!("Generated password: {password}");
+    println!("Strength: {}", strength.feedback());
+
+    if copy {
+        copy_to_clipboard_with_timeout(&password, clipboard_timeout)?;
+        println!("Password copied to clipboard for {clipboard_timeout} seconds.");
+    }
+
+    Ok(())
+}
+
+fn export_audit_log(
+    store: &LocalStore,
+    config: &lilypad_core::AppConfig,
+    vault_name: &str,
+    output: Option<&str>,
+    format: &str,
+    master_password: Option<&str>,
+) -> Result<()> {
+    let (key, _) = load_key(&key_path(config), master_password)?;
+    let vault = store
+        .load_vault(vault_name, &key)
+        .with_context(|| format!("vault not found: {vault_name}"))?;
+
+    let format = format.to_lowercase();
+    let content = match format.as_str() {
+        "json" => serde_json::to_string_pretty(&vault.audit_log)?,
+        "csv" => {
+            let mut writer = WriterBuilder::new().from_writer(Vec::new());
+            for event in &vault.audit_log {
+                writer.serialize((
+                    event.timestamp,
+                    &event.action,
+                    event.entry_label.as_deref().unwrap_or(""),
+                ))?;
+            }
+            writer.flush()?;
+            String::from_utf8(writer.into_inner()?)?
+        }
+        _ => return Err(anyhow!("unsupported format: {format} (use json or csv)")),
+    };
+
+    if let Some(path) = output {
+        fs::write(path, &content)?;
+        println!(
+            "Exported {} audit events to {path}.",
+            vault.audit_log.len()
+        );
+    } else {
+        println!("{content}");
+    }
+
+    Ok(())
+}
+
+/// Validates imported entry data against size limits.
+fn validate_import_entry(label: &str, secret: &EntrySecret, metadata: &EntryMetadata) -> Result<()> {
+    // Validate password size
+    if secret.password.len() > MAX_PASSWORD_SIZE {
+        return Err(anyhow!(
+            "entry '{}': password exceeds maximum size ({} bytes, max {} bytes)",
+            label,
+            secret.password.len(),
+            MAX_PASSWORD_SIZE
+        ));
+    }
+
+    // Validate notes size
+    if let Some(notes) = &secret.notes {
+        if notes.len() > MAX_NOTES_SIZE {
+            return Err(anyhow!(
+                "entry '{}': notes exceed maximum size ({} bytes, max {} bytes)",
+                label,
+                notes.len(),
+                MAX_NOTES_SIZE
+            ));
+        }
+    }
+
+    // Validate metadata
+    metadata.validate().with_context(|| format!("entry '{}' has invalid metadata", label))?;
+
+    // Validate secret (including attachments)
+    secret.validate().with_context(|| format!("entry '{}' has invalid secret data", label))?;
+
+    Ok(())
 }

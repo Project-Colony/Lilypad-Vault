@@ -1,15 +1,22 @@
 use anyhow::{anyhow, Context, Result};
+use fs2::FileExt;
 use lilypad_common::validation::validate_vault_name;
 use lilypad_core::{decrypt, encrypt, AppConfig, KeyMaterial, KeyMetadata, Vault};
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::io::Write;
+use std::fs::{self, File};
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 const VAULT_EXTENSION: &str = "lily";
 const LEGACY_EXTENSION: &str = "json";
 const LEGACY_VAULT_HEADER: &[u8] = b"LILYPAD_VAULT_V1\n";
 const VAULT_HEADER: &[u8] = b"LILYPAD_VAULT_V1\n# Lilypad vault (encrypted)\n";
+
+/// Current vault format version.
+const CURRENT_VERSION: u32 = 1;
+
+/// Maximum supported vault format version.
+const MAX_SUPPORTED_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StoreStatus {
@@ -70,7 +77,7 @@ impl LocalStore {
         let payload = serde_json::to_vec(vault)?;
         let ciphertext = encrypt(key, &payload)?;
         let stored = StoredVault {
-            version: 1,
+            version: CURRENT_VERSION,
             key_metadata: vault.key_metadata.clone(),
             ciphertext,
         };
@@ -79,13 +86,13 @@ impl LocalStore {
         bytes.extend_from_slice(VAULT_HEADER);
         bytes.extend_from_slice(&serialized);
         let path = self.vault_path(&vault.name)?;
-        self.write_vault_file(&path, &bytes)?;
+        self.write_vault_file_atomic(&path, &bytes)?;
         Ok(())
     }
 
     pub fn load_vault(&self, name: &str, key: &KeyMaterial) -> Result<Vault> {
         let path = self.vault_path(name)?;
-        let bytes = fs::read(&path)?;
+        let bytes = self.read_vault_file_locked(&path)?;
         let stored_bytes = if bytes.starts_with(VAULT_HEADER) {
             &bytes[VAULT_HEADER.len()..]
         } else if bytes.starts_with(LEGACY_VAULT_HEADER) {
@@ -99,6 +106,25 @@ impl LocalStore {
             ));
         };
         let stored: StoredVault = serde_json::from_slice(stored_bytes)?;
+
+        // Validate vault version
+        if stored.version > MAX_SUPPORTED_VERSION {
+            return Err(anyhow!(
+                "vault format version {} is not supported (max supported: {}). \
+                 Please upgrade Lilypad to open this vault.",
+                stored.version,
+                MAX_SUPPORTED_VERSION
+            ));
+        }
+
+        // Check for version that may need migration
+        if stored.version < CURRENT_VERSION {
+            eprintln!(
+                "Note: vault '{}' uses format version {}. Saving will upgrade it to version {}.",
+                name, stored.version, CURRENT_VERSION
+            );
+        }
+
         if stored.key_metadata.key_id != key.key_id() {
             return Err(anyhow!(
                 "key id mismatch: expected {}, got {}",
@@ -182,30 +208,82 @@ impl LocalStore {
 
     pub fn sync_payload(&self, name: &str) -> Result<Vec<u8>> {
         let path = self.vault_path(name)?;
-        Ok(fs::read(path)?)
+        self.read_vault_file_locked(&path)
     }
 
     pub fn apply_sync_payload(&self, name: &str, payload: &[u8]) -> Result<()> {
         let path = self.vault_path(name)?;
-        self.write_vault_file(&path, payload)?;
+        self.write_vault_file_atomic(&path, payload)?;
         Ok(())
     }
 
-    fn write_vault_file(&self, path: &PathBuf, bytes: &[u8]) -> Result<()> {
+    /// Reads a vault file with a shared lock to prevent concurrent write issues.
+    fn read_vault_file_locked(&self, path: &PathBuf) -> Result<Vec<u8>> {
+        let file = File::open(path)
+            .with_context(|| format!("failed to open vault file: {}", path.display()))?;
+
+        // Try to acquire a shared lock (allows multiple readers)
+        file.lock_shared().with_context(|| {
+            format!(
+                "failed to acquire lock on vault file: {} (another process may be writing)",
+                path.display()
+            )
+        })?;
+
+        let mut bytes = Vec::new();
+        let mut reader = std::io::BufReader::new(&file);
+        reader.read_to_end(&mut bytes)?;
+
+        // Lock is automatically released when file is dropped
+        Ok(bytes)
+    }
+
+    /// Writes a vault file atomically using a temporary file and rename.
+    ///
+    /// This ensures that the vault file is never in an inconsistent state:
+    /// - If the write fails, the original file remains unchanged
+    /// - If the process crashes during write, the temp file is left behind (not the corrupted vault)
+    fn write_vault_file_atomic(&self, path: &PathBuf, bytes: &[u8]) -> Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let mut file = fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)?;
+
+        // Create a temporary file in the same directory for atomic rename
+        let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        let temp_file = tempfile::NamedTempFile::new_in(parent)
+            .context("failed to create temporary file for atomic write")?;
+
+        // Acquire an exclusive lock on the temp file
+        temp_file.as_file().lock_exclusive().with_context(|| {
+            format!(
+                "failed to acquire exclusive lock for writing: {}",
+                path.display()
+            )
+        })?;
+
+        // Write to the temp file
+        temp_file
+            .as_file()
+            .write_all(bytes)
+            .context("failed to write vault data")?;
+        temp_file
+            .as_file()
+            .sync_all()
+            .context("failed to sync vault data to disk")?;
+
+        // Set secure permissions before persisting
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+            fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o600))?;
         }
-        file.write_all(bytes)?;
+
+        // Atomically rename temp file to target path
+        // This is atomic on most filesystems (POSIX guarantees it)
+        temp_file
+            .persist(path)
+            .with_context(|| format!("failed to persist vault file: {}", path.display()))?;
+
         Ok(())
     }
 }

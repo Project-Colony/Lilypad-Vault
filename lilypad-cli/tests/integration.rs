@@ -150,10 +150,10 @@ fn test_get_entry() {
         .assert()
         .success();
 
-    // Get entry
+    // Get entry (with --show-password to see the actual password)
     lilypad()
         .args(["--data-dir", data_dir])
-        .args(["get", "test", "mysite"])
+        .args(["get", "test", "mysite", "--show-password"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Label: mysite"))
@@ -265,10 +265,10 @@ fn test_update_entry() {
         .assert()
         .success();
 
-    // Verify update
+    // Verify update (with --show-password to see the actual password)
     lilypad()
         .args(["--data-dir", data_dir])
-        .args(["get", "test", "entry"])
+        .args(["get", "test", "entry", "--show-password"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Password: new_password"))
