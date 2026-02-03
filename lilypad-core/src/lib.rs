@@ -7,7 +7,8 @@ pub use crypto::{
 };
 pub use errors::{CoreError, Result};
 pub use models::{
-    Attachment, Entry, EntryMetadata, EntrySecret, EntryType, KeyMetadata, Vault,
+    Attachment, Entry, EntryChangeType, EntryHistoryRecord, EntryMetadata, EntrySecret, EntryType,
+    KeyMetadata, Vault,
     // Size limit constants
     MAX_ATTACHMENT_SIZE, MAX_ATTACHMENTS_PER_ENTRY, MAX_FOLDER_LENGTH, MAX_LABEL_LENGTH,
     MAX_NOTES_SIZE, MAX_PASSWORD_SIZE, MAX_TAG_LENGTH, MAX_TAGS_PER_ENTRY,

@@ -2,6 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{generate, Shell};
+use sha1::{Digest, Sha1};
 use csv::{ReaderBuilder, WriterBuilder};
 use lilypad_common::{
     clipboard::copy_to_clipboard_with_timeout,
@@ -10,16 +11,19 @@ use lilypad_common::{
     validation::{validate_password_strength, PasswordStrength},
 };
 use lilypad_core::{
-    decrypt, default_config, derive_key, encrypt, Attachment, Entry, EntryMetadata, EntrySecret,
-    EntryType, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault, MAX_NOTES_SIZE,
-    MAX_PASSWORD_SIZE,
+    decrypt, default_config, derive_key, encrypt, Attachment, Entry, EntryChangeType,
+    EntryMetadata, EntrySecret, EntryType, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
+    MAX_NOTES_SIZE, MAX_PASSWORD_SIZE,
 };
 use lilypad_storage::LocalStore;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-use std::fs;
+use std::fs::{self, Permissions};
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use tempfile::NamedTempFile;
 use totp_rs::{Algorithm, Secret, TOTP};
 use zeroize::Zeroize;
 
@@ -41,6 +45,32 @@ impl Drop for SecureString {
     fn drop(&mut self) {
         self.0.zeroize();
     }
+}
+
+/// Writes data to a file atomically using a temporary file and rename.
+/// This ensures the file is never in a partially-written state.
+fn atomic_write(path: impl AsRef<Path>, data: impl AsRef<[u8]>) -> Result<()> {
+    let path = path.as_ref();
+    let parent = path.parent().unwrap_or(Path::new("."));
+
+    // Create temp file in the same directory to ensure same filesystem for rename
+    let mut temp_file = NamedTempFile::new_in(parent)
+        .with_context(|| format!("failed to create temp file in {}", parent.display()))?;
+
+    temp_file
+        .write_all(data.as_ref())
+        .with_context(|| "failed to write to temp file")?;
+
+    temp_file
+        .flush()
+        .with_context(|| "failed to flush temp file")?;
+
+    // Persist the temp file by renaming it to the target path
+    temp_file
+        .persist(path)
+        .with_context(|| format!("failed to persist file to {}", path.display()))?;
+
+    Ok(())
 }
 
 /// Output format for CLI commands.
@@ -140,6 +170,9 @@ enum Commands {
         /// Require strong password (fail if password is weak)
         #[arg(long)]
         require_strong: bool,
+        /// Password expires in N days (0 = no expiry)
+        #[arg(long, value_name = "DAYS", default_value_t = 0)]
+        expires_in: u32,
     },
     /// List entries in a vault.
     List {
@@ -203,6 +236,9 @@ enum Commands {
         /// Require strong password (fail if password is weak)
         #[arg(long)]
         require_strong: bool,
+        /// Password expires in N days (0 = no expiry)
+        #[arg(long, value_name = "DAYS", default_value_t = 0)]
+        expires_in: u32,
     },
     /// Remove an entry from a vault.
     Remove {
@@ -327,6 +363,27 @@ enum Commands {
         #[arg(value_parser = non_empty_value)]
         vault: String,
     },
+    /// Check if passwords have been exposed in known data breaches (HaveIBeenPwned).
+    BreachCheck {
+        /// Vault name to check
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
+        /// Check only a specific entry
+        #[arg(long)]
+        entry: Option<String>,
+    },
+    /// View the change history of an entry.
+    History {
+        /// Vault name to inspect
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
+        /// Entry label
+        #[arg(value_parser = non_empty_value)]
+        label: String,
+        /// Number of history records to show (default: 10)
+        #[arg(long, short, default_value_t = 10)]
+        limit: usize,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -401,6 +458,7 @@ fn main() -> Result<()> {
             totp_secret,
             attachment,
             require_strong,
+            expires_in,
         } => add_entry(
             &store,
             &config,
@@ -416,6 +474,7 @@ fn main() -> Result<()> {
             totp_secret,
             attachment,
             require_strong,
+            expires_in,
             master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::List { vault } => {
@@ -451,6 +510,7 @@ fn main() -> Result<()> {
             totp_secret,
             attachment,
             require_strong,
+            expires_in,
         } => update_entry(
             &store,
             &config,
@@ -466,6 +526,7 @@ fn main() -> Result<()> {
             totp_secret,
             attachment,
             require_strong,
+            expires_in,
             master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::Remove { vault, label } => {
@@ -549,6 +610,21 @@ fn main() -> Result<()> {
             &store,
             &config,
             &vault,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::BreachCheck { vault, entry } => breach_check(
+            &store,
+            &config,
+            &vault,
+            entry.as_deref(),
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::History { vault, label, limit } => show_entry_history(
+            &store,
+            &config,
+            &vault,
+            &label,
+            limit,
             master_password.as_ref().map(|s| s.as_str()),
         ),
     }
@@ -658,6 +734,7 @@ fn add_entry(
     totp_secret: Option<String>,
     attachment: Vec<PathBuf>,
     require_strong: bool,
+    expires_in: u32,
     master_password: Option<&str>,
 ) -> Result<()> {
     // Check password strength
@@ -687,9 +764,16 @@ fn add_entry(
     secret.validate()?;
 
     let ciphertext = encrypt_entry_secret(&key, &secret)?;
-    vault.add_entry(Entry::new_with_metadata(label, metadata, ciphertext))?;
+    let mut entry = Entry::new_with_metadata(label, metadata, ciphertext);
+    if expires_in > 0 {
+        entry.set_password_expiry_days(expires_in);
+    }
+    vault.add_entry(entry)?;
     store.save_vault(&vault, &key)?;
     println!("Entry '{label}' added to vault '{vault_name}'.");
+    if expires_in > 0 {
+        println!("Password will expire in {expires_in} days.");
+    }
     Ok(())
 }
 
@@ -851,6 +935,7 @@ fn update_entry(
     totp_secret: Option<String>,
     attachment: Vec<PathBuf>,
     require_strong: bool,
+    expires_in: u32,
     master_password: Option<&str>,
 ) -> Result<()> {
     // Check password strength
@@ -868,19 +953,19 @@ fn update_entry(
     let mut vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
-    let (mut metadata, mut secret) = {
+    let (mut metadata, mut secret, old_password) = {
         let existing = vault
             .find_entry(label)
             .ok_or_else(|| anyhow!("entry '{label}' not found"))?;
-        (
-            existing.metadata.clone(),
-            decrypt_entry_secret(&key, existing)?,
-        )
+        let decrypted = decrypt_entry_secret(&key, existing)?;
+        let old_pw = decrypted.password.clone();
+        (existing.metadata.clone(), decrypted, old_pw)
     };
     apply_metadata_updates(&mut metadata, username, url, tags, folder, entry_type)?;
     // Validate metadata
     metadata.validate()?;
 
+    let password_changed = value != old_password;
     secret.password = value.to_string();
     if notes.is_some() {
         secret.notes = notes;
@@ -901,9 +986,20 @@ fn update_entry(
         .with_context(|| format!("entry '{label}' not found"))?;
     if let Some(entry) = vault.entries.iter_mut().find(|entry| entry.label == label) {
         entry.metadata = metadata;
+        // Update password change tracking
+        if password_changed {
+            entry.record_password_change();
+        }
+        // Update expiry if specified
+        if expires_in > 0 {
+            entry.set_password_expiry_days(expires_in);
+        }
     }
     store.save_vault(&vault, &key)?;
     println!("Entry '{label}' updated.");
+    if password_changed && expires_in > 0 {
+        println!("Password will expire in {expires_in} days.");
+    }
     Ok(())
 }
 
@@ -986,7 +1082,7 @@ fn export_vault(
     let format = format.to_lowercase();
     if format == "lily" {
         let payload = store.sync_payload(vault_name)?;
-        fs::write(output, payload)?;
+        atomic_write(output, payload)?;
         println!("Encrypted vault exported to {output}.");
         return Ok(());
     }
@@ -996,6 +1092,12 @@ fn export_vault(
             "plaintext export requires --allow-plaintext (format: {format})"
         ));
     }
+
+    // Security warning for plaintext export
+    eprintln!("⚠️  WARNING: You are about to export credentials in PLAINTEXT format.");
+    eprintln!("   All passwords, TOTP secrets, and notes will be visible in the output file.");
+    eprintln!("   Ensure you store or transmit this file securely, then delete it when done.");
+    eprintln!();
 
     let (key, _) = load_key(&key_path(config), master_password)?;
     let vault = store
@@ -1023,7 +1125,7 @@ fn export_vault(
                 entries,
             };
             let payload = serde_json::to_vec_pretty(&export)?;
-            fs::write(output, payload)?;
+            atomic_write(output, payload)?;
             println!("Vault exported to {output}.");
         }
         "csv" => {
@@ -1164,17 +1266,22 @@ fn rotate_key(
         // Backup vault file
         let vault_backup_path = backup_dir.join(format!("{vault_name}.{timestamp}.lily.bak"));
         let vault_payload = store.sync_payload(vault_name)?;
-        fs::write(&vault_backup_path, vault_payload)?;
+        fs::write(&vault_backup_path, &vault_payload)?;
+        #[cfg(unix)]
+        fs::set_permissions(&vault_backup_path, Permissions::from_mode(0o600))?;
 
         // Backup key file
         let key_backup_path = backup_dir.join(format!("key.{timestamp}.json.bak"));
         save_key(&key_backup_path, &old_key_file)?;
+        #[cfg(unix)]
+        fs::set_permissions(&key_backup_path, Permissions::from_mode(0o600))?;
 
-        println!(
-            "Backup created:\n  - {}\n  - {}",
+        eprintln!(
+            "⚠️  Backup created (contains encrypted vault and key file):\n  - {}\n  - {}",
             vault_backup_path.display(),
             key_backup_path.display()
         );
+        eprintln!("   Store these backups securely or delete them after rotation is verified.");
     }
 
     let (new_key, key_file, metadata) = if use_master_password {
@@ -1253,6 +1360,9 @@ fn audit_vault(
 
     let mut weak = Vec::new();
     let mut very_weak = Vec::new();
+    let mut expired = Vec::new();
+    let mut expiring_soon = Vec::new(); // Expires within 7 days
+    let mut old_passwords = Vec::new(); // Older than 90 days without expiry set
     let mut duplicates: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
 
@@ -1268,6 +1378,20 @@ fn audit_vault(
             .entry(secret.password)
             .or_default()
             .push(entry.label.clone());
+
+        // Check password expiry
+        if entry.is_password_expired() {
+            expired.push(entry.label.clone());
+        } else if let Some(days) = entry.days_until_password_expires() {
+            if days <= 7 && days >= 0 {
+                expiring_soon.push((entry.label.clone(), days));
+            }
+        }
+
+        // Check for old passwords without expiry set
+        if entry.password_expires_at == 0 && entry.password_age_days() > 90 {
+            old_passwords.push((entry.label.clone(), entry.password_age_days()));
+        }
     }
 
     let reused: Vec<Vec<String>> = duplicates
@@ -1283,6 +1407,13 @@ fn audit_vault(
                 "total_entries": vault.entries.len(),
                 "very_weak_passwords": very_weak,
                 "weak_passwords": weak,
+                "expired_passwords": expired,
+                "expiring_soon": expiring_soon.iter().map(|(label, days)| {
+                    serde_json::json!({ "label": label, "days_remaining": days })
+                }).collect::<Vec<_>>(),
+                "old_passwords": old_passwords.iter().map(|(label, days)| {
+                    serde_json::json!({ "label": label, "age_days": days })
+                }).collect::<Vec<_>>(),
                 "reused_passwords": reused,
             });
             println!("{}", serde_json::to_string_pretty(&json)?);
@@ -1309,10 +1440,27 @@ fn audit_vault(
                 }
             }
 
+            // Password expiry status
+            if !expired.is_empty() {
+                println!("\n⚠️  EXPIRED passwords: {}", expired.join(", "));
+            }
+            if !expiring_soon.is_empty() {
+                println!("\nExpiring within 7 days:");
+                for (label, days) in &expiring_soon {
+                    println!("  - {} ({} days remaining)", label, days);
+                }
+            }
+            if !old_passwords.is_empty() {
+                println!("\nOld passwords (>90 days, no expiry set):");
+                for (label, days) in &old_passwords {
+                    println!("  - {} ({} days old)", label, days);
+                }
+            }
+
             if reused.is_empty() {
-                println!("Password reuse: No reused passwords detected.");
+                println!("\nPassword reuse: No reused passwords detected.");
             } else {
-                println!("Password reuse detected:");
+                println!("\nPassword reuse detected:");
                 for group in &reused {
                     println!("  - {}", group.join(", "));
                 }
@@ -1565,7 +1713,7 @@ fn export_audit_log(
     };
 
     if let Some(path) = output {
-        fs::write(path, &content)?;
+        atomic_write(path, &content)?;
         println!(
             "Exported {} audit events to {path}.",
             vault.audit_log.len()
@@ -1577,7 +1725,7 @@ fn export_audit_log(
     Ok(())
 }
 
-/// Validates imported entry data against size limits.
+/// Validates imported entry data against size limits and format requirements.
 fn validate_import_entry(label: &str, secret: &EntrySecret, metadata: &EntryMetadata) -> Result<()> {
     // Validate password size
     if secret.password.len() > MAX_PASSWORD_SIZE {
@@ -1601,11 +1749,84 @@ fn validate_import_entry(label: &str, secret: &EntrySecret, metadata: &EntryMeta
         }
     }
 
+    // Validate URL format if present
+    if let Some(url) = &metadata.url {
+        if !url.is_empty() {
+            validate_url_format(url)
+                .with_context(|| format!("entry '{}' has invalid URL", label))?;
+        }
+    }
+
+    // Validate TOTP secret format if present
+    if let Some(totp_secret) = &secret.totp_secret {
+        if !totp_secret.is_empty() {
+            validate_totp_secret(totp_secret)
+                .with_context(|| format!("entry '{}' has invalid TOTP secret", label))?;
+        }
+    }
+
     // Validate metadata
     metadata.validate().with_context(|| format!("entry '{}' has invalid metadata", label))?;
 
     // Validate secret (including attachments)
     secret.validate().with_context(|| format!("entry '{}' has invalid secret data", label))?;
+
+    Ok(())
+}
+
+/// Validates URL format (basic validation).
+fn validate_url_format(url: &str) -> Result<()> {
+    // Check for valid URL schemes
+    let valid_schemes = ["http://", "https://", "ftp://", "ftps://", "ssh://", "file://"];
+    let has_valid_scheme = valid_schemes.iter().any(|scheme| url.to_lowercase().starts_with(scheme));
+
+    if !has_valid_scheme && !url.contains("://") {
+        // Allow URLs without scheme (will be treated as https)
+        // But must have at least a domain-like structure
+        if !url.contains('.') && !url.starts_with("localhost") {
+            return Err(anyhow!("URL '{}' appears malformed (no domain)", url));
+        }
+    }
+
+    // Check for dangerous URL schemes
+    let dangerous_schemes = ["javascript:", "data:", "vbscript:"];
+    for scheme in dangerous_schemes {
+        if url.to_lowercase().starts_with(scheme) {
+            return Err(anyhow!("URL '{}' uses a potentially dangerous scheme", url));
+        }
+    }
+
+    // Check for control characters
+    if url.chars().any(|c| c.is_control()) {
+        return Err(anyhow!("URL contains control characters"));
+    }
+
+    Ok(())
+}
+
+/// Validates TOTP secret format (should be valid base32).
+fn validate_totp_secret(secret: &str) -> Result<()> {
+    // TOTP secrets should be base32 encoded
+    // Valid base32 characters: A-Z and 2-7
+    let clean_secret = secret.to_uppercase().replace([' ', '-'], "");
+
+    if clean_secret.is_empty() {
+        return Err(anyhow!("TOTP secret is empty"));
+    }
+
+    // Check for valid base32 characters
+    for c in clean_secret.chars() {
+        if !matches!(c, 'A'..='Z' | '2'..='7' | '=') {
+            return Err(anyhow!(
+                "TOTP secret contains invalid character '{}' (must be base32: A-Z, 2-7)",
+                c
+            ));
+        }
+    }
+
+    // Try to decode to verify it's valid base32
+    let secret_obj = Secret::Encoded(clean_secret);
+    secret_obj.to_bytes().map_err(|e| anyhow!("invalid TOTP secret: {}", e))?;
 
     Ok(())
 }
@@ -1691,5 +1912,182 @@ fn change_master_password(
     store.save_vault(&updated_vault, &new_key)?;
 
     println!("Master password changed successfully for vault '{vault_name}'.");
+    Ok(())
+}
+
+/// Checks passwords against the HaveIBeenPwned database using k-anonymity.
+///
+/// This uses the HIBP range API which only sends the first 5 characters of the
+/// SHA-1 hash, preserving privacy while checking for breached passwords.
+fn breach_check(
+    store: &LocalStore,
+    config: &lilypad_core::AppConfig,
+    vault_name: &str,
+    entry_label: Option<&str>,
+    master_password: Option<&str>,
+) -> Result<()> {
+    let (key, _) = load_key(&key_path(config), master_password)?;
+    let vault = store
+        .load_vault(vault_name, &key)
+        .with_context(|| format!("vault not found: {vault_name}"))?;
+
+    let entries_to_check: Vec<_> = if let Some(label) = entry_label {
+        let entry = vault
+            .find_entry(label)
+            .ok_or_else(|| anyhow!("entry '{label}' not found"))?;
+        vec![entry]
+    } else {
+        vault.entries.iter().collect()
+    };
+
+    if entries_to_check.is_empty() {
+        println!("No entries to check.");
+        return Ok(());
+    }
+
+    println!("Checking {} entries against HaveIBeenPwned database...", entries_to_check.len());
+    println!("(This uses k-anonymity - only partial hashes are sent)\n");
+
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("Lilypad-Password-Manager/0.1")
+        .timeout(std::time::Duration::from_secs(10))
+        .build()?;
+
+    let mut breached_entries = Vec::new();
+    let mut checked = 0;
+    let total = entries_to_check.len();
+
+    for entry in &entries_to_check {
+        let secret = decrypt_entry_secret(&key, entry)?;
+
+        match check_password_hibp(&client, &secret.password) {
+            Ok(Some(count)) => {
+                breached_entries.push((entry.label.clone(), count));
+            }
+            Ok(None) => {
+                // Password not found in breaches
+            }
+            Err(e) => {
+                eprintln!("Warning: Could not check '{}': {}", entry.label, e);
+            }
+        }
+
+        checked += 1;
+        if checked % 10 == 0 {
+            eprint!("\rChecked {}/{} entries...", checked, total);
+        }
+    }
+
+    if checked >= 10 {
+        eprintln!(); // Clear progress line
+    }
+
+    println!("\nBreach check results for '{vault_name}':");
+    println!("Entries checked: {}", checked);
+
+    if breached_entries.is_empty() {
+        println!("\n✓ No breached passwords found!");
+    } else {
+        println!("\n⚠️  BREACHED PASSWORDS DETECTED:");
+        println!("The following entries use passwords found in known data breaches:\n");
+        for (label, count) in &breached_entries {
+            println!("  - {} (seen {} times in breaches)", label, count);
+        }
+        println!("\nThese passwords should be changed immediately.");
+    }
+
+    Ok(())
+}
+
+/// Checks a single password against HaveIBeenPwned using k-anonymity.
+/// Returns Ok(Some(count)) if breached, Ok(None) if not found, Err on network error.
+fn check_password_hibp(client: &reqwest::blocking::Client, password: &str) -> Result<Option<u64>> {
+    // Hash the password with SHA-1
+    let mut hasher = Sha1::new();
+    hasher.update(password.as_bytes());
+    let hash = hasher.finalize();
+    let hash_hex = format!("{:X}", hash);
+
+    // Split into prefix (first 5 chars) and suffix (rest)
+    let prefix = &hash_hex[..5];
+    let suffix = &hash_hex[5..];
+
+    // Query the HIBP API with the prefix
+    let url = format!("https://api.pwnedpasswords.com/range/{}", prefix);
+    let response = client.get(&url).send()?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!("HIBP API returned status {}", response.status()));
+    }
+
+    let body = response.text()?;
+
+    // Search for our suffix in the response
+    for line in body.lines() {
+        let parts: Vec<&str> = line.split(':').collect();
+        if parts.len() == 2 && parts[0].eq_ignore_ascii_case(suffix) {
+            let count: u64 = parts[1].parse().unwrap_or(0);
+            return Ok(Some(count));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Shows the change history of an entry.
+fn show_entry_history(
+    store: &LocalStore,
+    config: &lilypad_core::AppConfig,
+    vault_name: &str,
+    label: &str,
+    limit: usize,
+    master_password: Option<&str>,
+) -> Result<()> {
+    let (key, _) = load_key(&key_path(config), master_password)?;
+    let vault = store
+        .load_vault(vault_name, &key)
+        .with_context(|| format!("vault not found: {vault_name}"))?;
+
+    let entry = vault
+        .find_entry(label)
+        .ok_or_else(|| anyhow!("entry '{label}' not found"))?;
+
+    println!("History for '{}' (showing up to {} records):\n", label, limit);
+
+    if entry.history.is_empty() {
+        println!("No history records found.");
+        return Ok(());
+    }
+
+    for (i, record) in entry.get_history().take(limit).enumerate() {
+        let timestamp = format_timestamp_relative(record.timestamp);
+        let change_type = match &record.change_type {
+            EntryChangeType::Created => "Created",
+            EntryChangeType::PasswordChanged => "Password changed",
+            EntryChangeType::MetadataUpdated => "Metadata updated",
+            EntryChangeType::NotesUpdated => "Notes updated",
+            EntryChangeType::Renamed => "Renamed",
+            EntryChangeType::TotpUpdated => "TOTP updated",
+            EntryChangeType::AttachmentsUpdated => "Attachments updated",
+        };
+
+        print!("{}. {} - {}", i + 1, timestamp, change_type);
+        if let Some(desc) = &record.description {
+            print!(" ({})", desc);
+        }
+        if record.previous_ciphertext.is_some() {
+            print!(" [previous password stored]");
+        }
+        println!();
+    }
+
+    let total = entry.history.len();
+    if total > limit {
+        println!("\n... and {} more records (use --limit to see more)", total - limit);
+    }
+
+    println!("\nTotal history records: {}", total);
+    println!("Password changes: {}", entry.password_change_count());
+
     Ok(())
 }

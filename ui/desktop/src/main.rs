@@ -20,6 +20,48 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use zeroize::Zeroize;
+
+/// A String wrapper that zeroizes its contents on drop for security.
+struct SecureString(String);
+
+impl SecureString {
+    fn new() -> Self {
+        Self(String::new())
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn clear(&mut self) {
+        self.0.zeroize();
+        self.0 = String::new();
+    }
+}
+
+impl std::ops::Deref for SecureString {
+    type Target = String;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for SecureString {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Drop for SecureString {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
 
 fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions::default();
@@ -272,8 +314,8 @@ struct LilypadApp {
     welcome_ack_path: Option<std::path::PathBuf>,
     settings_path: Option<std::path::PathBuf>,
     lockout_path: Option<std::path::PathBuf>,
-    master_password: String,
-    generated_password: String,
+    master_password: String, // Zeroized on drop
+    generated_password: String, // Zeroized on drop
     config: AppConfig,
     store: LocalStore,
     active_vault: String,
@@ -289,7 +331,7 @@ struct LilypadApp {
     vault_entries: Vec<VaultEntry>,
     entry_title: String,
     entry_username: String,
-    entry_password: String,
+    entry_password: String, // Zeroized on drop
     entry_url: String,
     entry_notes: String,
 
@@ -304,12 +346,12 @@ struct LilypadApp {
 
     // Clipboard management
     clipboard_clear_time: Option<Instant>,
-    clipboard_value: Option<String>,
+    clipboard_value: Option<String>, // Zeroized on drop
 
     // Re-authentication modal for copy
     show_reauth_modal: bool,
-    reauth_password: String,
-    pending_copy_password: Option<String>,
+    reauth_password: String, // Zeroized on drop
+    pending_copy_password: Option<String>, // Zeroized on drop
 
     // Confirmation dialogs
     show_delete_confirm: bool,
@@ -325,6 +367,27 @@ struct LilypadApp {
     security_trusted_devices: Vec<String>,
 }
 
+/// Implement Drop to zeroize sensitive fields when the app is closed.
+impl Drop for LilypadApp {
+    fn drop(&mut self) {
+        // Zeroize all sensitive fields
+        self.master_password.zeroize();
+        self.generated_password.zeroize();
+        self.entry_password.zeroize();
+        self.reauth_password.zeroize();
+        if let Some(ref mut value) = self.clipboard_value {
+            value.zeroize();
+        }
+        if let Some(ref mut value) = self.pending_copy_password {
+            value.zeroize();
+        }
+        // Zeroize passwords in vault entries
+        for entry in &mut self.vault_entries {
+            entry.password.zeroize();
+        }
+    }
+}
+
 struct VaultEntry {
     title: String,
     username: String,
@@ -333,6 +396,12 @@ struct VaultEntry {
     notes: String,
     last_updated: String,
     updated_at: u64,
+}
+
+impl Drop for VaultEntry {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
 }
 
 impl Default for LilypadApp {

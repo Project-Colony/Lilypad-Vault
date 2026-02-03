@@ -496,3 +496,293 @@ fn test_export_plaintext_requires_flag() {
         .failure()
         .stderr(predicate::str::contains("--allow-plaintext"));
 }
+
+#[test]
+fn test_generate_password() {
+    // Test basic password generation
+    lilypad()
+        .args(["generate", "--length", "20"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Generated password:"));
+}
+
+#[test]
+fn test_generate_password_default() {
+    // Test password generation output includes strength indicator
+    lilypad()
+        .args(["generate"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Strength:"));
+}
+
+#[test]
+fn test_add_with_password_expiry() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "test"])
+        .assert()
+        .success();
+
+    // Add entry with expiry
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args([
+            "add", "test", "expiring",
+            "MyStr0ng!Pass123",
+            "--expires-in", "90",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Password will expire in 90 days"));
+}
+
+#[test]
+fn test_entry_history() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "test"])
+        .assert()
+        .success();
+
+    // Add entry
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["add", "test", "tracked", "password1"])
+        .assert()
+        .success();
+
+    // Update entry (creates history)
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["update", "test", "tracked", "password2"])
+        .assert()
+        .success();
+
+    // Check history
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["history", "test", "tracked"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created"))
+        .stdout(predicate::str::contains("Password changed"));
+}
+
+#[test]
+fn test_json_output_format() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "test"])
+        .assert()
+        .success();
+
+    // Add entry
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["add", "test", "jsontest", "pass123"])
+        .assert()
+        .success();
+
+    // List with JSON output
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["--output-format", "json"])
+        .args(["list", "test"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"entries\""))
+        .stdout(predicate::str::contains("\"label\""))
+        .stdout(predicate::str::contains("jsontest"));
+}
+
+#[test]
+fn test_completions_generation() {
+    // Test that completions generate without error for bash
+    lilypad()
+        .args(["completions", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("complete"));
+}
+
+#[test]
+fn test_audit_with_password_expiry() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "test"])
+        .assert()
+        .success();
+
+    // Add entry with no expiry
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["add", "test", "noexpiry", "MyStr0ng!Pass123"])
+        .assert()
+        .success();
+
+    // Audit should work
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["audit", "test"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Audit results"));
+}
+
+#[test]
+fn test_require_strong_password() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "test"])
+        .assert()
+        .success();
+
+    // Add with weak password and --require-strong should fail
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args([
+            "add", "test", "weak",
+            "short",
+            "--require-strong",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("too weak"));
+}
+
+#[test]
+fn test_search_with_json_output() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "test"])
+        .assert()
+        .success();
+
+    // Add entry
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["add", "test", "searchable", "pass123"])
+        .assert()
+        .success();
+
+    // Search with JSON output
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["--output-format", "json"])
+        .args(["search", "test", "search"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"results\""))
+        .stdout(predicate::str::contains("searchable"));
+}
+
+#[test]
+fn test_get_entry_with_json_output() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "test"])
+        .assert()
+        .success();
+
+    // Add entry
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args([
+            "add", "test", "jsonentry",
+            "secret123",
+            "--username", "user@example.com",
+        ])
+        .assert()
+        .success();
+
+    // Get with JSON output
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["--output-format", "json"])
+        .args(["get", "test", "jsonentry"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"label\""))
+        .stdout(predicate::str::contains("jsonentry"))
+        .stdout(predicate::str::contains("user@example.com"));
+}
+
+#[test]
+fn test_import_from_lily_format() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+    let export_path = dir.path().join("export.lily");
+
+    // Initialize and add
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "source"])
+        .assert()
+        .success();
+
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["add", "source", "entry1", "password1"])
+        .assert()
+        .success();
+
+    // Export
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args([
+            "export", "source",
+            "--output", export_path.to_str().unwrap(),
+            "--format", "lily",
+        ])
+        .assert()
+        .success();
+
+    // Import to new vault
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args([
+            "import", "target",
+            "--input", export_path.to_str().unwrap(),
+            "--format", "lily",
+        ])
+        .assert()
+        .success();
+
+    // Verify import
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["list", "target"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("entry1"));
+}

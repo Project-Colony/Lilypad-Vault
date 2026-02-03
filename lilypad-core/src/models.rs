@@ -329,6 +329,72 @@ impl Vault {
     }
 }
 
+/// Record of a change made to an entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EntryHistoryRecord {
+    /// Unix timestamp when the change was made.
+    pub timestamp: u64,
+    /// Type of change that was made.
+    pub change_type: EntryChangeType,
+    /// Optional description of what changed.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Previous ciphertext (for password history - encrypted).
+    #[serde(default)]
+    pub previous_ciphertext: Option<Ciphertext>,
+}
+
+/// Types of changes that can be made to an entry.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum EntryChangeType {
+    /// Entry was created.
+    Created,
+    /// Password was changed.
+    PasswordChanged,
+    /// Metadata was updated (username, URL, tags, etc.).
+    MetadataUpdated,
+    /// Notes were modified.
+    NotesUpdated,
+    /// Entry was renamed.
+    Renamed,
+    /// TOTP secret was added or modified.
+    TotpUpdated,
+    /// Attachments were modified.
+    AttachmentsUpdated,
+}
+
+impl EntryHistoryRecord {
+    /// Creates a new history record with the current timestamp.
+    pub fn new(change_type: EntryChangeType) -> Self {
+        Self {
+            timestamp: current_timestamp(),
+            change_type,
+            description: None,
+            previous_ciphertext: None,
+        }
+    }
+
+    /// Creates a new history record with a description.
+    pub fn with_description(change_type: EntryChangeType, description: impl Into<String>) -> Self {
+        Self {
+            timestamp: current_timestamp(),
+            change_type,
+            description: Some(description.into()),
+            previous_ciphertext: None,
+        }
+    }
+
+    /// Creates a password change record that stores the previous password.
+    pub fn password_change(previous_ciphertext: Ciphertext) -> Self {
+        Self {
+            timestamp: current_timestamp(),
+            change_type: EntryChangeType::PasswordChanged,
+            description: None,
+            previous_ciphertext: Some(previous_ciphertext),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Entry {
     #[serde(default)]
@@ -341,6 +407,15 @@ pub struct Entry {
     pub created_at: u64,
     #[serde(default)]
     pub updated_at: u64,
+    /// Unix timestamp when the password was last changed (0 = same as created_at)
+    #[serde(default)]
+    pub password_changed_at: u64,
+    /// Optional Unix timestamp when the password should be rotated (0 = no expiry)
+    #[serde(default)]
+    pub password_expires_at: u64,
+    /// History of changes made to this entry.
+    #[serde(default)]
+    pub history: Vec<EntryHistoryRecord>,
 }
 
 impl Entry {
@@ -354,14 +429,101 @@ impl Entry {
         ciphertext: Ciphertext,
     ) -> Self {
         let now = current_timestamp();
-        Self {
+        let mut entry = Self {
             id: generate_id(),
             label: label.into(),
             metadata,
             ciphertext,
             created_at: now,
             updated_at: now,
+            password_changed_at: now,
+            password_expires_at: 0,
+            history: Vec::new(),
+        };
+        entry.history.push(EntryHistoryRecord::new(EntryChangeType::Created));
+        entry
+    }
+
+    /// Records a change in the entry's history.
+    pub fn record_change(&mut self, record: EntryHistoryRecord) {
+        self.history.push(record);
+        self.updated_at = current_timestamp();
+    }
+
+    /// Records a password change, optionally storing the previous password.
+    pub fn record_password_change_with_history(&mut self, previous_ciphertext: Option<Ciphertext>) {
+        self.password_changed_at = current_timestamp();
+        if let Some(prev) = previous_ciphertext {
+            self.history.push(EntryHistoryRecord::password_change(prev));
+        } else {
+            self.history.push(EntryHistoryRecord::new(EntryChangeType::PasswordChanged));
         }
+        self.updated_at = current_timestamp();
+    }
+
+    /// Gets the history of this entry, most recent first.
+    pub fn get_history(&self) -> impl Iterator<Item = &EntryHistoryRecord> {
+        self.history.iter().rev()
+    }
+
+    /// Gets the number of password changes recorded in history.
+    pub fn password_change_count(&self) -> usize {
+        self.history.iter()
+            .filter(|h| matches!(h.change_type, EntryChangeType::PasswordChanged))
+            .count()
+    }
+
+    /// Sets the password expiry date (as Unix timestamp).
+    /// Pass 0 to disable expiry.
+    pub fn set_password_expiry(&mut self, expires_at: u64) {
+        self.password_expires_at = expires_at;
+    }
+
+    /// Sets password expiry to N days from now.
+    /// Pass 0 to disable expiry.
+    pub fn set_password_expiry_days(&mut self, days: u32) {
+        if days == 0 {
+            self.password_expires_at = 0;
+        } else {
+            let now = current_timestamp();
+            self.password_expires_at = now + (days as u64 * 24 * 60 * 60);
+        }
+    }
+
+    /// Records that the password was changed (updates password_changed_at and adds to history).
+    pub fn record_password_change(&mut self) {
+        self.password_changed_at = current_timestamp();
+        self.history.push(EntryHistoryRecord::new(EntryChangeType::PasswordChanged));
+        self.updated_at = current_timestamp();
+    }
+
+    /// Returns true if the password has expired.
+    pub fn is_password_expired(&self) -> bool {
+        if self.password_expires_at == 0 {
+            return false;
+        }
+        current_timestamp() > self.password_expires_at
+    }
+
+    /// Returns the number of days until password expires, or None if no expiry set.
+    pub fn days_until_password_expires(&self) -> Option<i64> {
+        if self.password_expires_at == 0 {
+            return None;
+        }
+        let now = current_timestamp();
+        let diff = self.password_expires_at as i64 - now as i64;
+        Some(diff / (24 * 60 * 60))
+    }
+
+    /// Returns the age of the password in days.
+    pub fn password_age_days(&self) -> u64 {
+        let changed = if self.password_changed_at > 0 {
+            self.password_changed_at
+        } else {
+            self.created_at
+        };
+        let now = current_timestamp();
+        (now.saturating_sub(changed)) / (24 * 60 * 60)
     }
 
     fn matches_query(&self, needle: &str) -> bool {
