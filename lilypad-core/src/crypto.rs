@@ -98,15 +98,125 @@ pub struct KeyDerivationParams {
 }
 
 impl KeyDerivationParams {
+    /// Generates new key derivation parameters with default settings.
+    ///
+    /// Uses 64 MiB memory, 3 iterations, and single-threaded processing.
+    /// For systems with limited resources, use `generate_adaptive()` instead.
     pub fn generate() -> Self {
         let mut salt = [0u8; SALT_LEN];
         OsRng.fill_bytes(&mut salt);
         Self {
             salt,
-            memory_kib: 64 * 1024,
+            memory_kib: 64 * 1024, // 64 MiB
             iterations: 3,
             parallelism: 1,
         }
+    }
+
+    /// Generates new key derivation parameters adapted to system capabilities.
+    ///
+    /// Adjusts memory usage based on available system RAM and parallelism
+    /// based on CPU core count. This ensures the KDF is as strong as possible
+    /// while remaining usable on the target system.
+    pub fn generate_adaptive() -> Self {
+        let mut salt = [0u8; SALT_LEN];
+        OsRng.fill_bytes(&mut salt);
+
+        // Detect system capabilities
+        let (memory_kib, iterations, parallelism) = Self::detect_optimal_params();
+
+        Self {
+            salt,
+            memory_kib,
+            iterations,
+            parallelism,
+        }
+    }
+
+    /// Detects optimal Argon2 parameters based on system capabilities.
+    ///
+    /// Returns (memory_kib, iterations, parallelism).
+    fn detect_optimal_params() -> (u32, u32, u32) {
+        // Get number of CPU cores (use 1 as fallback)
+        let num_cpus = std::thread::available_parallelism()
+            .map(|p| p.get() as u32)
+            .unwrap_or(1);
+
+        // Use at most 4 threads to avoid excessive resource usage
+        let parallelism = num_cpus.min(4);
+
+        // Try to detect available memory using sys-info or fallback to conservative defaults
+        // We aim to use about 1/16th of available RAM, capped between 16 MiB and 256 MiB
+        let memory_kib = Self::detect_available_memory_kib()
+            .map(|total| {
+                // Use 1/16th of total memory, but at least 16 MiB and at most 256 MiB
+                let target = total / 16;
+                target.clamp(16 * 1024, 256 * 1024) as u32
+            })
+            .unwrap_or(64 * 1024); // Default to 64 MiB if detection fails
+
+        // Adjust iterations based on memory: less memory = more iterations
+        // This maintains security even on low-memory systems
+        let iterations = if memory_kib >= 128 * 1024 {
+            2 // High memory: fewer iterations needed
+        } else if memory_kib >= 64 * 1024 {
+            3 // Medium memory: standard iterations
+        } else if memory_kib >= 32 * 1024 {
+            4 // Low memory: more iterations
+        } else {
+            6 // Very low memory: many iterations to compensate
+        };
+
+        (memory_kib, iterations, parallelism)
+    }
+
+    /// Attempts to detect available system memory in KiB.
+    ///
+    /// Returns None if detection fails.
+    #[cfg(target_os = "linux")]
+    fn detect_available_memory_kib() -> Option<u64> {
+        // Read from /proc/meminfo
+        std::fs::read_to_string("/proc/meminfo")
+            .ok()
+            .and_then(|content| {
+                content
+                    .lines()
+                    .find(|line| line.starts_with("MemTotal:"))
+                    .and_then(|line| {
+                        line.split_whitespace()
+                            .nth(1)
+                            .and_then(|s| s.parse::<u64>().ok())
+                    })
+            })
+    }
+
+    #[cfg(target_os = "macos")]
+    fn detect_available_memory_kib() -> Option<u64> {
+        // Use sysctl on macOS
+        use std::process::Command;
+        Command::new("sysctl")
+            .args(["-n", "hw.memsize"])
+            .output()
+            .ok()
+            .and_then(|output| {
+                String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+                    .map(|bytes| bytes / 1024) // Convert to KiB
+            })
+    }
+
+    #[cfg(target_os = "windows")]
+    fn detect_available_memory_kib() -> Option<u64> {
+        // On Windows, we'd need to use Windows API
+        // For simplicity, return None to use defaults
+        None
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    fn detect_available_memory_kib() -> Option<u64> {
+        None
     }
 
     pub fn argon2(&self) -> Result<Argon2<'static>> {

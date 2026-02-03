@@ -125,6 +125,9 @@ enum Commands {
         /// Attachment file paths (repeatable)
         #[arg(long, value_name = "FILE")]
         attachment: Vec<PathBuf>,
+        /// Require strong password (fail if password is weak)
+        #[arg(long)]
+        require_strong: bool,
     },
     /// List entries in a vault.
     List {
@@ -185,6 +188,9 @@ enum Commands {
         /// Attachment file paths (repeatable)
         #[arg(long, value_name = "FILE")]
         attachment: Vec<PathBuf>,
+        /// Require strong password (fail if password is weak)
+        #[arg(long)]
+        require_strong: bool,
     },
     /// Remove an entry from a vault.
     Remove {
@@ -242,6 +248,9 @@ enum Commands {
         /// New master password (if using a master password)
         #[arg(long, value_name = "PASSWORD")]
         new_master_password: Option<String>,
+        /// Skip automatic backup before rotation
+        #[arg(long)]
+        skip_backup: bool,
     },
     /// Show the current TOTP code for an entry.
     Totp {
@@ -366,6 +375,7 @@ fn main() -> Result<()> {
             entry_type,
             totp_secret,
             attachment,
+            require_strong,
         } => add_entry(
             &store,
             &config,
@@ -380,6 +390,7 @@ fn main() -> Result<()> {
             entry_type,
             totp_secret,
             attachment,
+            require_strong,
             master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::List { vault } => {
@@ -413,6 +424,7 @@ fn main() -> Result<()> {
             entry_type,
             totp_secret,
             attachment,
+            require_strong,
         } => update_entry(
             &store,
             &config,
@@ -427,6 +439,7 @@ fn main() -> Result<()> {
             entry_type,
             totp_secret,
             attachment,
+            require_strong,
             master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::Remove { vault, label } => {
@@ -465,12 +478,14 @@ fn main() -> Result<()> {
             vault,
             use_master_password,
             new_master_password,
+            skip_backup,
         } => rotate_key(
             &store,
             &config,
             &vault,
             use_master_password,
             new_master_password.as_ref().map(|s| s.as_str()),
+            skip_backup,
             master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::Totp { vault, label } => {
@@ -597,11 +612,17 @@ fn add_entry(
     entry_type: Option<String>,
     totp_secret: Option<String>,
     attachment: Vec<PathBuf>,
+    require_strong: bool,
     master_password: Option<&str>,
 ) -> Result<()> {
-    // Warn if password is weak
+    // Check password strength
     let strength = validate_password_strength(value);
-    if !strength.is_acceptable() {
+    if require_strong && !strength.is_acceptable() {
+        return Err(anyhow!(
+            "password is too weak: {}. Use a stronger password or remove --require-strong.",
+            strength.feedback()
+        ));
+    } else if !strength.is_acceptable() {
         eprintln!("Warning: {}", strength.feedback());
     }
 
@@ -733,11 +754,17 @@ fn update_entry(
     entry_type: Option<String>,
     totp_secret: Option<String>,
     attachment: Vec<PathBuf>,
+    require_strong: bool,
     master_password: Option<&str>,
 ) -> Result<()> {
-    // Warn if new password is weak
+    // Check password strength
     let strength = validate_password_strength(value);
-    if !strength.is_acceptable() {
+    if require_strong && !strength.is_acceptable() {
+        return Err(anyhow!(
+            "password is too weak: {}. Use a stronger password or remove --require-strong.",
+            strength.feedback()
+        ));
+    } else if !strength.is_acceptable() {
         eprintln!("Warning: {}", strength.feedback());
     }
 
@@ -996,12 +1023,39 @@ fn rotate_key(
     vault_name: &str,
     use_master_password: bool,
     new_master_password: Option<&str>,
+    skip_backup: bool,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (old_key, _) = load_key(&key_path(config), master_password)?;
+    let (old_key, old_key_file) = load_key(&key_path(config), master_password)?;
     let mut vault = store
         .load_vault(vault_name, &old_key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
+
+    // Create backup before rotation (unless --skip-backup is specified)
+    if !skip_backup {
+        let backup_dir = PathBuf::from(&config.data_dir).join("backups");
+        fs::create_dir_all(&backup_dir)?;
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        // Backup vault file
+        let vault_backup_path = backup_dir.join(format!("{vault_name}.{timestamp}.lily.bak"));
+        let vault_payload = store.sync_payload(vault_name)?;
+        fs::write(&vault_backup_path, vault_payload)?;
+
+        // Backup key file
+        let key_backup_path = backup_dir.join(format!("key.{timestamp}.json.bak"));
+        save_key(&key_backup_path, &old_key_file)?;
+
+        println!(
+            "Backup created:\n  - {}\n  - {}",
+            vault_backup_path.display(),
+            key_backup_path.display()
+        );
+    }
 
     let (new_key, key_file, metadata) = if use_master_password {
         let password = new_master_password

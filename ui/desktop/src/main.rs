@@ -890,11 +890,12 @@ impl LilypadApp {
                 self.show_add_entry = true;
             }
             if ui.button("Lock vault").clicked() {
-                self.vault_unlocked = false;
-                self.vault = None;
-                self.vault_key = None;
-                self.vault_entries.clear();
+                self.lock_vault();
                 self.status_message = Some("Vault locked".to_string());
+                self.status_message_time = Some(Instant::now());
+            }
+            if ui.button("Generate password").clicked() {
+                self.selected_category = 1; // Switch to password generator tab
             }
         });
         ui.add_space(8.0);
