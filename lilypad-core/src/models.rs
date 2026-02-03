@@ -658,6 +658,68 @@ pub struct EntrySecret {
     pub totp_secret: Option<String>,
     #[serde(default)]
     pub attachments: Vec<Attachment>,
+    /// TOTP backup codes (one-time use recovery codes)
+    #[serde(default)]
+    pub totp_backup_codes: Vec<TotpBackupCode>,
+    /// Email address (for Identity entries or validation)
+    #[serde(default)]
+    pub email: Option<String>,
+    /// Phone number (for Identity entries)
+    #[serde(default)]
+    pub phone: Option<String>,
+}
+
+/// TOTP backup code for recovery when 2FA device is unavailable
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TotpBackupCode {
+    /// The backup code (typically 8-10 alphanumeric characters)
+    pub code: String,
+    /// Whether this code has been used
+    pub used: bool,
+    /// Timestamp when the code was used (0 if not used)
+    #[serde(default)]
+    pub used_at: u64,
+}
+
+/// Number of backup codes to generate
+pub const TOTP_BACKUP_CODE_COUNT: usize = 10;
+/// Length of each backup code
+pub const TOTP_BACKUP_CODE_LENGTH: usize = 8;
+
+impl TotpBackupCode {
+    /// Creates a new unused backup code.
+    pub fn new(code: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            used: false,
+            used_at: 0,
+        }
+    }
+
+    /// Marks the code as used.
+    pub fn mark_used(&mut self) {
+        self.used = true;
+        self.used_at = current_timestamp();
+    }
+
+    /// Generates a random backup code.
+    pub fn generate() -> Self {
+        // Use alphanumeric characters (excluding confusing ones like 0/O, 1/l/I)
+        const CHARSET: &[u8] = b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+        let mut code = String::with_capacity(TOTP_BACKUP_CODE_LENGTH);
+        let mut bytes = [0u8; TOTP_BACKUP_CODE_LENGTH];
+        OsRng.fill_bytes(&mut bytes);
+        for byte in bytes {
+            let idx = (byte as usize) % CHARSET.len();
+            code.push(CHARSET[idx] as char);
+        }
+        Self::new(code)
+    }
+
+    /// Generates a set of backup codes.
+    pub fn generate_set(count: usize) -> Vec<Self> {
+        (0..count).map(|_| Self::generate()).collect()
+    }
 }
 
 impl EntrySecret {
@@ -667,7 +729,39 @@ impl EntrySecret {
             notes: None,
             totp_secret: None,
             attachments: Vec::new(),
+            totp_backup_codes: Vec::new(),
+            email: None,
+            phone: None,
         }
+    }
+
+    /// Generates TOTP backup codes for this entry.
+    /// Returns the generated codes (should be shown to user once).
+    pub fn generate_backup_codes(&mut self) -> Vec<String> {
+        self.totp_backup_codes = TotpBackupCode::generate_set(TOTP_BACKUP_CODE_COUNT);
+        self.totp_backup_codes.iter().map(|c| c.code.clone()).collect()
+    }
+
+    /// Verifies and consumes a backup code. Returns true if valid.
+    pub fn use_backup_code(&mut self, code: &str) -> bool {
+        let code_upper = code.to_uppercase().replace("-", "").replace(" ", "");
+        for backup in &mut self.totp_backup_codes {
+            if !backup.used && backup.code == code_upper {
+                backup.mark_used();
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Returns the number of unused backup codes.
+    pub fn unused_backup_codes_count(&self) -> usize {
+        self.totp_backup_codes.iter().filter(|c| !c.used).count()
+    }
+
+    /// Returns true if backup codes are running low (less than 3 remaining).
+    pub fn backup_codes_low(&self) -> bool {
+        self.unused_backup_codes_count() < 3
     }
 
     /// Validates the entry secret against size limits.
@@ -714,8 +808,81 @@ impl EntrySecret {
             )));
         }
 
+        // Validate email format if present
+        if let Some(email) = &self.email {
+            if !is_valid_email(email) {
+                return Err(CoreError::InvalidInput(format!(
+                    "invalid email format: {}",
+                    email
+                )));
+            }
+        }
+
+        // Validate phone format if present
+        if let Some(phone) = &self.phone {
+            if !is_valid_phone(phone) {
+                return Err(CoreError::InvalidInput(format!(
+                    "invalid phone format: {}",
+                    phone
+                )));
+            }
+        }
+
         Ok(())
     }
+}
+
+/// Basic email validation (RFC 5322 simplified)
+fn is_valid_email(email: &str) -> bool {
+    if email.is_empty() || email.len() > 254 {
+        return false;
+    }
+    let parts: Vec<&str> = email.split('@').collect();
+    if parts.len() != 2 {
+        return false;
+    }
+    let local = parts[0];
+    let domain = parts[1];
+
+    // Local part validation
+    if local.is_empty() || local.len() > 64 {
+        return false;
+    }
+
+    // Domain validation
+    if domain.is_empty() || !domain.contains('.') {
+        return false;
+    }
+
+    // Check for valid characters
+    let valid_local_chars = |c: char| c.is_alphanumeric() || "!#$%&'*+/=?^_`{|}~.-".contains(c);
+    let valid_domain_chars = |c: char| c.is_alphanumeric() || c == '.' || c == '-';
+
+    local.chars().all(valid_local_chars) && domain.chars().all(valid_domain_chars)
+}
+
+/// Basic phone validation (international format)
+fn is_valid_phone(phone: &str) -> bool {
+    if phone.is_empty() {
+        return false;
+    }
+    // Remove common formatting characters
+    let cleaned: String = phone.chars()
+        .filter(|c| !matches!(c, ' ' | '-' | '(' | ')' | '.'))
+        .collect();
+
+    // Must be at least 7 digits, at most 15 (E.164 standard)
+    if cleaned.len() < 7 || cleaned.len() > 16 {
+        return false;
+    }
+
+    // First char can be +, rest must be digits
+    let mut chars = cleaned.chars();
+    match chars.next() {
+        Some('+') | Some('0'..='9') => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_digit())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

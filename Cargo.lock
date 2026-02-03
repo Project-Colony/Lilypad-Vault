@@ -2239,6 +2239,7 @@ dependencies = [
  "arboard",
  "assert_cmd",
  "base64",
+ "chrono",
  "clap",
  "clap_complete",
  "csv",
@@ -2308,11 +2309,15 @@ name = "lilypad-storage"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "fs2",
+ "hex",
  "lilypad-common",
  "lilypad-core",
+ "rand",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
 ]
 

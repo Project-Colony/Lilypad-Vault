@@ -7,12 +7,13 @@ pub use crypto::{
 };
 pub use errors::{CoreError, Result};
 pub use models::{
-    Attachment, Entry, EntryChangeType, EntryHistoryRecord, EntryMetadata, EntrySecret, EntryType,
-    KeyMetadata, Vault,
+    Attachment, AuditEvent, Entry, EntryChangeType, EntryHistoryRecord, EntryMetadata, EntrySecret,
+    EntryType, KeyMetadata, TotpBackupCode, Vault,
     // Size limit constants
     MAX_ATTACHMENT_SIZE, MAX_ATTACHMENTS_PER_ENTRY, MAX_FOLDER_LENGTH, MAX_LABEL_LENGTH,
     MAX_NOTES_SIZE, MAX_PASSWORD_SIZE, MAX_TAG_LENGTH, MAX_TAGS_PER_ENTRY,
     MAX_TOTAL_ATTACHMENTS_SIZE, MAX_URL_LENGTH, MAX_USERNAME_LENGTH,
+    TOTP_BACKUP_CODE_COUNT, TOTP_BACKUP_CODE_LENGTH,
 };
 
 mod config {

@@ -312,6 +312,21 @@ enum Commands {
         #[arg(value_parser = non_empty_value)]
         label: String,
     },
+    /// Generate or view TOTP backup codes for an entry.
+    BackupCodes {
+        /// Vault name
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
+        /// Entry label
+        #[arg(value_parser = non_empty_value)]
+        label: String,
+        /// Generate new backup codes (replaces existing ones)
+        #[arg(long)]
+        generate: bool,
+        /// Verify a backup code (marks it as used if valid)
+        #[arg(long)]
+        verify: Option<String>,
+    },
     /// Run a basic password health audit.
     Audit {
         /// Vault name to inspect
@@ -350,9 +365,24 @@ enum Commands {
         /// Output file path (prints to stdout if not specified)
         #[arg(long)]
         output: Option<String>,
-        /// Output format: json, csv
+        /// Output format: json, csv, text
         #[arg(long, default_value = "json")]
         format: String,
+        /// Filter by action type (e.g., "entry_added", "entry_removed", "vault_accessed")
+        #[arg(long)]
+        action: Option<String>,
+        /// Filter by entry label
+        #[arg(long)]
+        entry: Option<String>,
+        /// Show only events after this date (YYYY-MM-DD or Unix timestamp)
+        #[arg(long)]
+        after: Option<String>,
+        /// Show only events before this date (YYYY-MM-DD or Unix timestamp)
+        #[arg(long)]
+        before: Option<String>,
+        /// Maximum number of events to show
+        #[arg(long, short)]
+        limit: Option<usize>,
     },
     /// Generate shell completions for bash, zsh, fish, or powershell.
     Completions {
@@ -386,6 +416,41 @@ enum Commands {
         /// Number of history records to show (default: 10)
         #[arg(long, short, default_value_t = 10)]
         limit: usize,
+    },
+    /// Create a backup of a vault.
+    Backup {
+        /// Vault name to backup
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
+    },
+    /// List all backups for a vault.
+    ListBackups {
+        /// Vault name (optional, lists all backups if not specified)
+        vault: Option<String>,
+    },
+    /// Restore a vault from a backup.
+    RestoreBackup {
+        /// Backup filename to restore
+        #[arg(value_parser = non_empty_value)]
+        backup: String,
+        /// Force restore without confirmation
+        #[arg(long, short)]
+        force: bool,
+    },
+    /// Delete old backups, keeping only the most recent N.
+    PruneBackups {
+        /// Vault name to prune backups for
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
+        /// Number of backups to keep (default: 5)
+        #[arg(long, short, default_value_t = 5)]
+        keep: usize,
+    },
+    /// Verify vault integrity without decrypting.
+    VerifyVault {
+        /// Vault name to verify
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
     },
 }
 
@@ -708,6 +773,9 @@ fn main() -> Result<()> {
         Commands::Totp { vault, label } => {
             show_totp(&store, &config, &vault, &label, master_password.as_ref().map(|s| s.as_str()))
         }
+        Commands::BackupCodes { vault, label, generate, verify } => {
+            backup_codes(&store, &config, &vault, &label, generate, verify.as_deref(), master_password.as_ref().map(|s| s.as_str()))
+        }
         Commands::Audit { vault } => {
             audit_vault(&store, &config, &vault, output_format, master_password.as_ref().map(|s| s.as_str()))
         }
@@ -724,12 +792,22 @@ fn main() -> Result<()> {
             vault,
             output,
             format,
+            action,
+            entry,
+            after,
+            before,
+            limit,
         } => export_audit_log(
             &store,
             &config,
             &vault,
             output.as_deref(),
             &format,
+            action.as_deref(),
+            entry.as_deref(),
+            after.as_deref(),
+            before.as_deref(),
+            limit,
             master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::Completions { shell } => {
@@ -757,6 +835,11 @@ fn main() -> Result<()> {
             limit,
             master_password.as_ref().map(|s| s.as_str()),
         ),
+        Commands::Backup { vault } => create_backup(&store, &vault),
+        Commands::ListBackups { vault } => list_backups(&store, vault.as_deref()),
+        Commands::RestoreBackup { backup, force } => restore_backup(&store, &backup, force),
+        Commands::PruneBackups { vault, keep } => prune_backups(&store, &vault, keep),
+        Commands::VerifyVault { vault } => verify_vault(&store, &vault),
     }
 }
 
@@ -1772,6 +1855,107 @@ fn show_totp(
     Ok(())
 }
 
+fn backup_codes(
+    store: &LocalStore,
+    config: &lilypad_core::AppConfig,
+    vault_name: &str,
+    label: &str,
+    generate: bool,
+    verify: Option<&str>,
+    master_password: Option<&str>,
+) -> Result<()> {
+    let (key, _) = load_key(&key_path(config), master_password)?;
+    let mut vault = store
+        .load_vault(vault_name, &key)
+        .with_context(|| format!("vault not found: {vault_name}"))?;
+
+    let entry = vault
+        .find_entry(label)
+        .ok_or_else(|| anyhow!("entry '{label}' not found"))?;
+
+    let mut secret = decrypt_entry_secret(&key, entry)?;
+
+    // Check that TOTP is enabled
+    if secret.totp_secret.is_none() {
+        return Err(anyhow!("entry '{label}' does not have TOTP enabled. Backup codes require TOTP."));
+    }
+
+    if generate {
+        // Generate new backup codes
+        eprintln!("⚠️  WARNING: This will replace any existing backup codes!");
+        eprintln!("   Store these codes in a safe place. They can only be shown once.");
+        eprintln!();
+
+        let codes = secret.generate_backup_codes();
+
+        println!("═══════════════════════════════════════════");
+        println!("   TOTP Backup Codes for '{label}'");
+        println!("═══════════════════════════════════════════");
+        println!();
+        for (i, code) in codes.iter().enumerate() {
+            // Format as XXXX-XXXX for readability
+            let formatted = format!("{}-{}", &code[0..4], &code[4..8]);
+            println!("   {:2}. {}", i + 1, formatted);
+        }
+        println!();
+        println!("═══════════════════════════════════════════");
+        println!("   Each code can only be used ONCE.");
+        println!("   Store these codes securely offline.");
+        println!("═══════════════════════════════════════════");
+
+        // Save the updated entry
+        let payload = serde_json::to_vec(&secret)?;
+        let ciphertext = encrypt(&key, &payload)?;
+        vault.update_entry(label, ciphertext)?;
+        store.save_vault(&vault, &key)?;
+
+        println!();
+        println!("✓ {} backup codes generated and saved.", codes.len());
+    } else if let Some(code) = verify {
+        // Verify a backup code
+        if secret.use_backup_code(code) {
+            println!("✓ Backup code verified and consumed.");
+            println!("  Remaining unused codes: {}", secret.unused_backup_codes_count());
+
+            // Save the updated entry (code marked as used)
+            let payload = serde_json::to_vec(&secret)?;
+            let ciphertext = encrypt(&key, &payload)?;
+            vault.update_entry(label, ciphertext)?;
+            store.save_vault(&vault, &key)?;
+
+            if secret.backup_codes_low() {
+                eprintln!();
+                eprintln!("⚠️  WARNING: Only {} backup codes remaining. Consider generating new codes.",
+                         secret.unused_backup_codes_count());
+            }
+        } else {
+            return Err(anyhow!("Invalid or already used backup code."));
+        }
+    } else {
+        // Show status of backup codes
+        let total = secret.totp_backup_codes.len();
+        let unused = secret.unused_backup_codes_count();
+        let used = total - unused;
+
+        if total == 0 {
+            println!("No backup codes generated for '{label}'.");
+            println!("Use --generate to create backup codes.");
+        } else {
+            println!("Backup codes for '{label}':");
+            println!("  Total:  {}", total);
+            println!("  Used:   {}", used);
+            println!("  Unused: {}", unused);
+
+            if secret.backup_codes_low() {
+                eprintln!();
+                eprintln!("⚠️  WARNING: Backup codes running low! Consider generating new codes.");
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn audit_vault(
     store: &LocalStore,
     config: &lilypad_core::AppConfig,
@@ -2113,6 +2297,11 @@ fn export_audit_log(
     vault_name: &str,
     output: Option<&str>,
     format: &str,
+    action_filter: Option<&str>,
+    entry_filter: Option<&str>,
+    after: Option<&str>,
+    before: Option<&str>,
+    limit: Option<usize>,
     master_password: Option<&str>,
 ) -> Result<()> {
     let (key, _) = load_key(&key_path(config), master_password)?;
@@ -2120,35 +2309,117 @@ fn export_audit_log(
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
 
+    // Parse date filters
+    let after_ts = after.map(|s| parse_date_to_timestamp(s)).transpose()?;
+    let before_ts = before.map(|s| parse_date_to_timestamp(s)).transpose()?;
+
+    // Filter events
+    let mut events: Vec<_> = vault
+        .audit_log
+        .iter()
+        .filter(|event| {
+            // Action filter
+            if let Some(action) = action_filter {
+                if !event.action.contains(action) {
+                    return false;
+                }
+            }
+            // Entry filter
+            if let Some(entry) = entry_filter {
+                match &event.entry_label {
+                    Some(label) if label.contains(entry) => {}
+                    Some(_) => return false,
+                    None => return false,
+                }
+            }
+            // Date filters
+            if let Some(after) = after_ts {
+                if event.timestamp < after {
+                    return false;
+                }
+            }
+            if let Some(before) = before_ts {
+                if event.timestamp > before {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    // Sort by timestamp (most recent first for display)
+    events.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+    // Apply limit
+    if let Some(limit) = limit {
+        events.truncate(limit);
+    }
+
     let format = format.to_lowercase();
     let content = match format.as_str() {
-        "json" => serde_json::to_string_pretty(&vault.audit_log)?,
+        "json" => serde_json::to_string_pretty(&events)?,
         "csv" => {
             let mut writer = WriterBuilder::new().from_writer(Vec::new());
-            for event in &vault.audit_log {
+            writer.serialize(("timestamp", "action", "entry_label", "date"))?;
+            for event in &events {
+                let date = format_timestamp_relative(event.timestamp);
                 writer.serialize((
                     event.timestamp,
                     &event.action,
                     event.entry_label.as_deref().unwrap_or(""),
+                    date,
                 ))?;
             }
             writer.flush()?;
             String::from_utf8(writer.into_inner()?)?
         }
-        _ => return Err(anyhow!("unsupported format: {format} (use json or csv)")),
+        "text" => {
+            let mut output = String::new();
+            output.push_str(&format!("Audit Log for '{}'\n", vault_name));
+            output.push_str(&format!("{}\n\n", "=".repeat(40)));
+
+            if events.is_empty() {
+                output.push_str("No events found matching the filters.\n");
+            } else {
+                for event in &events {
+                    let date = format_timestamp_relative(event.timestamp);
+                    let entry = event.entry_label.as_deref().unwrap_or("-");
+                    output.push_str(&format!("[{}] {} (entry: {})\n", date, event.action, entry));
+                }
+                output.push_str(&format!("\nTotal: {} events\n", events.len()));
+            }
+            output
+        }
+        _ => return Err(anyhow!("unsupported format: {format} (use json, csv, or text)")),
     };
 
     if let Some(path) = output {
         atomic_write(path, &content)?;
-        println!(
-            "Exported {} audit events to {path}.",
-            vault.audit_log.len()
-        );
+        println!("Exported {} audit events to {path}.", events.len());
     } else {
         println!("{content}");
     }
 
     Ok(())
+}
+
+/// Parse a date string (YYYY-MM-DD) or Unix timestamp to a Unix timestamp.
+fn parse_date_to_timestamp(date_str: &str) -> Result<u64> {
+    // Try parsing as Unix timestamp first
+    if let Ok(ts) = date_str.parse::<u64>() {
+        return Ok(ts);
+    }
+
+    // Try parsing as date (YYYY-MM-DD)
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+        let datetime = date.and_hms_opt(0, 0, 0).unwrap();
+        return Ok(datetime.and_utc().timestamp() as u64);
+    }
+
+    Err(anyhow!(
+        "invalid date format: '{}'. Use YYYY-MM-DD or Unix timestamp.",
+        date_str
+    ))
 }
 
 /// Validates imported entry data against size limits and format requirements.
@@ -2516,4 +2787,144 @@ fn show_entry_history(
     println!("Password changes: {}", entry.password_change_count());
 
     Ok(())
+}
+
+fn create_backup(store: &LocalStore, vault_name: &str) -> Result<()> {
+    let backup_name = store.create_backup(vault_name)?;
+    println!("✓ Backup created: {}", backup_name);
+    println!("  Location: {}", store.backup_dir().join(&backup_name).display());
+    Ok(())
+}
+
+fn list_backups(store: &LocalStore, vault_name: Option<&str>) -> Result<()> {
+    let backup_dir = store.backup_dir();
+    if !backup_dir.exists() {
+        println!("No backups found.");
+        return Ok(());
+    }
+
+    // If vault name specified, list only its backups
+    if let Some(name) = vault_name {
+        let backups = store.list_backups(name)?;
+        if backups.is_empty() {
+            println!("No backups found for vault '{}'.", name);
+            return Ok(());
+        }
+
+        println!("Backups for vault '{}':\n", name);
+        for backup in backups {
+            let timestamp = format_timestamp_relative(backup.created_at);
+            let size = format_size(backup.size_bytes);
+            println!("  {} ({}, {})", backup.filename, timestamp, size);
+        }
+        return Ok(());
+    }
+
+    // List all backups grouped by vault
+    let mut all_backups: std::collections::HashMap<String, Vec<lilypad_storage::BackupInfo>> =
+        std::collections::HashMap::new();
+
+    for entry in fs::read_dir(&backup_dir)? {
+        let entry = entry?;
+        let filename = entry.file_name().to_string_lossy().to_string();
+        if filename.ends_with(".backup") {
+            if let Some(vault) = filename.split('_').next() {
+                let backups = store.list_backups(vault)?;
+                all_backups.entry(vault.to_string()).or_default();
+                for b in backups {
+                    all_backups.get_mut(vault).unwrap().push(b);
+                }
+            }
+        }
+    }
+
+    if all_backups.is_empty() {
+        println!("No backups found.");
+        return Ok(());
+    }
+
+    println!("All backups:\n");
+    for (vault, backups) in all_backups {
+        println!("Vault '{}':", vault);
+        // Dedup backups (in case they were added multiple times)
+        let mut seen = std::collections::HashSet::new();
+        for backup in backups {
+            if seen.insert(backup.filename.clone()) {
+                let timestamp = format_timestamp_relative(backup.created_at);
+                let size = format_size(backup.size_bytes);
+                println!("  {} ({}, {})", backup.filename, timestamp, size);
+            }
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
+fn restore_backup(store: &LocalStore, backup_name: &str, force: bool) -> Result<()> {
+    if !force {
+        eprintln!("⚠️  WARNING: This will replace the current vault with the backup.");
+        eprintln!("   The current vault will be backed up first.");
+        eprint!("   Continue? [y/N] ");
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Restore cancelled.");
+            return Ok(());
+        }
+    }
+
+    match store.restore_backup(backup_name)? {
+        Some(old_backup) => {
+            println!("✓ Backup restored successfully.");
+            println!("  Previous vault backed up as: {}", old_backup);
+        }
+        None => {
+            println!("✓ Backup restored successfully.");
+        }
+    }
+
+    Ok(())
+}
+
+fn prune_backups(store: &LocalStore, vault_name: &str, keep: usize) -> Result<()> {
+    let deleted = store.prune_backups(vault_name, keep)?;
+    if deleted == 0 {
+        println!("No old backups to delete (keeping {} most recent).", keep);
+    } else {
+        println!("✓ Deleted {} old backup(s), kept {} most recent.", deleted, keep);
+    }
+    Ok(())
+}
+
+fn verify_vault(store: &LocalStore, vault_name: &str) -> Result<()> {
+    let vaults_dir = store.backup_dir().parent().unwrap().join("vaults");
+    let vault_path = vaults_dir.join(format!("{}.lily", vault_name));
+
+    if !vault_path.exists() {
+        // Try legacy extension
+        let legacy_path = vaults_dir.join(format!("{}.json", vault_name));
+        if legacy_path.exists() {
+            lilypad_storage::verify_vault_integrity(&legacy_path)?;
+        } else {
+            return Err(anyhow!("vault '{}' not found", vault_name));
+        }
+    } else {
+        lilypad_storage::verify_vault_integrity(&vault_path)?;
+    }
+
+    println!("✓ Vault '{}' integrity verified successfully.", vault_name);
+    Ok(())
+}
+
+fn format_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{} B", bytes)
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
 }
