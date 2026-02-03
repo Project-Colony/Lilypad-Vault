@@ -6,6 +6,39 @@ use rand_core::{OsRng, RngCore};
 use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Maximum size for entry labels (in characters).
+pub const MAX_LABEL_LENGTH: usize = 256;
+
+/// Maximum size for tags (in characters).
+pub const MAX_TAG_LENGTH: usize = 64;
+
+/// Maximum number of tags per entry.
+pub const MAX_TAGS_PER_ENTRY: usize = 50;
+
+/// Maximum size for folder names (in characters).
+pub const MAX_FOLDER_LENGTH: usize = 128;
+
+/// Maximum size for URLs (in characters).
+pub const MAX_URL_LENGTH: usize = 2048;
+
+/// Maximum size for usernames (in characters).
+pub const MAX_USERNAME_LENGTH: usize = 256;
+
+/// Maximum size for passwords (in bytes).
+pub const MAX_PASSWORD_SIZE: usize = 10 * 1024; // 10 KB
+
+/// Maximum size for notes (in bytes).
+pub const MAX_NOTES_SIZE: usize = 100 * 1024; // 100 KB
+
+/// Maximum size for a single attachment (in bytes).
+pub const MAX_ATTACHMENT_SIZE: usize = 10 * 1024 * 1024; // 10 MB
+
+/// Maximum total size for all attachments (in bytes).
+pub const MAX_TOTAL_ATTACHMENTS_SIZE: usize = 50 * 1024 * 1024; // 50 MB
+
+/// Maximum number of attachments per entry.
+pub const MAX_ATTACHMENTS_PER_ENTRY: usize = 20;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Vault {
     pub name: String,
@@ -55,6 +88,13 @@ impl Vault {
                 "entry label cannot be empty".to_string(),
             ));
         }
+        if entry.label.len() > MAX_LABEL_LENGTH {
+            return Err(CoreError::InvalidInput(format!(
+                "entry label too long ({} chars, max {} chars)",
+                entry.label.len(),
+                MAX_LABEL_LENGTH
+            )));
+        }
         if self
             .entries
             .iter()
@@ -65,6 +105,8 @@ impl Vault {
                 entry.label
             )));
         }
+        // Validate entry metadata
+        entry.metadata.validate()?;
         self.entries.push(entry);
         self.touch();
         self.record_event(AuditEvent::new("entry_added", None));
@@ -102,6 +144,13 @@ impl Vault {
             return Err(CoreError::InvalidInput(
                 "entry label cannot be empty".to_string(),
             ));
+        }
+        if new_label.len() > MAX_LABEL_LENGTH {
+            return Err(CoreError::InvalidInput(format!(
+                "entry label too long ({} chars, max {} chars)",
+                new_label.len(),
+                MAX_LABEL_LENGTH
+            )));
         }
         if label == new_label {
             return Ok(());
@@ -145,6 +194,15 @@ impl Vault {
     }
 
     pub fn set_entry_folder(&mut self, label: &str, folder: Option<String>) -> Result<()> {
+        if let Some(ref f) = folder {
+            if f.len() > MAX_FOLDER_LENGTH {
+                return Err(CoreError::InvalidInput(format!(
+                    "folder name too long ({} chars, max {} chars)",
+                    f.len(),
+                    MAX_FOLDER_LENGTH
+                )));
+            }
+        }
         let entry = self
             .entries
             .iter_mut()
@@ -162,11 +220,25 @@ impl Vault {
         if tag.trim().is_empty() {
             return Err(CoreError::InvalidInput("tag cannot be empty".to_string()));
         }
+        if tag.len() > MAX_TAG_LENGTH {
+            return Err(CoreError::InvalidInput(format!(
+                "tag too long ({} chars, max {} chars)",
+                tag.len(),
+                MAX_TAG_LENGTH
+            )));
+        }
         let entry = self
             .entries
             .iter_mut()
             .find(|entry| entry.label == label)
             .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
+        if entry.metadata.tags.len() >= MAX_TAGS_PER_ENTRY {
+            return Err(CoreError::InvalidInput(format!(
+                "too many tags ({}, max {})",
+                entry.metadata.tags.len(),
+                MAX_TAGS_PER_ENTRY
+            )));
+        }
         if !entry.metadata.tags.iter().any(|existing| existing == &tag) {
             entry.metadata.tags.push(tag);
             entry.updated_at = current_timestamp();
@@ -341,6 +413,62 @@ impl Default for EntryMetadata {
     }
 }
 
+impl EntryMetadata {
+    /// Validates the entry metadata against size and count limits.
+    pub fn validate(&self) -> Result<()> {
+        if let Some(username) = &self.username {
+            if username.len() > MAX_USERNAME_LENGTH {
+                return Err(CoreError::InvalidInput(format!(
+                    "username too long ({} chars, max {} chars)",
+                    username.len(),
+                    MAX_USERNAME_LENGTH
+                )));
+            }
+        }
+
+        if let Some(url) = &self.url {
+            if url.len() > MAX_URL_LENGTH {
+                return Err(CoreError::InvalidInput(format!(
+                    "URL too long ({} chars, max {} chars)",
+                    url.len(),
+                    MAX_URL_LENGTH
+                )));
+            }
+        }
+
+        if let Some(folder) = &self.folder {
+            if folder.len() > MAX_FOLDER_LENGTH {
+                return Err(CoreError::InvalidInput(format!(
+                    "folder name too long ({} chars, max {} chars)",
+                    folder.len(),
+                    MAX_FOLDER_LENGTH
+                )));
+            }
+        }
+
+        if self.tags.len() > MAX_TAGS_PER_ENTRY {
+            return Err(CoreError::InvalidInput(format!(
+                "too many tags ({}, max {})",
+                self.tags.len(),
+                MAX_TAGS_PER_ENTRY
+            )));
+        }
+
+        for tag in &self.tags {
+            if tag.len() > MAX_TAG_LENGTH {
+                return Err(CoreError::InvalidInput(format!(
+                    "tag '{}' too long ({} chars, max {} chars)",
+                    tag,
+                    tag.len(),
+                    MAX_TAG_LENGTH
+                )));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum EntryType {
     Login,
@@ -379,6 +507,52 @@ impl EntrySecret {
             attachments: Vec::new(),
         }
     }
+
+    /// Validates the entry secret against size limits.
+    ///
+    /// Returns an error if any field exceeds the maximum allowed size.
+    pub fn validate(&self) -> Result<()> {
+        if self.password.len() > MAX_PASSWORD_SIZE {
+            return Err(CoreError::InvalidInput(format!(
+                "password exceeds maximum size ({} bytes, max {} bytes)",
+                self.password.len(),
+                MAX_PASSWORD_SIZE
+            )));
+        }
+
+        if let Some(notes) = &self.notes {
+            if notes.len() > MAX_NOTES_SIZE {
+                return Err(CoreError::InvalidInput(format!(
+                    "notes exceed maximum size ({} bytes, max {} bytes)",
+                    notes.len(),
+                    MAX_NOTES_SIZE
+                )));
+            }
+        }
+
+        if self.attachments.len() > MAX_ATTACHMENTS_PER_ENTRY {
+            return Err(CoreError::InvalidInput(format!(
+                "too many attachments ({}, max {})",
+                self.attachments.len(),
+                MAX_ATTACHMENTS_PER_ENTRY
+            )));
+        }
+
+        let mut total_attachment_size = 0usize;
+        for attachment in &self.attachments {
+            attachment.validate()?;
+            total_attachment_size += attachment.data_base64.len();
+        }
+
+        if total_attachment_size > MAX_TOTAL_ATTACHMENTS_SIZE {
+            return Err(CoreError::InvalidInput(format!(
+                "total attachments size exceeds limit ({} bytes, max {} bytes)",
+                total_attachment_size, MAX_TOTAL_ATTACHMENTS_SIZE
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -387,6 +561,58 @@ pub struct Attachment {
     #[serde(default)]
     pub mime_type: Option<String>,
     pub data_base64: String,
+}
+
+impl Attachment {
+    /// Creates a new attachment.
+    pub fn new(filename: impl Into<String>, data_base64: impl Into<String>) -> Self {
+        Self {
+            filename: filename.into(),
+            mime_type: None,
+            data_base64: data_base64.into(),
+        }
+    }
+
+    /// Creates a new attachment with MIME type.
+    pub fn with_mime_type(mut self, mime_type: impl Into<String>) -> Self {
+        self.mime_type = Some(mime_type.into());
+        self
+    }
+
+    /// Validates the attachment against size limits.
+    pub fn validate(&self) -> Result<()> {
+        if self.filename.trim().is_empty() {
+            return Err(CoreError::InvalidInput(
+                "attachment filename cannot be empty".to_string(),
+            ));
+        }
+
+        if self.filename.len() > MAX_LABEL_LENGTH {
+            return Err(CoreError::InvalidInput(format!(
+                "attachment filename too long ({} chars, max {} chars)",
+                self.filename.len(),
+                MAX_LABEL_LENGTH
+            )));
+        }
+
+        // Check for path traversal in filename
+        if self.filename.contains("..") || self.filename.contains('/') || self.filename.contains('\\') {
+            return Err(CoreError::InvalidInput(
+                "attachment filename contains invalid characters".to_string(),
+            ));
+        }
+
+        if self.data_base64.len() > MAX_ATTACHMENT_SIZE {
+            return Err(CoreError::InvalidInput(format!(
+                "attachment '{}' exceeds maximum size ({} bytes, max {} bytes)",
+                self.filename,
+                self.data_base64.len(),
+                MAX_ATTACHMENT_SIZE
+            )));
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

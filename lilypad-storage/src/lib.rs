@@ -1,4 +1,5 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
+use lilypad_common::validation::validate_vault_name;
 use lilypad_core::{decrypt, encrypt, AppConfig, KeyMaterial, KeyMetadata, Vault};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -111,9 +112,7 @@ impl LocalStore {
     }
 
     fn vault_path(&self, name: &str) -> Result<PathBuf> {
-        if name.trim().is_empty() {
-            return Err(anyhow!("vault name cannot be empty"));
-        }
+        validate_vault_name(name).context("invalid vault name")?;
         let lily_path = self.vault_path_with_extension(name, VAULT_EXTENSION);
         if lily_path.exists() {
             return Ok(lily_path);
@@ -165,9 +164,7 @@ impl LocalStore {
     }
 
     pub fn rename_vault(&self, from: &str, to: &str) -> Result<()> {
-        if to.trim().is_empty() {
-            return Err(anyhow!("vault name cannot be empty"));
-        }
+        validate_vault_name(to).context("invalid new vault name")?;
         let from_path = self.vault_path(from)?;
         if !from_path.exists() {
             return Err(anyhow!("vault '{from}' does not exist"));

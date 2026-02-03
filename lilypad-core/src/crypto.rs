@@ -4,6 +4,8 @@ use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::errors::{CoreError, Result};
 
@@ -30,10 +32,32 @@ pub struct Ciphertext {
     pub data: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Cryptographic key material with secure memory handling.
+///
+/// The key bytes are automatically zeroed when the struct is dropped,
+/// preventing sensitive data from lingering in memory.
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KeyMaterial {
     key: [u8; KEY_LEN],
 }
+
+// Manual Debug impl to avoid leaking key bytes
+impl std::fmt::Debug for KeyMaterial {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyMaterial")
+            .field("key", &"[REDACTED]")
+            .finish()
+    }
+}
+
+// Manual PartialEq to allow comparisons using constant-time comparison
+impl PartialEq for KeyMaterial {
+    fn eq(&self, other: &Self) -> bool {
+        self.key.ct_eq(&other.key).into()
+    }
+}
+
+impl Eq for KeyMaterial {}
 
 impl KeyMaterial {
     pub fn generate() -> Self {

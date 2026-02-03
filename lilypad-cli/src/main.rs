@@ -1,8 +1,13 @@
 use anyhow::{anyhow, Context, Result};
-use arboard::Clipboard;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use clap::{Parser, Subcommand};
 use csv::{ReaderBuilder, WriterBuilder};
+use lilypad_common::{
+    clipboard::copy_to_clipboard_with_timeout,
+    keyfile::{load_key, save_key, KeyFile},
+    time::format_timestamp_relative,
+    validation::{validate_password_strength, PasswordStrength},
+};
 use lilypad_core::{
     decrypt, default_config, derive_key, encrypt, Attachment, Entry, EntryMetadata, EntrySecret,
     EntryType, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
@@ -10,9 +15,8 @@ use lilypad_core::{
 use lilypad_storage::LocalStore;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::thread;
-use std::time::Duration;
+use std::io::{self, Write};
+use std::path::PathBuf;
 use totp_rs::{Algorithm, Secret, TOTP};
 
 #[derive(Debug, Parser)]
@@ -59,6 +63,9 @@ enum Commands {
         /// Vault name to delete
         #[arg(value_parser = non_empty_value)]
         vault: String,
+        /// Skip confirmation prompt
+        #[arg(long, short)]
+        force: bool,
     },
     /// Add an encrypted entry to a vault.
     Add {
@@ -228,13 +235,6 @@ enum Commands {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-enum KeyFile {
-    Raw { key_hex: String },
-    Kdf { params: KeyDerivationParams },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 struct VaultExport {
     name: String,
     entries: Vec<EntryExport>,
@@ -289,7 +289,7 @@ fn main() -> Result<()> {
         ),
         Commands::Vaults => list_vaults(&store),
         Commands::RenameVault { from, to } => rename_vault(&store, &from, &to),
-        Commands::DeleteVault { vault } => delete_vault(&store, &vault),
+        Commands::DeleteVault { vault, force } => delete_vault(&store, &vault, force),
         Commands::Add {
             vault,
             label,
@@ -432,13 +432,18 @@ fn init_vault(
         let password = master_password.ok_or_else(|| {
             anyhow!("master password required (--master-password or LILYPAD_MASTER_PASSWORD)")
         })?;
+        // Warn if password is weak
+        let strength = validate_password_strength(password);
+        if !strength.is_acceptable() {
+            eprintln!("Warning: {}", strength.feedback());
+        }
         let params = KeyDerivationParams::generate();
         let key = derive_key(password, &params)?;
-        (key, KeyFile::Kdf { params })
+        (key, KeyFile::from_kdf(params))
     } else {
         let key = KeyMaterial::generate();
-        let key_hex = encode_hex(key.as_bytes());
-        (key, KeyFile::Raw { key_hex })
+        let key_file = KeyFile::from_raw(&key);
+        (key, key_file)
     };
     save_key(&key_path, &key_file)?;
 
@@ -474,7 +479,18 @@ fn rename_vault(store: &LocalStore, from: &str, to: &str) -> Result<()> {
     Ok(())
 }
 
-fn delete_vault(store: &LocalStore, vault: &str) -> Result<()> {
+fn delete_vault(store: &LocalStore, vault: &str, force: bool) -> Result<()> {
+    if !force {
+        print!("Are you sure you want to delete vault '{vault}'? This cannot be undone. [y/N] ");
+        io::stdout().flush()?;
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let input = input.trim().to_lowercase();
+        if input != "y" && input != "yes" {
+            println!("Deletion cancelled.");
+            return Ok(());
+        }
+    }
     store.delete_vault(vault)?;
     println!("Vault '{vault}' deleted.");
     Ok(())
@@ -496,15 +512,27 @@ fn add_entry(
     attachment: Vec<PathBuf>,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let key = load_key(&key_path(config), master_password)?;
+    // Warn if password is weak
+    let strength = validate_password_strength(value);
+    if !strength.is_acceptable() {
+        eprintln!("Warning: {}", strength.feedback());
+    }
+
+    let (key, _) = load_key(&key_path(config), master_password)?;
     let mut vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
     let metadata = build_metadata(username, url, tags, folder, entry_type)?;
+    // Validate metadata
+    metadata.validate()?;
+
     let mut secret = EntrySecret::new(value);
     secret.notes = notes;
     secret.totp_secret = totp_secret;
     secret.attachments = load_attachments(attachment)?;
+    // Validate secret sizes
+    secret.validate()?;
+
     let ciphertext = encrypt_entry_secret(&key, &secret)?;
     vault.add_entry(Entry::new_with_metadata(label, metadata, ciphertext))?;
     store.save_vault(&vault, &key)?;
@@ -518,7 +546,7 @@ fn list_entries(
     vault_name: &str,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let key = load_key(&key_path(config), master_password)?;
+    let (key, _) = load_key(&key_path(config), master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -535,9 +563,10 @@ fn list_entries(
         };
         let entry_type = entry_type_label(&entry.metadata.entry_type);
         let folder = entry.metadata.folder.as_deref().unwrap_or("none");
+        let updated = format_timestamp_relative(entry.updated_at);
         println!(
             "- {} (type: {}, folder: {}, tags: {}, updated: {})",
-            entry.label, entry_type, folder, tags, entry.updated_at
+            entry.label, entry_type, folder, tags, updated
         );
     }
     Ok(())
@@ -552,7 +581,7 @@ fn get_entry(
     clipboard_timeout: u64,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let key = load_key(&key_path(config), master_password)?;
+    let (key, _) = load_key(&key_path(config), master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -584,8 +613,9 @@ fn get_entry(
     if !secret.attachments.is_empty() {
         println!("Attachments: {}", secret.attachments.len());
     }
+    println!("Updated: {}", format_timestamp_relative(entry.updated_at));
     if copy {
-        copy_to_clipboard(&secret.password, clipboard_timeout)?;
+        copy_to_clipboard_with_timeout(&secret.password, clipboard_timeout)?;
         println!("Password copied to clipboard for {clipboard_timeout} seconds.");
     }
     Ok(())
@@ -607,7 +637,13 @@ fn update_entry(
     attachment: Vec<PathBuf>,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let key = load_key(&key_path(config), master_password)?;
+    // Warn if new password is weak
+    let strength = validate_password_strength(value);
+    if !strength.is_acceptable() {
+        eprintln!("Warning: {}", strength.feedback());
+    }
+
+    let (key, _) = load_key(&key_path(config), master_password)?;
     let mut vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -621,6 +657,9 @@ fn update_entry(
         )
     };
     apply_metadata_updates(&mut metadata, username, url, tags, folder, entry_type)?;
+    // Validate metadata
+    metadata.validate()?;
+
     secret.password = value.to_string();
     if notes.is_some() {
         secret.notes = notes;
@@ -632,6 +671,9 @@ fn update_entry(
     if !new_attachments.is_empty() {
         secret.attachments = new_attachments;
     }
+    // Validate secret sizes
+    secret.validate()?;
+
     let ciphertext = encrypt_entry_secret(&key, &secret)?;
     vault
         .update_entry(label, ciphertext)
@@ -651,7 +693,7 @@ fn remove_entry(
     label: &str,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let key = load_key(&key_path(config), master_password)?;
+    let (key, _) = load_key(&key_path(config), master_password)?;
     let mut vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -670,7 +712,7 @@ fn search_entries(
     query: &str,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let key = load_key(&key_path(config), master_password)?;
+    let (key, _) = load_key(&key_path(config), master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -681,7 +723,8 @@ fn search_entries(
     }
     println!("Results for '{query}':");
     for entry in matches {
-        println!("- {}", entry.label);
+        let updated = format_timestamp_relative(entry.updated_at);
+        println!("- {} (updated: {})", entry.label, updated);
     }
     Ok(())
 }
@@ -709,7 +752,7 @@ fn export_vault(
         ));
     }
 
-    let key = load_key(&key_path(config), master_password)?;
+    let (key, _) = load_key(&key_path(config), master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -781,7 +824,7 @@ fn import_vault(
         return Ok(());
     }
 
-    let key = load_key(&key_path(config), master_password)?;
+    let (key, _) = load_key(&key_path(config), master_password)?;
     let mut vault = match store.load_vault(vault_name, &key) {
         Ok(vault) => vault,
         Err(_) => {
@@ -853,7 +896,7 @@ fn rotate_key(
     new_master_password: Option<&str>,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let old_key = load_key(&key_path(config), master_password)?;
+    let (old_key, _) = load_key(&key_path(config), master_password)?;
     let mut vault = store
         .load_vault(vault_name, &old_key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -861,16 +904,21 @@ fn rotate_key(
     let (new_key, key_file, metadata) = if use_master_password {
         let password = new_master_password
             .ok_or_else(|| anyhow!("new master password required (--new-master-password)"))?;
+        // Warn if new password is weak
+        let strength = validate_password_strength(password);
+        if !strength.is_acceptable() {
+            eprintln!("Warning: {}", strength.feedback());
+        }
         let params = KeyDerivationParams::generate();
         let key = derive_key(password, &params)?;
         let metadata = KeyMetadata::new(&key, lilypad_core::CryptoAlgorithm::XChaCha20Poly1305)
             .with_kdf("argon2id");
-        (key, KeyFile::Kdf { params }, metadata)
+        (key, KeyFile::from_kdf(params), metadata)
     } else {
         let key = KeyMaterial::generate();
         let metadata = KeyMetadata::new(&key, lilypad_core::CryptoAlgorithm::XChaCha20Poly1305);
-        let key_hex = encode_hex(key.as_bytes());
-        (key, KeyFile::Raw { key_hex }, metadata)
+        let key_file = KeyFile::from_raw(&key);
+        (key, key_file, metadata)
     };
 
     for entry in &mut vault.entries {
@@ -891,7 +939,7 @@ fn show_totp(
     label: &str,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let key = load_key(&key_path(config), master_password)?;
+    let (key, _) = load_key(&key_path(config), master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -921,18 +969,23 @@ fn audit_vault(
     vault_name: &str,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let key = load_key(&key_path(config), master_password)?;
+    let (key, _) = load_key(&key_path(config), master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
 
     let mut weak = Vec::new();
+    let mut very_weak = Vec::new();
     let mut duplicates: std::collections::HashMap<String, Vec<String>> =
         std::collections::HashMap::new();
+
     for entry in &vault.entries {
         let secret = decrypt_entry_secret(&key, entry)?;
-        if secret.password.len() < 12 {
-            weak.push(entry.label.clone());
+        let strength = validate_password_strength(&secret.password);
+        match strength {
+            PasswordStrength::VeryWeak => very_weak.push(entry.label.clone()),
+            PasswordStrength::Weak => weak.push(entry.label.clone()),
+            _ => {}
         }
         duplicates
             .entry(secret.password)
@@ -941,20 +994,38 @@ fn audit_vault(
     }
 
     println!("Audit results for '{vault_name}':");
-    if weak.is_empty() {
-        println!("- No weak passwords detected.");
+    println!("Total entries: {}", vault.entries.len());
+    println!();
+
+    if very_weak.is_empty() && weak.is_empty() {
+        println!("Password strength: All passwords meet minimum requirements.");
     } else {
-        println!("- Weak passwords (<12 chars): {}", weak.join(", "));
+        if !very_weak.is_empty() {
+            println!(
+                "Very weak passwords (<8 chars): {}",
+                very_weak.join(", ")
+            );
+        }
+        if !weak.is_empty() {
+            println!(
+                "Weak passwords (8-11 chars, missing diversity): {}",
+                weak.join(", ")
+            );
+        }
     }
+
     let reused: Vec<String> = duplicates
         .into_iter()
         .filter(|(_, labels)| labels.len() > 1)
         .map(|(_, labels)| labels.join(", "))
         .collect();
     if reused.is_empty() {
-        println!("- No reused passwords detected.");
+        println!("Password reuse: No reused passwords detected.");
     } else {
-        println!("- Reused passwords: {}", reused.join(" | "));
+        println!("Password reuse detected:");
+        for group in &reused {
+            println!("  - {}", group);
+        }
     }
     Ok(())
 }
@@ -1091,73 +1162,6 @@ fn upsert_entry(
         vault.add_entry(Entry::new_with_metadata(label, metadata, ciphertext))?;
     }
     Ok(())
-}
-
-fn copy_to_clipboard(value: &str, timeout: u64) -> Result<()> {
-    let mut clipboard = Clipboard::new().map_err(|err| anyhow!("{err}"))?;
-    clipboard
-        .set_text(value.to_string())
-        .map_err(|err| anyhow!("{err}"))?;
-    if timeout > 0 {
-        let value = value.to_string();
-        thread::spawn(move || {
-            thread::sleep(Duration::from_secs(timeout));
-            if let Ok(mut clipboard) = Clipboard::new() {
-                if clipboard.get_text().ok().as_deref() == Some(&value) {
-                    let _ = clipboard.set_text(String::new());
-                }
-            }
-        });
-    }
-    Ok(())
-}
-
-fn save_key(path: &Path, key_file: &KeyFile) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let payload = serde_json::to_vec_pretty(&key_file)?;
-    fs::write(path, payload)?;
-    Ok(())
-}
-
-fn load_key(path: &Path, master_password: Option<&str>) -> Result<KeyMaterial> {
-    let payload = fs::read(path)
-        .with_context(|| format!("key not found: {} (run `lilypad init`)", path.display()))?;
-    let key_file: KeyFile = serde_json::from_slice(&payload)?;
-    match key_file {
-        KeyFile::Raw { key_hex } => {
-            let bytes = decode_hex(&key_hex)?;
-            KeyMaterial::from_bytes(&bytes).context("invalid key")
-        }
-        KeyFile::Kdf { params } => {
-            let password = master_password.ok_or_else(|| {
-                anyhow!("master password required (--master-password or LILYPAD_MASTER_PASSWORD)")
-            })?;
-            derive_key(password, &params).context("invalid kdf")
-        }
-    }
-}
-
-fn encode_hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-fn decode_hex(hex: &str) -> Result<Vec<u8>> {
-    let value = hex.trim();
-    if value.is_empty() {
-        return Err(anyhow!("empty key"));
-    }
-    if value.len() % 2 != 0 {
-        return Err(anyhow!("invalid hex key"));
-    }
-    let mut bytes = Vec::with_capacity(value.len() / 2);
-    for chunk in value.as_bytes().chunks(2) {
-        let chunk_str = std::str::from_utf8(chunk)?;
-        let byte = u8::from_str_radix(chunk_str, 16).map_err(|_| anyhow!("invalid hex key"))?;
-        bytes.push(byte);
-    }
-    Ok(bytes)
 }
 
 fn non_empty_value(value: &str) -> Result<String, String> {
