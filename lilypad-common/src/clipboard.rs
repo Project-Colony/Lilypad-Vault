@@ -1,12 +1,19 @@
 //! Clipboard utilities for Lilypad.
 //!
 //! Provides secure clipboard operations with automatic clearing after a timeout.
+//! Uses a generation counter to mitigate race conditions when clearing.
 
 use anyhow::{anyhow, Result};
 use arboard::Clipboard;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+
+/// Global generation counter for clipboard operations.
+/// Each copy operation increments this counter, and the clear operation
+/// only proceeds if the generation hasn't changed (meaning no new copy happened).
+static CLIPBOARD_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Copies a value to the clipboard.
 ///
@@ -20,14 +27,17 @@ pub fn copy_to_clipboard(value: &str) -> Result<()> {
     clipboard
         .set_text(value.to_string())
         .map_err(|err| anyhow!("failed to copy to clipboard: {err}"))?;
+    // Increment generation on every copy
+    CLIPBOARD_GENERATION.fetch_add(1, Ordering::SeqCst);
     Ok(())
 }
 
 /// Copies a value to the clipboard and clears it after a timeout.
 ///
-/// The clearing happens in a background thread and only clears if the
-/// clipboard still contains the original value (to avoid clearing
-/// user's other clipboard content).
+/// The clearing happens in a background thread. Uses a generation counter
+/// to ensure we only clear if no new copy operation has occurred since
+/// this one. This mitigates race conditions where the user might paste
+/// elsewhere and then a new copy occurs before the timeout.
 ///
 /// # Arguments
 /// * `value` - The text to copy to clipboard
@@ -38,12 +48,23 @@ pub fn copy_to_clipboard(value: &str) -> Result<()> {
 pub fn copy_to_clipboard_with_timeout(value: &str, timeout_secs: u64) -> Result<()> {
     copy_to_clipboard(value)?;
 
+    // Get generation after copying to track this specific copy operation
+    let our_generation = CLIPBOARD_GENERATION.load(Ordering::SeqCst);
+
     if timeout_secs > 0 {
         let value = value.to_string();
         thread::spawn(move || {
             thread::sleep(Duration::from_secs(timeout_secs));
+
+            // Only clear if no newer copy operation has occurred
+            let current_generation = CLIPBOARD_GENERATION.load(Ordering::SeqCst);
+            if current_generation != our_generation {
+                // A newer copy operation occurred, don't clear
+                return;
+            }
+
             if let Ok(mut clipboard) = Clipboard::new() {
-                // Only clear if clipboard still contains our value
+                // Double-check: only clear if clipboard still contains our value
                 if clipboard.get_text().ok().as_deref() == Some(&value) {
                     let _ = clipboard.set_text(String::new());
                 }

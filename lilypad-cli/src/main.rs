@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, Shell};
 use csv::{ReaderBuilder, WriterBuilder};
 use lilypad_common::{
     clipboard::copy_to_clipboard_with_timeout,
@@ -10,8 +11,8 @@ use lilypad_common::{
 };
 use lilypad_core::{
     decrypt, default_config, derive_key, encrypt, Attachment, Entry, EntryMetadata, EntrySecret,
-    EntryType, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
-    MAX_NOTES_SIZE, MAX_PASSWORD_SIZE,
+    EntryType, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault, MAX_NOTES_SIZE,
+    MAX_PASSWORD_SIZE,
 };
 use lilypad_storage::LocalStore;
 use rand::Rng;
@@ -42,6 +43,14 @@ impl Drop for SecureString {
     }
 }
 
+/// Output format for CLI commands.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, clap::ValueEnum)]
+enum OutputFormat {
+    #[default]
+    Text,
+    Json,
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "lilypad",
@@ -55,6 +64,9 @@ struct Cli {
     /// Master password (or LILYPAD_MASTER_PASSWORD environment variable)
     #[arg(long, value_name = "PASSWORD", global = true)]
     master_password: Option<String>,
+    /// Output format for display (text or json)
+    #[arg(long = "output-format", value_enum, default_value_t = OutputFormat::Text, global = true)]
+    output_format: OutputFormat,
     #[command(subcommand)]
     command: Commands,
 }
@@ -303,6 +315,18 @@ enum Commands {
         #[arg(long, default_value = "json")]
         format: String,
     },
+    /// Generate shell completions for bash, zsh, fish, or powershell.
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+    /// Change the master password without full key rotation.
+    ChangeMasterPassword {
+        /// Vault name to update
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -340,6 +364,7 @@ fn main() -> Result<()> {
         .master_password
         .or_else(|| std::env::var("LILYPAD_MASTER_PASSWORD").ok())
         .map(SecureString::new);
+    let output_format = cli.output_format;
     let mut config = default_config();
     if let Some(data_dir) = cli.data_dir {
         if data_dir.trim().is_empty() {
@@ -360,7 +385,7 @@ fn main() -> Result<()> {
             use_master_password,
             master_password.as_ref().map(|s| s.as_str()),
         ),
-        Commands::Vaults => list_vaults(&store),
+        Commands::Vaults => list_vaults(&store, output_format),
         Commands::RenameVault { from, to } => rename_vault(&store, &from, &to),
         Commands::DeleteVault { vault, force } => delete_vault(&store, &vault, force),
         Commands::Add {
@@ -394,7 +419,7 @@ fn main() -> Result<()> {
             master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::List { vault } => {
-            list_entries(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()))
+            list_entries(&store, &config, &vault, output_format, master_password.as_ref().map(|s| s.as_str()))
         }
         Commands::Get {
             vault,
@@ -410,6 +435,7 @@ fn main() -> Result<()> {
             copy,
             clipboard_timeout,
             show_password,
+            output_format,
             master_password.as_ref().map(|s| s.as_str()),
         ),
         Commands::Update {
@@ -446,7 +472,7 @@ fn main() -> Result<()> {
             remove_entry(&store, &config, &vault, &label, master_password.as_ref().map(|s| s.as_str()))
         }
         Commands::Search { vault, query } => {
-            search_entries(&store, &config, &vault, &query, master_password.as_ref().map(|s| s.as_str()))
+            search_entries(&store, &config, &vault, &query, output_format, master_password.as_ref().map(|s| s.as_str()))
         }
         Commands::Export {
             vault,
@@ -492,7 +518,7 @@ fn main() -> Result<()> {
             show_totp(&store, &config, &vault, &label, master_password.as_ref().map(|s| s.as_str()))
         }
         Commands::Audit { vault } => {
-            audit_vault(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()))
+            audit_vault(&store, &config, &vault, output_format, master_password.as_ref().map(|s| s.as_str()))
         }
         Commands::Generate {
             length,
@@ -513,6 +539,16 @@ fn main() -> Result<()> {
             &vault,
             output.as_deref(),
             &format,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::Completions { shell } => {
+            generate_completions(shell);
+            Ok(())
+        }
+        Commands::ChangeMasterPassword { vault } => change_master_password(
+            &store,
+            &config,
+            &vault,
             master_password.as_ref().map(|s| s.as_str()),
         ),
     }
@@ -562,15 +598,24 @@ fn init_vault(
     Ok(())
 }
 
-fn list_vaults(store: &LocalStore) -> Result<()> {
+fn list_vaults(store: &LocalStore, output_format: OutputFormat) -> Result<()> {
     let vaults = store.list_vaults()?;
-    if vaults.is_empty() {
-        println!("No vaults found.");
-        return Ok(());
-    }
-    println!("Vaults:");
-    for name in vaults {
-        println!("- {name}");
+
+    match output_format {
+        OutputFormat::Json => {
+            let json = serde_json::json!({ "vaults": vaults });
+            println!("{}", serde_json::to_string_pretty(&json)?);
+        }
+        OutputFormat::Text => {
+            if vaults.is_empty() {
+                println!("No vaults found.");
+                return Ok(());
+            }
+            println!("Vaults:");
+            for name in vaults {
+                println!("- {name}");
+            }
+        }
     }
     Ok(())
 }
@@ -652,30 +697,55 @@ fn list_entries(
     store: &LocalStore,
     config: &lilypad_core::AppConfig,
     vault_name: &str,
+    output_format: OutputFormat,
     master_password: Option<&str>,
 ) -> Result<()> {
     let (key, _) = load_key(&key_path(config), master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
-    if vault.entries.is_empty() {
-        println!("No entries in '{vault_name}'.");
-        return Ok(());
-    }
-    println!("Entries in '{vault_name}':");
-    for entry in &vault.entries {
-        let tags = if entry.metadata.tags.is_empty() {
-            "none".to_string()
-        } else {
-            entry.metadata.tags.join(", ")
-        };
-        let entry_type = entry_type_label(&entry.metadata.entry_type);
-        let folder = entry.metadata.folder.as_deref().unwrap_or("none");
-        let updated = format_timestamp_relative(entry.updated_at);
-        println!(
-            "- {} (type: {}, folder: {}, tags: {}, updated: {})",
-            entry.label, entry_type, folder, tags, updated
-        );
+
+    match output_format {
+        OutputFormat::Json => {
+            let entries: Vec<_> = vault.entries.iter().map(|e| {
+                serde_json::json!({
+                    "label": e.label,
+                    "type": entry_type_label(&e.metadata.entry_type),
+                    "username": e.metadata.username,
+                    "url": e.metadata.url,
+                    "folder": e.metadata.folder,
+                    "tags": e.metadata.tags,
+                    "created_at": e.created_at,
+                    "updated_at": e.updated_at,
+                })
+            }).collect();
+            let json = serde_json::json!({
+                "vault": vault_name,
+                "entries": entries,
+            });
+            println!("{}", serde_json::to_string_pretty(&json)?);
+        }
+        OutputFormat::Text => {
+            if vault.entries.is_empty() {
+                println!("No entries in '{vault_name}'.");
+                return Ok(());
+            }
+            println!("Entries in '{vault_name}':");
+            for entry in &vault.entries {
+                let tags = if entry.metadata.tags.is_empty() {
+                    "none".to_string()
+                } else {
+                    entry.metadata.tags.join(", ")
+                };
+                let entry_type = entry_type_label(&entry.metadata.entry_type);
+                let folder = entry.metadata.folder.as_deref().unwrap_or("none");
+                let updated = format_timestamp_relative(entry.updated_at);
+                println!(
+                    "- {} (type: {}, folder: {}, tags: {}, updated: {})",
+                    entry.label, entry_type, folder, tags, updated
+                );
+            }
+        }
     }
     Ok(())
 }
@@ -688,6 +758,7 @@ fn get_entry(
     copy: bool,
     clipboard_timeout: u64,
     show_password: bool,
+    output_format: OutputFormat,
     master_password: Option<&str>,
 ) -> Result<()> {
     let (key, _) = load_key(&key_path(config), master_password)?;
@@ -698,44 +769,69 @@ fn get_entry(
         .find_entry(label)
         .ok_or_else(|| anyhow!("entry '{label}' not found"))?;
     let secret = decrypt_entry_secret(&key, entry)?;
-    println!("Label: {}", entry.label);
-    println!("Type: {}", entry_type_label(&entry.metadata.entry_type));
-    if let Some(username) = &entry.metadata.username {
-        println!("Username: {username}");
-    }
-    if let Some(url) = &entry.metadata.url {
-        println!("URL: {url}");
-    }
-    if let Some(folder) = &entry.metadata.folder {
-        println!("Folder: {folder}");
-    }
-    if !entry.metadata.tags.is_empty() {
-        println!("Tags: {}", entry.metadata.tags.join(", "));
-    }
-    // Mask password by default for security (visible in terminal history/logs)
-    if show_password {
-        println!("Password: {}", secret.password);
-    } else {
-        println!("Password: ******** (use --show-password to reveal)");
-    }
-    if let Some(notes) = &secret.notes {
-        println!("Notes: {notes}");
-    }
-    if let Some(totp_secret) = &secret.totp_secret {
-        // Also mask TOTP secret by default
-        if show_password {
-            println!("TOTP secret: {totp_secret}");
-        } else {
-            println!("TOTP secret: ******** (use --show-password to reveal)");
+
+    match output_format {
+        OutputFormat::Json => {
+            let json = serde_json::json!({
+                "label": entry.label,
+                "type": entry_type_label(&entry.metadata.entry_type),
+                "username": entry.metadata.username,
+                "url": entry.metadata.url,
+                "folder": entry.metadata.folder,
+                "tags": entry.metadata.tags,
+                "password": if show_password { Some(&secret.password) } else { None },
+                "notes": secret.notes,
+                "totp_secret": if show_password { secret.totp_secret.as_ref() } else { None },
+                "attachments_count": secret.attachments.len(),
+                "created_at": entry.created_at,
+                "updated_at": entry.updated_at,
+            });
+            println!("{}", serde_json::to_string_pretty(&json)?);
+        }
+        OutputFormat::Text => {
+            println!("Label: {}", entry.label);
+            println!("Type: {}", entry_type_label(&entry.metadata.entry_type));
+            if let Some(username) = &entry.metadata.username {
+                println!("Username: {username}");
+            }
+            if let Some(url) = &entry.metadata.url {
+                println!("URL: {url}");
+            }
+            if let Some(folder) = &entry.metadata.folder {
+                println!("Folder: {folder}");
+            }
+            if !entry.metadata.tags.is_empty() {
+                println!("Tags: {}", entry.metadata.tags.join(", "));
+            }
+            // Mask password by default for security (visible in terminal history/logs)
+            if show_password {
+                println!("Password: {}", secret.password);
+            } else {
+                println!("Password: ******** (use --show-password to reveal)");
+            }
+            if let Some(notes) = &secret.notes {
+                println!("Notes: {notes}");
+            }
+            if let Some(totp_secret) = &secret.totp_secret {
+                // Also mask TOTP secret by default
+                if show_password {
+                    println!("TOTP secret: {totp_secret}");
+                } else {
+                    println!("TOTP secret: ******** (use --show-password to reveal)");
+                }
+            }
+            if !secret.attachments.is_empty() {
+                println!("Attachments: {}", secret.attachments.len());
+            }
+            println!("Updated: {}", format_timestamp_relative(entry.updated_at));
         }
     }
-    if !secret.attachments.is_empty() {
-        println!("Attachments: {}", secret.attachments.len());
-    }
-    println!("Updated: {}", format_timestamp_relative(entry.updated_at));
+
     if copy {
         copy_to_clipboard_with_timeout(&secret.password, clipboard_timeout)?;
-        println!("Password copied to clipboard for {clipboard_timeout} seconds.");
+        if output_format == OutputFormat::Text {
+            println!("Password copied to clipboard for {clipboard_timeout} seconds.");
+        }
     }
     Ok(())
 }
@@ -835,6 +931,7 @@ fn search_entries(
     config: &lilypad_core::AppConfig,
     vault_name: &str,
     query: &str,
+    output_format: OutputFormat,
     master_password: Option<&str>,
 ) -> Result<()> {
     let (key, _) = load_key(&key_path(config), master_password)?;
@@ -842,14 +939,37 @@ fn search_entries(
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
     let matches = vault.search_entries(query);
-    if matches.is_empty() {
-        println!("No entries match '{query}'.");
-        return Ok(());
-    }
-    println!("Results for '{query}':");
-    for entry in matches {
-        let updated = format_timestamp_relative(entry.updated_at);
-        println!("- {} (updated: {})", entry.label, updated);
+
+    match output_format {
+        OutputFormat::Json => {
+            let results: Vec<_> = matches.iter().map(|e| {
+                serde_json::json!({
+                    "label": e.label,
+                    "type": entry_type_label(&e.metadata.entry_type),
+                    "username": e.metadata.username,
+                    "url": e.metadata.url,
+                    "folder": e.metadata.folder,
+                    "tags": e.metadata.tags,
+                    "updated_at": e.updated_at,
+                })
+            }).collect();
+            let json = serde_json::json!({
+                "query": query,
+                "results": results,
+            });
+            println!("{}", serde_json::to_string_pretty(&json)?);
+        }
+        OutputFormat::Text => {
+            if matches.is_empty() {
+                println!("No entries match '{query}'.");
+                return Ok(());
+            }
+            println!("Results for '{query}':");
+            for entry in matches {
+                let updated = format_timestamp_relative(entry.updated_at);
+                println!("- {} (updated: {})", entry.label, updated);
+            }
+        }
     }
     Ok(())
 }
@@ -1123,6 +1243,7 @@ fn audit_vault(
     store: &LocalStore,
     config: &lilypad_core::AppConfig,
     vault_name: &str,
+    output_format: OutputFormat,
     master_password: Option<&str>,
 ) -> Result<()> {
     let (key, _) = load_key(&key_path(config), master_password)?;
@@ -1149,38 +1270,53 @@ fn audit_vault(
             .push(entry.label.clone());
     }
 
-    println!("Audit results for '{vault_name}':");
-    println!("Total entries: {}", vault.entries.len());
-    println!();
-
-    if very_weak.is_empty() && weak.is_empty() {
-        println!("Password strength: All passwords meet minimum requirements.");
-    } else {
-        if !very_weak.is_empty() {
-            println!(
-                "Very weak passwords (<8 chars): {}",
-                very_weak.join(", ")
-            );
-        }
-        if !weak.is_empty() {
-            println!(
-                "Weak passwords (8-11 chars, missing diversity): {}",
-                weak.join(", ")
-            );
-        }
-    }
-
-    let reused: Vec<String> = duplicates
+    let reused: Vec<Vec<String>> = duplicates
         .into_iter()
         .filter(|(_, labels)| labels.len() > 1)
-        .map(|(_, labels)| labels.join(", "))
+        .map(|(_, labels)| labels)
         .collect();
-    if reused.is_empty() {
-        println!("Password reuse: No reused passwords detected.");
-    } else {
-        println!("Password reuse detected:");
-        for group in &reused {
-            println!("  - {}", group);
+
+    match output_format {
+        OutputFormat::Json => {
+            let json = serde_json::json!({
+                "vault": vault_name,
+                "total_entries": vault.entries.len(),
+                "very_weak_passwords": very_weak,
+                "weak_passwords": weak,
+                "reused_passwords": reused,
+            });
+            println!("{}", serde_json::to_string_pretty(&json)?);
+        }
+        OutputFormat::Text => {
+            println!("Audit results for '{vault_name}':");
+            println!("Total entries: {}", vault.entries.len());
+            println!();
+
+            if very_weak.is_empty() && weak.is_empty() {
+                println!("Password strength: All passwords meet minimum requirements.");
+            } else {
+                if !very_weak.is_empty() {
+                    println!(
+                        "Very weak passwords (<8 chars): {}",
+                        very_weak.join(", ")
+                    );
+                }
+                if !weak.is_empty() {
+                    println!(
+                        "Weak passwords (8-11 chars, missing diversity): {}",
+                        weak.join(", ")
+                    );
+                }
+            }
+
+            if reused.is_empty() {
+                println!("Password reuse: No reused passwords detected.");
+            } else {
+                println!("Password reuse detected:");
+                for group in &reused {
+                    println!("  - {}", group.join(", "));
+                }
+            }
         }
     }
     Ok(())
@@ -1471,5 +1607,89 @@ fn validate_import_entry(label: &str, secret: &EntrySecret, metadata: &EntryMeta
     // Validate secret (including attachments)
     secret.validate().with_context(|| format!("entry '{}' has invalid secret data", label))?;
 
+    Ok(())
+}
+
+/// Generates shell completion scripts to stdout.
+fn generate_completions(shell: Shell) {
+    let mut cmd = Cli::command();
+    let name = cmd.get_name().to_string();
+    generate(shell, &mut cmd, name, &mut io::stdout());
+}
+
+/// Changes the master password without re-encrypting vault entries.
+fn change_master_password(
+    store: &LocalStore,
+    config: &lilypad_core::AppConfig,
+    vault_name: &str,
+    current_master_password: Option<&str>,
+) -> Result<()> {
+    let current_password = current_master_password.ok_or_else(|| {
+        anyhow!("current master password required (--master-password or LILYPAD_MASTER_PASSWORD)")
+    })?;
+
+    // Load and verify current key
+    let key_path = key_path(config);
+    let (key, _) = load_key(&key_path, Some(current_password))?;
+
+    // Verify vault exists and can be loaded
+    let vault = store
+        .load_vault(vault_name, &key)
+        .with_context(|| format!("vault not found: {vault_name}"))?;
+
+    // Prompt for new password
+    print!("Enter new master password: ");
+    io::stdout().flush()?;
+    let mut new_password = String::new();
+    io::stdin().read_line(&mut new_password)?;
+    let new_password = new_password.trim();
+
+    if new_password.is_empty() {
+        return Err(anyhow!("new master password cannot be empty"));
+    }
+
+    // Confirm new password
+    print!("Confirm new master password: ");
+    io::stdout().flush()?;
+    let mut confirm_password = String::new();
+    io::stdin().read_line(&mut confirm_password)?;
+    let confirm_password = confirm_password.trim();
+
+    if new_password != confirm_password {
+        return Err(anyhow!("passwords do not match"));
+    }
+
+    // Check password strength
+    let strength = validate_password_strength(new_password);
+    if !strength.is_acceptable() {
+        eprintln!("Warning: {}", strength.feedback());
+    }
+
+    // Generate new KDF parameters and derive key
+    let new_params = KeyDerivationParams::generate();
+    let new_key = derive_key(new_password, &new_params)?;
+
+    // Verify the new key produces the same key_id (it won't - keys are different)
+    // Actually for change-password we need to re-encrypt with the new key
+    // This is essentially a key rotation but with explicit password change
+
+    // Re-encrypt all entries with the new key
+    let mut updated_vault = vault.clone();
+    for entry in &mut updated_vault.entries {
+        let plaintext = decrypt(&key, &entry.ciphertext)?;
+        entry.ciphertext = encrypt(&new_key, &plaintext)?;
+    }
+
+    // Update vault metadata
+    let new_metadata = KeyMetadata::new(&new_key, lilypad_core::CryptoAlgorithm::XChaCha20Poly1305)
+        .with_kdf("argon2id");
+    updated_vault.key_metadata = new_metadata;
+
+    // Save the updated key file and vault
+    let new_key_file = KeyFile::from_kdf(new_params);
+    save_key(&key_path, &new_key_file)?;
+    store.save_vault(&updated_vault, &new_key)?;
+
+    println!("Master password changed successfully for vault '{vault_name}'.");
     Ok(())
 }

@@ -5,19 +5,10 @@
 
 use std::fmt;
 
-// Re-export size constants from lilypad-core for convenience
-pub use lilypad_core::{
-    MAX_ATTACHMENT_SIZE, MAX_NOTES_SIZE, MAX_PASSWORD_SIZE, MAX_TOTAL_ATTACHMENTS_SIZE,
+use crate::constants::{
+    MAX_ENTRY_SIZE, MAX_NOTES_SIZE, MAX_PASSWORD_SIZE, MAX_VAULT_NAME_LENGTH,
+    MIN_PASSWORD_LENGTH, MIN_STRONG_PASSWORD_LENGTH, VERY_STRONG_PASSWORD_LENGTH,
 };
-
-/// Maximum total size for an entry (in bytes).
-pub const MAX_ENTRY_SIZE: usize = 50 * 1024 * 1024; // 50 MB
-
-/// Maximum length for vault names.
-pub const MAX_VAULT_NAME_LENGTH: usize = 64;
-
-/// Minimum password length for strong passwords.
-pub const MIN_STRONG_PASSWORD_LENGTH: usize = 12;
 
 /// Validation error types.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -203,12 +194,84 @@ impl PasswordStrength {
     }
 }
 
+/// Common keyboard patterns to detect.
+const KEYBOARD_PATTERNS: &[&str] = &[
+    "qwerty", "qwertz", "azerty", "asdfgh", "zxcvbn",
+    "123456", "654321", "111111", "000000", "123123",
+    "abcdef", "fedcba", "aaaaaa", "password", "letmein",
+    "qweasd", "1q2w3e", "1qaz2wsx",
+];
+
+/// Sequential character patterns.
+fn has_sequential_chars(password: &str, min_seq: usize) -> bool {
+    let chars: Vec<char> = password.to_lowercase().chars().collect();
+    if chars.len() < min_seq {
+        return false;
+    }
+
+    let mut ascending = 1;
+    let mut descending = 1;
+
+    for i in 1..chars.len() {
+        let prev = chars[i - 1] as i32;
+        let curr = chars[i] as i32;
+
+        if curr == prev + 1 {
+            ascending += 1;
+            if ascending >= min_seq {
+                return true;
+            }
+        } else {
+            ascending = 1;
+        }
+
+        if curr == prev - 1 {
+            descending += 1;
+            if descending >= min_seq {
+                return true;
+            }
+        } else {
+            descending = 1;
+        }
+    }
+
+    false
+}
+
+/// Checks for repeated characters (e.g., "aaa", "111").
+fn has_repeated_chars(password: &str, min_repeat: usize) -> bool {
+    let chars: Vec<char> = password.chars().collect();
+    if chars.len() < min_repeat {
+        return false;
+    }
+
+    let mut count = 1;
+    for i in 1..chars.len() {
+        if chars[i] == chars[i - 1] {
+            count += 1;
+            if count >= min_repeat {
+                return true;
+            }
+        } else {
+            count = 1;
+        }
+    }
+
+    false
+}
+
+/// Checks if password contains keyboard patterns.
+fn contains_keyboard_pattern(password: &str) -> bool {
+    let lower = password.to_lowercase();
+    KEYBOARD_PATTERNS.iter().any(|pattern| lower.contains(pattern))
+}
+
 /// Validates password strength and returns the assessment.
 ///
 /// Checks for:
 /// - Minimum length
 /// - Character diversity (lowercase, uppercase, digits, symbols)
-/// - Common patterns (not implemented yet)
+/// - Common patterns (keyboard patterns, sequential chars, repetition)
 ///
 /// # Arguments
 /// * `password` - The password to validate
@@ -229,11 +292,25 @@ pub fn validate_password_strength(password: &str) -> PasswordStrength {
         .filter(|&&x| x)
         .count();
 
-    if len < 8 {
+    // Check for weak patterns
+    let has_weak_patterns = contains_keyboard_pattern(password)
+        || has_sequential_chars(password, 4)
+        || has_repeated_chars(password, 4);
+
+    if len < MIN_PASSWORD_LENGTH {
         return PasswordStrength::VeryWeak;
     }
 
-    if len < 12 {
+    // Penalize passwords with weak patterns
+    if has_weak_patterns {
+        return if len < VERY_STRONG_PASSWORD_LENGTH {
+            PasswordStrength::Weak
+        } else {
+            PasswordStrength::Fair
+        };
+    }
+
+    if len < MIN_STRONG_PASSWORD_LENGTH {
         return if diversity >= 3 {
             PasswordStrength::Fair
         } else {
@@ -241,7 +318,7 @@ pub fn validate_password_strength(password: &str) -> PasswordStrength {
         };
     }
 
-    if len < 16 {
+    if len < VERY_STRONG_PASSWORD_LENGTH {
         return if diversity >= 3 {
             PasswordStrength::Strong
         } else {
@@ -257,6 +334,13 @@ pub fn validate_password_strength(password: &str) -> PasswordStrength {
     } else {
         PasswordStrength::Fair
     }
+}
+
+/// Checks if a password has weak patterns without full strength evaluation.
+pub fn has_weak_patterns(password: &str) -> bool {
+    contains_keyboard_pattern(password)
+        || has_sequential_chars(password, 4)
+        || has_repeated_chars(password, 4)
 }
 
 /// Validates a label (entry name, tag, folder name).
@@ -393,24 +477,27 @@ mod tests {
 
     #[test]
     fn test_password_strength_fair() {
+        // Good diversity but shorter length
         assert_eq!(
-            validate_password_strength("Password123!"),
-            PasswordStrength::Strong
+            validate_password_strength("Tr0pic@l9"),
+            PasswordStrength::Fair
         );
     }
 
     #[test]
     fn test_password_strength_strong() {
+        // 13 chars with full diversity, no patterns
         assert_eq!(
-            validate_password_strength("MyStr0ng!Pass"),
+            validate_password_strength("Tr0pic@lFish9"),
             PasswordStrength::Strong
         );
     }
 
     #[test]
     fn test_password_strength_very_strong() {
+        // 20+ chars with full diversity, no patterns
         assert_eq!(
-            validate_password_strength("MyV3ryStr0ng!Password"),
+            validate_password_strength("Tr0pic@lFish9Blu3Sky!"),
             PasswordStrength::VeryStrong
         );
     }
@@ -422,5 +509,48 @@ mod tests {
         assert!(PasswordStrength::Fair.is_acceptable());
         assert!(PasswordStrength::Strong.is_acceptable());
         assert!(PasswordStrength::VeryStrong.is_acceptable());
+    }
+
+    #[test]
+    fn test_password_with_keyboard_pattern() {
+        // "qwerty" pattern should be detected as weak
+        assert_eq!(
+            validate_password_strength("qwerty12345"),
+            PasswordStrength::Weak
+        );
+        assert_eq!(
+            validate_password_strength("asdfgh12345"),
+            PasswordStrength::Weak
+        );
+    }
+
+    #[test]
+    fn test_password_with_sequential_chars() {
+        // Sequential characters (abcd, 1234) should be detected
+        assert_eq!(
+            validate_password_strength("abcdefgh12"),
+            PasswordStrength::Weak
+        );
+        assert_eq!(
+            validate_password_strength("12345678ab"),
+            PasswordStrength::Weak
+        );
+    }
+
+    #[test]
+    fn test_password_with_repeated_chars() {
+        // Repeated characters (aaaa) should be detected
+        assert_eq!(
+            validate_password_strength("aaaaabcdef"),
+            PasswordStrength::Weak
+        );
+    }
+
+    #[test]
+    fn test_has_weak_patterns() {
+        assert!(has_weak_patterns("qwerty123"));
+        assert!(has_weak_patterns("abcdefgh"));
+        assert!(has_weak_patterns("aaaa1234"));
+        assert!(!has_weak_patterns("xK9#mP2$vL"));
     }
 }
