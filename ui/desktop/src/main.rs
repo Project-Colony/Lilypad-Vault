@@ -7,11 +7,12 @@ use egui::{
     RichText,
 };
 use lilypad_common::{
-    keyfile::{load_key, save_key, KeyFile},
-    time::format_timestamp_relative,
+    analyze_vault_health, keyfile::{load_key, save_key, KeyFile}, time::format_timestamp_relative,
+    validation::validate_password_strength, EntryHealthData, HealthGrade, HealthReport,
+    PasswordStrength,
 };
 use lilypad_core::{
-    decrypt, default_config, derive_key, encrypt, AppConfig, CryptoAlgorithm, Entry,
+    decrypt, default_config, derive_key, encrypt, AppConfig, CryptoAlgorithm, Entry, EntryColor,
     KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
 };
 use lilypad_storage::LocalStore;
@@ -176,6 +177,17 @@ const DEFAULT_VAULT_NAME: &str = "primary";
 const MAX_LOGIN_ATTEMPTS: u32 = 5;
 const LOCKOUT_DURATION_SECS: u64 = 300; // 5 minutes
 
+/// View modes for the vault section
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum VaultViewMode {
+    #[default]
+    All,
+    Favorites,
+    Recent,
+    Weak,
+    Expired,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct DesktopEntryPayload {
     username: String,
@@ -333,6 +345,14 @@ struct LilypadApp {
     account_marketing_opt_in: bool,
     security_recovery_email: String,
     security_trusted_devices: Vec<String>,
+
+    // Health dashboard
+    health_report: Option<HealthReport>,
+
+    // View filters
+    show_favorites_only: bool,
+    show_recent_only: bool,
+    vault_view_mode: VaultViewMode,
 }
 
 /// Implement Drop to zeroize sensitive fields when the app is closed.
@@ -364,6 +384,12 @@ struct VaultEntry {
     notes: String,
     last_updated: String,
     updated_at: u64,
+    is_favorite: bool,
+    last_accessed_at: Option<u64>,
+    access_count: u64,
+    password_strength: PasswordStrength,
+    is_expired: bool,
+    color: Option<EntryColor>,
 }
 
 impl Drop for VaultEntry {
@@ -484,6 +510,12 @@ impl LilypadApp {
                 "MacBook Pro • Paris".to_string(),
                 "iPhone 15 • Bordeaux".to_string(),
             ],
+
+            health_report: None,
+
+            show_favorites_only: false,
+            show_recent_only: false,
+            vault_view_mode: VaultViewMode::All,
         };
 
         if let Some(project_dirs) = ProjectDirs::from("", "", "Lilypad") {
@@ -996,8 +1028,8 @@ impl LilypadApp {
     fn render_navigation_bar(&mut self, ctx: &egui::Context) {
         let nav_items = [
             ("Vault", "🗄️"),
+            ("Health", "💚"),
             ("Generator", "⚙️"),
-            ("Alerts", "🔔"),
             ("Account", "👤"),
             ("Security", "🛡️"),
         ];
@@ -1083,6 +1115,9 @@ impl LilypadApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.section_container(ui, |this, ui| match this.selected_category {
                 1 => {
+                    this.render_health_dashboard(ui);
+                }
+                2 => {
                     ui.heading("Password generator");
                     ui.separator();
                     ui.label(
@@ -1090,15 +1125,6 @@ impl LilypadApp {
                     );
                     ui.add_space(8.0);
                     this.render_password_generator(ui, ctx);
-                }
-                2 => {
-                    ui.heading("Alerts");
-                    ui.separator();
-                    ui.label(
-                        "Stay ahead of security issues. Alerts will summarize important notices about your vault activity and account safety.",
-                    );
-                    ui.add_space(8.0);
-                    ui.label("No alerts to show yet. Check back soon.");
                 }
                 3 => {
                     this.render_account_section(ui);
@@ -1662,6 +1688,165 @@ impl LilypadApp {
         });
     }
 
+    fn render_health_dashboard(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Password Health");
+        ui.separator();
+        ui.label("Monitor the security status of your vault and identify areas for improvement.");
+        ui.add_space(8.0);
+
+        // Refresh button
+        if ui.button("Refresh Health Report").clicked() {
+            self.generate_health_report();
+        }
+        ui.add_space(12.0);
+
+        if let Some(ref report) = self.health_report {
+            // Score card
+            ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    // Large score display
+                    let score_color = match report.score.grade {
+                        HealthGrade::A => Color32::from_rgb(34, 197, 94),  // Green
+                        HealthGrade::B => Color32::from_rgb(132, 204, 22), // Lime
+                        HealthGrade::C => Color32::from_rgb(234, 179, 8),  // Yellow
+                        HealthGrade::D => Color32::from_rgb(249, 115, 22), // Orange
+                        HealthGrade::F => Color32::from_rgb(239, 68, 68),  // Red
+                    };
+
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new(format!("{}", report.score.score))
+                                .size(48.0)
+                                .color(score_color)
+                                .strong(),
+                        );
+                        ui.label(
+                            RichText::new(format!("Grade: {:?}", report.score.grade))
+                                .size(16.0)
+                                .color(score_color),
+                        );
+                    });
+
+                    ui.add_space(24.0);
+
+                    ui.vertical(|ui| {
+                        ui.label(RichText::new(report.score.grade.description()).size(14.0));
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if report.score.critical_issues > 0 {
+                                ui.label(
+                                    RichText::new(format!("{} Critical", report.score.critical_issues))
+                                        .color(Color32::from_rgb(239, 68, 68)),
+                                );
+                            }
+                            if report.score.warning_issues > 0 {
+                                ui.label(
+                                    RichText::new(format!("{} Warnings", report.score.warning_issues))
+                                        .color(Color32::from_rgb(234, 179, 8)),
+                                );
+                            }
+                            if report.score.info_issues > 0 {
+                                ui.label(
+                                    RichText::new(format!("{} Info", report.score.info_issues))
+                                        .color(Color32::from_rgb(59, 130, 246)),
+                                );
+                            }
+                        });
+                    });
+                });
+            });
+
+            ui.add_space(12.0);
+
+            // Score breakdown
+            ui.group(|ui| {
+                ui.label(RichText::new("Score Breakdown").strong());
+                ui.add_space(4.0);
+
+                let breakdown = &report.score.breakdown;
+                ui.horizontal(|ui| {
+                    ui.label(format!("Password Strength: {}/25", breakdown.password_strength));
+                    ui.label(format!("Uniqueness: {}/25", breakdown.uniqueness));
+                    ui.label(format!("Freshness: {}/25", breakdown.freshness));
+                    ui.label(format!("2FA Coverage: {}/25", breakdown.two_factor));
+                });
+            });
+
+            ui.add_space(12.0);
+
+            // Statistics
+            ui.group(|ui| {
+                ui.label(RichText::new("Statistics").strong());
+                ui.add_space(4.0);
+
+                let stats = &report.stats;
+                ui.columns(3, |columns| {
+                    columns[0].label(format!("Total Entries: {}", stats.total_entries));
+                    columns[0].label(format!("Strong Passwords: {}", stats.strong_passwords));
+                    columns[0].label(format!("Weak Passwords: {}", stats.weak_passwords));
+
+                    columns[1].label(format!("Unique Passwords: {}", stats.unique_passwords));
+                    columns[1].label(format!("Reused Passwords: {}", stats.reused_passwords));
+                    columns[1].label(format!("Expired Passwords: {}", stats.expired_passwords));
+
+                    columns[2].label(format!("With 2FA: {}", stats.with_2fa));
+                    columns[2].label(format!("Without 2FA: {}", stats.without_2fa));
+                    columns[2].label(format!("Expiring Soon: {}", stats.expiring_soon));
+                });
+            });
+
+            ui.add_space(12.0);
+
+            // Issues list
+            if !report.issues.is_empty() {
+                ui.group(|ui| {
+                    ui.label(RichText::new("Issues to Address").strong());
+                    ui.add_space(4.0);
+
+                    egui::ScrollArea::vertical()
+                        .max_height(300.0)
+                        .show(ui, |ui| {
+                            for issue in &report.issues {
+                                let icon = match issue.severity {
+                                    lilypad_common::IssueSeverity::Critical => "🔴",
+                                    lilypad_common::IssueSeverity::Warning => "🟡",
+                                    lilypad_common::IssueSeverity::Info => "🔵",
+                                };
+                                ui.horizontal(|ui| {
+                                    ui.label(icon);
+                                    ui.label(RichText::new(&issue.title).strong());
+                                });
+                                ui.label(&issue.description);
+                                if !issue.affected_entries.is_empty() {
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "Affected: {}",
+                                            issue.affected_entries.join(", ")
+                                        ))
+                                        .small()
+                                        .color(Color32::GRAY),
+                                    );
+                                }
+                                ui.label(
+                                    RichText::new(&issue.recommendation)
+                                        .small()
+                                        .italics(),
+                                );
+                                ui.add_space(8.0);
+                            }
+                        });
+                });
+            } else {
+                ui.group(|ui| {
+                    ui.label(RichText::new("No issues found!").color(Color32::from_rgb(34, 197, 94)));
+                    ui.label("Your vault is in great shape.");
+                });
+            }
+        } else {
+            ui.label("Click 'Refresh Health Report' to analyze your vault security.");
+        }
+    }
+
     fn unlock_vault(&mut self) -> Result<()> {
         let password = self.master_password.trim();
         if password.is_empty() {
@@ -1673,6 +1858,8 @@ impl LilypadApp {
         self.vault_entries = entries;
         self.vault = Some(vault);
         self.vault_key = Some(key);
+        // Generate initial health report
+        self.generate_health_report();
         Ok(())
     }
 
@@ -1716,6 +1903,7 @@ impl LilypadApp {
         for entry in &vault.entries {
             let plaintext = decrypt(key, &entry.ciphertext)?;
             let payload = Self::parse_entry_payload(&plaintext);
+            let password_strength = validate_password_strength(&payload.password);
             entries.push(VaultEntry {
                 title: entry.label.clone(),
                 username: payload.username,
@@ -1724,10 +1912,38 @@ impl LilypadApp {
                 notes: payload.notes,
                 last_updated: Self::format_entry_timestamp(entry.updated_at),
                 updated_at: entry.updated_at,
+                is_favorite: entry.is_favorite,
+                last_accessed_at: entry.last_accessed_at,
+                access_count: entry.access_count,
+                password_strength,
+                is_expired: entry.is_password_expired(),
+                color: entry.color,
             });
         }
         entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
         Ok(entries)
+    }
+
+    /// Generates a health report for the current vault.
+    fn generate_health_report(&mut self) {
+        let health_data: Vec<EntryHealthData> = self
+            .vault_entries
+            .iter()
+            .map(|e| {
+                let vault_entry = self.vault.as_ref().and_then(|v| v.find_entry(&e.title));
+                EntryHealthData {
+                    label: e.title.clone(),
+                    password: e.password.clone(),
+                    has_username: !e.username.is_empty(),
+                    has_url: !e.url.is_empty(),
+                    has_totp: false, // TODO: check TOTP
+                    password_age_days: vault_entry.map(|ve| ve.password_age_days()).unwrap_or(0),
+                    days_until_expiry: vault_entry.and_then(|ve| ve.days_until_password_expires()),
+                    is_expired: e.is_expired,
+                }
+            })
+            .collect();
+        self.health_report = Some(analyze_vault_health(&health_data));
     }
 
     fn parse_entry_payload(plaintext: &[u8]) -> DesktopEntryPayload {

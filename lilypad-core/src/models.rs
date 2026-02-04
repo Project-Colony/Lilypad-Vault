@@ -16,7 +16,10 @@ pub const MAX_TAG_LENGTH: usize = 64;
 pub const MAX_TAGS_PER_ENTRY: usize = 50;
 
 /// Maximum size for folder names (in characters).
-pub const MAX_FOLDER_LENGTH: usize = 128;
+pub const MAX_FOLDER_LENGTH: usize = 512;
+
+/// Maximum folder nesting depth.
+pub const MAX_FOLDER_DEPTH: usize = 10;
 
 /// Maximum size for URLs (in characters).
 pub const MAX_URL_LENGTH: usize = 2048;
@@ -38,6 +41,15 @@ pub const MAX_TOTAL_ATTACHMENTS_SIZE: usize = 50 * 1024 * 1024; // 50 MB
 
 /// Maximum number of attachments per entry.
 pub const MAX_ATTACHMENTS_PER_ENTRY: usize = 20;
+
+/// Maximum number of custom fields per entry.
+pub const MAX_CUSTOM_FIELDS_PER_ENTRY: usize = 50;
+
+/// Maximum size for custom field names (in characters).
+pub const MAX_CUSTOM_FIELD_NAME_LENGTH: usize = 128;
+
+/// Maximum size for custom field values (in bytes).
+pub const MAX_CUSTOM_FIELD_VALUE_SIZE: usize = 10 * 1024; // 10 KB
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Vault {
@@ -195,13 +207,7 @@ impl Vault {
 
     pub fn set_entry_folder(&mut self, label: &str, folder: Option<String>) -> Result<()> {
         if let Some(ref f) = folder {
-            if f.len() > MAX_FOLDER_LENGTH {
-                return Err(CoreError::InvalidInput(format!(
-                    "folder name too long ({} chars, max {} chars)",
-                    f.len(),
-                    MAX_FOLDER_LENGTH
-                )));
-            }
+            Self::validate_folder_path(f)?;
         }
         let entry = self
             .entries
@@ -317,6 +323,351 @@ impl Vault {
         tags.into_iter().collect()
     }
 
+    /// Returns all favorite entries.
+    pub fn favorites(&self) -> Vec<&Entry> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.is_favorite)
+            .collect()
+    }
+
+    /// Returns recently used entries, sorted by last access time (most recent first).
+    pub fn recently_used(&self, limit: usize) -> Vec<&Entry> {
+        let mut entries: Vec<&Entry> = self.entries
+            .iter()
+            .filter(|entry| entry.last_accessed_at.is_some())
+            .collect();
+        entries.sort_by(|a, b| {
+            b.last_accessed_at.unwrap_or(0).cmp(&a.last_accessed_at.unwrap_or(0))
+        });
+        entries.into_iter().take(limit).collect()
+    }
+
+    /// Returns most frequently used entries, sorted by access count (highest first).
+    pub fn most_used(&self, limit: usize) -> Vec<&Entry> {
+        let mut entries: Vec<&Entry> = self.entries
+            .iter()
+            .filter(|entry| entry.access_count > 0)
+            .collect();
+        entries.sort_by(|a, b| b.access_count.cmp(&a.access_count));
+        entries.into_iter().take(limit).collect()
+    }
+
+    /// Sets an entry as favorite or not.
+    pub fn set_entry_favorite(&mut self, label: &str, favorite: bool) -> Result<()> {
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.label == label)
+            .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
+        entry.set_favorite(favorite);
+        self.touch();
+        Ok(())
+    }
+
+    /// Records that an entry was accessed.
+    pub fn record_entry_access(&mut self, label: &str) -> Result<()> {
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.label == label)
+            .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
+        entry.record_access();
+        Ok(())
+    }
+
+    /// Sets the color for an entry.
+    pub fn set_entry_color(&mut self, label: &str, color: Option<EntryColor>) -> Result<()> {
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.label == label)
+            .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
+        entry.set_color(color);
+        self.touch();
+        Ok(())
+    }
+
+    /// Sets the icon for an entry.
+    pub fn set_entry_icon(&mut self, label: &str, icon: Option<String>) -> Result<()> {
+        let entry = self
+            .entries
+            .iter_mut()
+            .find(|entry| entry.label == label)
+            .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
+        entry.set_icon(icon);
+        self.touch();
+        Ok(())
+    }
+
+    /// Lists all unique parent folders in the folder tree.
+    /// For nested folders like "Work/Email/Google", this returns:
+    /// ["Work", "Work/Email", "Work/Email/Google"]
+    pub fn list_folder_tree(&self) -> Vec<String> {
+        let mut folders = BTreeSet::new();
+        for entry in &self.entries {
+            if let Some(folder) = entry.metadata.folder.as_deref() {
+                if !folder.trim().is_empty() {
+                    // Add the full path and all parent paths
+                    let parts: Vec<&str> = folder.split('/').collect();
+                    let mut path = String::new();
+                    for (i, part) in parts.iter().enumerate() {
+                        if i > 0 {
+                            path.push('/');
+                        }
+                        path.push_str(part);
+                        folders.insert(path.clone());
+                    }
+                }
+            }
+        }
+        folders.into_iter().collect()
+    }
+
+    /// Returns entries in a folder, including entries in nested subfolders.
+    pub fn entries_in_folder_recursive(&self, folder: &str) -> Vec<&Entry> {
+        let prefix = if folder.ends_with('/') {
+            folder.to_string()
+        } else {
+            format!("{}/", folder)
+        };
+        self.entries
+            .iter()
+            .filter(|entry| {
+                if let Some(f) = &entry.metadata.folder {
+                    f == folder || f.starts_with(&prefix)
+                } else {
+                    false
+                }
+            })
+            .collect()
+    }
+
+    /// Returns only entries directly in a folder (not in subfolders).
+    pub fn entries_in_folder_direct(&self, folder: &str) -> Vec<&Entry> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.metadata.folder.as_deref() == Some(folder))
+            .collect()
+    }
+
+    /// Returns immediate child folders of a given folder.
+    pub fn child_folders(&self, parent: &str) -> Vec<String> {
+        let mut children = BTreeSet::new();
+        let prefix = if parent.is_empty() {
+            String::new()
+        } else if parent.ends_with('/') {
+            parent.to_string()
+        } else {
+            format!("{}/", parent)
+        };
+
+        for entry in &self.entries {
+            if let Some(folder) = &entry.metadata.folder {
+                let relative = if parent.is_empty() {
+                    folder.as_str()
+                } else if folder.starts_with(&prefix) {
+                    &folder[prefix.len()..]
+                } else {
+                    continue;
+                };
+
+                // Get the first component of the relative path
+                if let Some(child) = relative.split('/').next() {
+                    if !child.is_empty() {
+                        let full_path = if parent.is_empty() {
+                            child.to_string()
+                        } else {
+                            format!("{}/{}", parent.trim_end_matches('/'), child)
+                        };
+                        children.insert(full_path);
+                    }
+                }
+            }
+        }
+        children.into_iter().collect()
+    }
+
+    /// Returns entries that have no folder assigned.
+    pub fn entries_without_folder(&self) -> Vec<&Entry> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.metadata.folder.is_none() || entry.metadata.folder.as_deref() == Some(""))
+            .collect()
+    }
+
+    /// Validates a folder path for nested folder support.
+    pub fn validate_folder_path(path: &str) -> Result<()> {
+        if path.is_empty() {
+            return Ok(());
+        }
+        if path.len() > MAX_FOLDER_LENGTH {
+            return Err(CoreError::InvalidInput(format!(
+                "folder path too long ({} chars, max {} chars)",
+                path.len(),
+                MAX_FOLDER_LENGTH
+            )));
+        }
+        let parts: Vec<&str> = path.split('/').collect();
+        if parts.len() > MAX_FOLDER_DEPTH {
+            return Err(CoreError::InvalidInput(format!(
+                "folder path too deep ({} levels, max {} levels)",
+                parts.len(),
+                MAX_FOLDER_DEPTH
+            )));
+        }
+        for part in &parts {
+            if part.is_empty() {
+                return Err(CoreError::InvalidInput(
+                    "folder path contains empty components".to_string(),
+                ));
+            }
+            if part.contains("..") {
+                return Err(CoreError::InvalidInput(
+                    "folder path contains invalid characters".to_string(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    // ==================== Bulk Operations ====================
+
+    /// Deletes multiple entries at once. Returns the number of entries deleted.
+    pub fn bulk_delete(&mut self, labels: &[&str]) -> Result<usize> {
+        let mut deleted = 0;
+        for label in labels {
+            if let Some(pos) = self.entries.iter().position(|e| e.label == *label) {
+                self.entries.remove(pos);
+                self.record_event(AuditEvent::new("entry_removed", Some(label)));
+                deleted += 1;
+            }
+        }
+        if deleted > 0 {
+            self.touch();
+        }
+        Ok(deleted)
+    }
+
+    /// Moves multiple entries to a folder. Returns the number of entries moved.
+    pub fn bulk_move_to_folder(&mut self, labels: &[&str], folder: Option<String>) -> Result<usize> {
+        if let Some(ref f) = folder {
+            Self::validate_folder_path(f)?;
+        }
+        let mut moved = 0;
+        for entry in &mut self.entries {
+            if labels.contains(&entry.label.as_str()) {
+                entry.metadata.folder = folder.clone();
+                entry.updated_at = current_timestamp();
+                moved += 1;
+            }
+        }
+        if moved > 0 {
+            self.touch();
+            self.record_event(AuditEvent::new("bulk_folder_updated", None));
+        }
+        Ok(moved)
+    }
+
+    /// Adds a tag to multiple entries. Returns the number of entries modified.
+    pub fn bulk_add_tag(&mut self, labels: &[&str], tag: impl Into<String>) -> Result<usize> {
+        let tag = tag.into();
+        if tag.trim().is_empty() {
+            return Err(CoreError::InvalidInput("tag cannot be empty".to_string()));
+        }
+        if tag.len() > MAX_TAG_LENGTH {
+            return Err(CoreError::InvalidInput(format!(
+                "tag too long ({} chars, max {} chars)",
+                tag.len(),
+                MAX_TAG_LENGTH
+            )));
+        }
+        let mut modified = 0;
+        for entry in &mut self.entries {
+            if labels.contains(&entry.label.as_str()) {
+                if entry.metadata.tags.len() < MAX_TAGS_PER_ENTRY
+                    && !entry.metadata.tags.iter().any(|t| t == &tag)
+                {
+                    entry.metadata.tags.push(tag.clone());
+                    entry.updated_at = current_timestamp();
+                    modified += 1;
+                }
+            }
+        }
+        if modified > 0 {
+            self.touch();
+            self.record_event(AuditEvent::new("bulk_tag_added", None));
+        }
+        Ok(modified)
+    }
+
+    /// Removes a tag from multiple entries. Returns the number of entries modified.
+    pub fn bulk_remove_tag(&mut self, labels: &[&str], tag: &str) -> Result<usize> {
+        let mut modified = 0;
+        for entry in &mut self.entries {
+            if labels.contains(&entry.label.as_str()) {
+                if let Some(pos) = entry.metadata.tags.iter().position(|t| t == tag) {
+                    entry.metadata.tags.remove(pos);
+                    entry.updated_at = current_timestamp();
+                    modified += 1;
+                }
+            }
+        }
+        if modified > 0 {
+            self.touch();
+            self.record_event(AuditEvent::new("bulk_tag_removed", None));
+        }
+        Ok(modified)
+    }
+
+    /// Sets favorite status for multiple entries. Returns the number of entries modified.
+    pub fn bulk_set_favorite(&mut self, labels: &[&str], favorite: bool) -> Result<usize> {
+        let mut modified = 0;
+        for entry in &mut self.entries {
+            if labels.contains(&entry.label.as_str()) && entry.is_favorite != favorite {
+                entry.is_favorite = favorite;
+                entry.updated_at = current_timestamp();
+                modified += 1;
+            }
+        }
+        if modified > 0 {
+            self.touch();
+        }
+        Ok(modified)
+    }
+
+    /// Sets color for multiple entries. Returns the number of entries modified.
+    pub fn bulk_set_color(&mut self, labels: &[&str], color: Option<EntryColor>) -> Result<usize> {
+        let mut modified = 0;
+        for entry in &mut self.entries {
+            if labels.contains(&entry.label.as_str()) && entry.color != color {
+                entry.color = color;
+                entry.updated_at = current_timestamp();
+                modified += 1;
+            }
+        }
+        if modified > 0 {
+            self.touch();
+        }
+        Ok(modified)
+    }
+
+    /// Returns entries matching the given labels.
+    pub fn get_entries(&self, labels: &[&str]) -> Vec<&Entry> {
+        self.entries
+            .iter()
+            .filter(|e| labels.contains(&e.label.as_str()))
+            .collect()
+    }
+
+    /// Returns mutable entries matching the given labels.
+    pub fn get_entries_mut(&mut self, labels: &[&str]) -> Vec<&mut Entry> {
+        self.entries
+            .iter_mut()
+            .filter(|e| labels.contains(&e.label.as_str()))
+            .collect()
+    }
+
     fn record_event(&mut self, mut event: AuditEvent) {
         if event.timestamp == 0 {
             event.timestamp = current_timestamp();
@@ -416,6 +767,64 @@ pub struct Entry {
     /// History of changes made to this entry.
     #[serde(default)]
     pub history: Vec<EntryHistoryRecord>,
+    /// Whether this entry is marked as favorite.
+    #[serde(default)]
+    pub is_favorite: bool,
+    /// Unix timestamp when this entry was last accessed/used.
+    #[serde(default)]
+    pub last_accessed_at: Option<u64>,
+    /// Number of times this entry has been accessed.
+    #[serde(default)]
+    pub access_count: u64,
+    /// Icon identifier for custom entry icon.
+    #[serde(default)]
+    pub icon: Option<String>,
+    /// Color label for visual categorization.
+    #[serde(default)]
+    pub color: Option<EntryColor>,
+}
+
+/// Color labels for visual categorization of entries.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum EntryColor {
+    Red,
+    Orange,
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+    Pink,
+    Gray,
+}
+
+impl EntryColor {
+    /// Returns the hex color code for this color.
+    pub fn to_hex(&self) -> &'static str {
+        match self {
+            EntryColor::Red => "#EF4444",
+            EntryColor::Orange => "#F97316",
+            EntryColor::Yellow => "#EAB308",
+            EntryColor::Green => "#22C55E",
+            EntryColor::Blue => "#3B82F6",
+            EntryColor::Purple => "#A855F7",
+            EntryColor::Pink => "#EC4899",
+            EntryColor::Gray => "#6B7280",
+        }
+    }
+
+    /// Returns all available colors.
+    pub fn all() -> &'static [EntryColor] {
+        &[
+            EntryColor::Red,
+            EntryColor::Orange,
+            EntryColor::Yellow,
+            EntryColor::Green,
+            EntryColor::Blue,
+            EntryColor::Purple,
+            EntryColor::Pink,
+            EntryColor::Gray,
+        ]
+    }
 }
 
 impl Entry {
@@ -439,9 +848,38 @@ impl Entry {
             password_changed_at: now,
             password_expires_at: 0,
             history: Vec::new(),
+            is_favorite: false,
+            last_accessed_at: None,
+            access_count: 0,
+            icon: None,
+            color: None,
         };
         entry.history.push(EntryHistoryRecord::new(EntryChangeType::Created));
         entry
+    }
+
+    /// Marks this entry as favorite or not.
+    pub fn set_favorite(&mut self, favorite: bool) {
+        self.is_favorite = favorite;
+        self.updated_at = current_timestamp();
+    }
+
+    /// Records that this entry was accessed (copy password, view, etc.).
+    pub fn record_access(&mut self) {
+        self.last_accessed_at = Some(current_timestamp());
+        self.access_count = self.access_count.saturating_add(1);
+    }
+
+    /// Sets the icon identifier for this entry.
+    pub fn set_icon(&mut self, icon: Option<String>) {
+        self.icon = icon;
+        self.updated_at = current_timestamp();
+    }
+
+    /// Sets the color label for this entry.
+    pub fn set_color(&mut self, color: Option<EntryColor>) {
+        self.color = color;
+        self.updated_at = current_timestamp();
     }
 
     /// Records a change in the entry's history.
@@ -649,6 +1087,101 @@ impl Default for EntryType {
     }
 }
 
+/// Custom field for storing additional data with entries.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomField {
+    /// Name/label of the custom field.
+    pub name: String,
+    /// Value of the custom field.
+    pub value: String,
+    /// Type of the custom field (affects how it's displayed/handled).
+    #[serde(default)]
+    pub field_type: CustomFieldType,
+}
+
+/// Types of custom fields.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum CustomFieldType {
+    /// Plain text field (visible).
+    #[default]
+    Text,
+    /// Hidden/masked field (like a password).
+    Hidden,
+    /// Boolean toggle field.
+    Boolean,
+    /// URL field (can be clicked/opened).
+    Url,
+    /// Date field (stored as Unix timestamp string).
+    Date,
+}
+
+impl CustomField {
+    /// Creates a new text custom field.
+    pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            value: value.into(),
+            field_type: CustomFieldType::Text,
+        }
+    }
+
+    /// Creates a new hidden (password-like) custom field.
+    pub fn hidden(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            value: value.into(),
+            field_type: CustomFieldType::Hidden,
+        }
+    }
+
+    /// Creates a new boolean custom field.
+    pub fn boolean(name: impl Into<String>, value: bool) -> Self {
+        Self {
+            name: name.into(),
+            value: value.to_string(),
+            field_type: CustomFieldType::Boolean,
+        }
+    }
+
+    /// Creates a new URL custom field.
+    pub fn url(name: impl Into<String>, value: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            value: value.into(),
+            field_type: CustomFieldType::Url,
+        }
+    }
+
+    /// Returns the value as a boolean (for Boolean type fields).
+    pub fn as_bool(&self) -> bool {
+        self.value.to_lowercase() == "true" || self.value == "1"
+    }
+
+    /// Validates the custom field against size limits.
+    pub fn validate(&self) -> Result<()> {
+        if self.name.trim().is_empty() {
+            return Err(CoreError::InvalidInput(
+                "custom field name cannot be empty".to_string(),
+            ));
+        }
+        if self.name.len() > MAX_CUSTOM_FIELD_NAME_LENGTH {
+            return Err(CoreError::InvalidInput(format!(
+                "custom field name too long ({} chars, max {} chars)",
+                self.name.len(),
+                MAX_CUSTOM_FIELD_NAME_LENGTH
+            )));
+        }
+        if self.value.len() > MAX_CUSTOM_FIELD_VALUE_SIZE {
+            return Err(CoreError::InvalidInput(format!(
+                "custom field value too large ({} bytes, max {} bytes)",
+                self.value.len(),
+                MAX_CUSTOM_FIELD_VALUE_SIZE
+            )));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct EntrySecret {
     pub password: String,
@@ -667,6 +1200,9 @@ pub struct EntrySecret {
     /// Phone number (for Identity entries)
     #[serde(default)]
     pub phone: Option<String>,
+    /// Custom fields for additional data.
+    #[serde(default)]
+    pub custom_fields: Vec<CustomField>,
 }
 
 /// TOTP backup code for recovery when 2FA device is unavailable
@@ -732,7 +1268,47 @@ impl EntrySecret {
             totp_backup_codes: Vec::new(),
             email: None,
             phone: None,
+            custom_fields: Vec::new(),
         }
+    }
+
+    /// Adds a custom field to this entry.
+    pub fn add_custom_field(&mut self, field: CustomField) -> Result<()> {
+        if self.custom_fields.len() >= MAX_CUSTOM_FIELDS_PER_ENTRY {
+            return Err(CoreError::InvalidInput(format!(
+                "too many custom fields ({}, max {})",
+                self.custom_fields.len(),
+                MAX_CUSTOM_FIELDS_PER_ENTRY
+            )));
+        }
+        field.validate()?;
+        self.custom_fields.push(field);
+        Ok(())
+    }
+
+    /// Removes a custom field by name.
+    pub fn remove_custom_field(&mut self, name: &str) -> Option<CustomField> {
+        if let Some(pos) = self.custom_fields.iter().position(|f| f.name == name) {
+            Some(self.custom_fields.remove(pos))
+        } else {
+            None
+        }
+    }
+
+    /// Gets a custom field by name.
+    pub fn get_custom_field(&self, name: &str) -> Option<&CustomField> {
+        self.custom_fields.iter().find(|f| f.name == name)
+    }
+
+    /// Updates or adds a custom field.
+    pub fn set_custom_field(&mut self, field: CustomField) -> Result<()> {
+        field.validate()?;
+        if let Some(existing) = self.custom_fields.iter_mut().find(|f| f.name == field.name) {
+            *existing = field;
+        } else {
+            self.add_custom_field(field)?;
+        }
+        Ok(())
     }
 
     /// Generates TOTP backup codes for this entry.
@@ -826,6 +1402,19 @@ impl EntrySecret {
                     phone
                 )));
             }
+        }
+
+        // Validate custom fields
+        if self.custom_fields.len() > MAX_CUSTOM_FIELDS_PER_ENTRY {
+            return Err(CoreError::InvalidInput(format!(
+                "too many custom fields ({}, max {})",
+                self.custom_fields.len(),
+                MAX_CUSTOM_FIELDS_PER_ENTRY
+            )));
+        }
+
+        for field in &self.custom_fields {
+            field.validate()?;
         }
 
         Ok(())
