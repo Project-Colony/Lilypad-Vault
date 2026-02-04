@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use arboard::Clipboard;
 use directories::ProjectDirs;
-use iced::widget::{column, container, row, Space};
+use iced::widget::{column, container, Space};
 use iced::{Element, Length, Subscription, Task};
 use rand::Rng;
 
@@ -16,7 +16,7 @@ use lilypad_common::{
     keyfile::{load_key, save_key, KeyFile},
     time::format_timestamp_relative,
     validation::validate_password_strength,
-    EntryHealthData, PasswordStrength,
+    EntryHealthData,
 };
 use lilypad_core::{
     decrypt, default_config, derive_key, encrypt, CryptoAlgorithm, Entry, EntryMetadata,
@@ -28,7 +28,7 @@ use zeroize::Zeroize;
 use crate::message::Message;
 use crate::state::{
     AppSettings, Category, DesktopEntryPayload, LockoutState, VaultEntry, VaultViewMode,
-    DEFAULT_VAULT_NAME, LOCKOUT_DURATION_SECS, MAX_LOGIN_ATTEMPTS, SETTINGS_VERSION,
+    DEFAULT_VAULT_NAME, SETTINGS_VERSION,
 };
 use crate::theme::{self, LilypadTheme};
 use crate::views;
@@ -258,7 +258,8 @@ impl LilypadApp {
         (app, Task::none())
     }
 
-    /// Get the title for the application window
+    /// Get the title for the application window (may be used by Iced for window title)
+    #[allow(dead_code)]
     pub fn title(&self) -> String {
         if self.vault_unlocked {
             format!("Lilypad - {}", self.active_vault)
@@ -556,7 +557,7 @@ impl LilypadApp {
     }
 
     /// Create the view
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         if self.show_welcome {
             return views::welcome::view(self.theme);
         }
@@ -640,7 +641,7 @@ impl LilypadApp {
             Space::new(0, 0).into()
         };
 
-        let mut layout = column![header, main_content, navigation, status_bar,];
+        let layout = column![header, main_content, navigation, status_bar,];
 
         // Layer modals on top
         let content: Element<Message> = container(layout)

@@ -2,7 +2,7 @@
 //!
 //! The top bar containing vault selector, search, and action buttons.
 
-use iced::alignment::{Horizontal, Vertical};
+use iced::alignment::Vertical;
 use iced::widget::{button, column, container, row, text, text_input, Space};
 use iced::{Element, Length};
 

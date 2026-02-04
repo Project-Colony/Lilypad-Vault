@@ -3,11 +3,12 @@
 //! Provides beautiful, cohesive themes for the Lilypad password manager.
 //! Includes three distinct themes: Classic Green, Night Bloom, and Pond Light.
 
-use iced::widget::{button, container, scrollable, text, text_input};
-use iced::{Background, Border, Color, Shadow, Theme, Vector};
+use iced::widget::{button, container, scrollable, text_input};
+use iced::{Background, Border, Color, Shadow, Vector};
 
 /// Lilypad color palette
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub struct LilypadPalette {
     /// Primary accent color (green tones)
     pub primary: Color,
@@ -152,6 +153,7 @@ impl LilypadTheme {
 }
 
 /// Health grade colors
+#[allow(dead_code)]
 pub fn health_grade_color(grade: &str, palette: &LilypadPalette) -> Color {
     match grade {
         "A" => Color::from_rgb8(34, 197, 94),   // Green
@@ -164,6 +166,7 @@ pub fn health_grade_color(grade: &str, palette: &LilypadPalette) -> Color {
 }
 
 /// Password strength colors
+#[allow(dead_code)]
 pub fn strength_color(strength: u8, palette: &LilypadPalette) -> Color {
     match strength {
         0..=20 => palette.danger,
@@ -257,6 +260,7 @@ pub fn nav_container(theme: LilypadTheme) -> container::Style {
 }
 
 /// Style for sidebar container
+#[allow(dead_code)]
 pub fn sidebar_container(theme: LilypadTheme) -> container::Style {
     let palette = theme.palette();
     container::Style {
@@ -489,6 +493,7 @@ pub fn text_input_focused(theme: LilypadTheme) -> text_input::Style {
 }
 
 /// Error text input style
+#[allow(dead_code)]
 pub fn text_input_error(theme: LilypadTheme) -> text_input::Style {
     let palette = theme.palette();
     let mut style = text_input_style(theme);

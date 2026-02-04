@@ -7,7 +7,9 @@ use crate::state::VaultViewMode;
 use crate::theme::LilypadTheme;
 
 /// Main application message enum
+/// Some variants are defined for future features
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum Message {
     // ========================================================================
     // Navigation

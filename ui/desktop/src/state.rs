@@ -144,6 +144,7 @@ impl LockoutState {
 
 /// A decrypted vault entry with health metadata
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct VaultEntry {
     pub title: String,
     pub username: String,
@@ -177,6 +178,7 @@ pub enum Category {
     Security,
 }
 
+#[allow(dead_code)]
 impl Category {
     pub fn from_index(index: usize) -> Self {
         match index {
@@ -220,7 +222,8 @@ impl Category {
     }
 }
 
-/// Main application state
+/// Main application state (alternative struct for future refactoring)
+#[allow(dead_code)]
 pub struct LilypadState {
     // Application mode
     pub show_welcome: bool,

@@ -10,7 +10,7 @@ mod state;
 mod theme;
 mod views;
 
-use iced::{Settings, Size, Task};
+use iced::{Size, Task};
 
 /// Application entry point
 fn main() -> iced::Result {
@@ -42,7 +42,7 @@ impl LilypadApp {
         self.0.update(message)
     }
 
-    fn view(&self) -> iced::Element<message::Message> {
+    fn view(&self) -> iced::Element<'_, message::Message> {
         self.0.view()
     }
 

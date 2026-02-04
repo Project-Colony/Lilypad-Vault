@@ -336,7 +336,6 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     }
     actions_row = actions_row.push(edit_btn).push(delete_btn);
 
-    let has_color = entry.color.is_some();
     let mut card_row = row![].align_y(Vertical::Center).padding(16);
 
     if let Some(indicator) = color_indicator {
