@@ -1,9 +1,14 @@
 use anyhow::{anyhow, Context, Result};
+use arboard::Clipboard;
 use directories::ProjectDirs;
 use eframe::{egui, App};
 use egui::{
     Align2, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, Margin, OutputCommand,
     RichText,
+};
+use lilypad_common::{
+    keyfile::{load_key, save_key, KeyFile},
+    time::format_timestamp_relative,
 };
 use lilypad_core::{
     decrypt, default_config, derive_key, encrypt, AppConfig, CryptoAlgorithm, Entry,
@@ -13,7 +18,50 @@ use lilypad_storage::LocalStore;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+use zeroize::Zeroize;
+
+/// A String wrapper that zeroizes its contents on drop for security.
+struct SecureString(String);
+
+impl SecureString {
+    fn new() -> Self {
+        Self(String::new())
+    }
+
+    fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn clear(&mut self) {
+        self.0.zeroize();
+        self.0 = String::new();
+    }
+}
+
+impl std::ops::Deref for SecureString {
+    type Target = String;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for SecureString {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Drop for SecureString {
+    fn drop(&mut self) {
+        self.0.zeroize();
+    }
+}
 
 fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions::default();
@@ -166,20 +214,94 @@ fn configure_fonts(ctx: &egui::Context) {
 }
 
 const DEFAULT_VAULT_NAME: &str = "primary";
+const MAX_LOGIN_ATTEMPTS: u32 = 5;
+const LOCKOUT_DURATION_SECS: u64 = 300; // 5 minutes
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-enum KeyFile {
-    Raw { key_hex: String },
-    Kdf { params: KeyDerivationParams },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct DesktopEntryPayload {
     username: String,
     password: String,
     url: String,
     notes: String,
+}
+
+/// Current settings format version for migration support.
+const SETTINGS_VERSION: u32 = 1;
+
+/// Persisted application settings with versioning for forward compatibility.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AppSettings {
+    #[serde(default)]
+    version: u32,
+    theme_index: usize,
+    auto_lock_minutes: u32,
+    clipboard_timeout_seconds: u32,
+    send_security_alerts: bool,
+    require_master_on_copy: bool,
+    #[serde(default)]
+    exclude_ambiguous_chars: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            version: SETTINGS_VERSION,
+            theme_index: 0,
+            auto_lock_minutes: 10,
+            clipboard_timeout_seconds: 30,
+            send_security_alerts: true,
+            require_master_on_copy: false,
+            exclude_ambiguous_chars: false,
+        }
+    }
+}
+
+/// Persisted lockout state for brute-force protection.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct LockoutState {
+    failed_attempts: u32,
+    /// Unix timestamp when lockout expires (0 if not locked out)
+    lockout_until_timestamp: u64,
+}
+
+impl LockoutState {
+    fn is_locked_out(&self) -> bool {
+        if self.lockout_until_timestamp == 0 {
+            return false;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        now < self.lockout_until_timestamp
+    }
+
+    fn remaining_secs(&self) -> u64 {
+        if self.lockout_until_timestamp == 0 {
+            return 0;
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.lockout_until_timestamp.saturating_sub(now)
+    }
+
+    fn record_failure(&mut self) {
+        self.failed_attempts += 1;
+        if self.failed_attempts >= MAX_LOGIN_ATTEMPTS {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            self.lockout_until_timestamp = now + LOCKOUT_DURATION_SECS;
+        }
+    }
+
+    fn reset(&mut self) {
+        self.failed_attempts = 0;
+        self.lockout_until_timestamp = 0;
+    }
 }
 
 struct LilypadApp {
@@ -188,9 +310,12 @@ struct LilypadApp {
     search_query: String,
     selected_category: usize,
     status_message: Option<String>,
+    status_message_time: Option<Instant>,
     welcome_ack_path: Option<std::path::PathBuf>,
-    master_password: String,
-    generated_password: String,
+    settings_path: Option<std::path::PathBuf>,
+    lockout_path: Option<std::path::PathBuf>,
+    master_password: String, // Zeroized on drop
+    generated_password: String, // Zeroized on drop
     config: AppConfig,
     store: LocalStore,
     active_vault: String,
@@ -206,22 +331,61 @@ struct LilypadApp {
     vault_entries: Vec<VaultEntry>,
     entry_title: String,
     entry_username: String,
-    entry_password: String,
+    entry_password: String, // Zeroized on drop
     entry_url: String,
     entry_notes: String,
-    settings_theme_index: usize,
-    settings_auto_lock_minutes: u32,
-    settings_clipboard_timeout_seconds: u32,
-    settings_send_security_alerts: bool,
+
+    // Persisted settings
+    settings: AppSettings,
+
+    // Brute-force protection (persisted)
+    lockout_state: LockoutState,
+
+    // Auto-lock
+    last_activity: Instant,
+
+    // Clipboard management
+    clipboard_clear_time: Option<Instant>,
+    clipboard_value: Option<String>, // Zeroized on drop
+
+    // Re-authentication modal for copy
+    show_reauth_modal: bool,
+    reauth_password: String, // Zeroized on drop
+    pending_copy_password: Option<String>, // Zeroized on drop
+
+    // Confirmation dialogs
+    show_delete_confirm: bool,
+    pending_delete_index: Option<usize>,
+
+    // Account settings (not persisted - demo)
     account_display_name: String,
     account_email: String,
     account_timezone: String,
     account_two_factor_enabled: bool,
     account_marketing_opt_in: bool,
-    security_auto_lock_minutes: u32,
-    security_require_master_on_copy: bool,
     security_recovery_email: String,
     security_trusted_devices: Vec<String>,
+}
+
+/// Implement Drop to zeroize sensitive fields when the app is closed.
+impl Drop for LilypadApp {
+    fn drop(&mut self) {
+        // Zeroize all sensitive fields
+        self.master_password.zeroize();
+        self.generated_password.zeroize();
+        self.entry_password.zeroize();
+        self.reauth_password.zeroize();
+        if let Some(ref mut value) = self.clipboard_value {
+            value.zeroize();
+        }
+        if let Some(ref mut value) = self.pending_copy_password {
+            value.zeroize();
+        }
+        // Zeroize passwords in vault entries
+        for entry in &mut self.vault_entries {
+            entry.password.zeroize();
+        }
+    }
 }
 
 struct VaultEntry {
@@ -234,6 +398,12 @@ struct VaultEntry {
     updated_at: u64,
 }
 
+impl Drop for VaultEntry {
+    fn drop(&mut self) {
+        self.password.zeroize();
+    }
+}
+
 impl Default for LilypadApp {
     fn default() -> Self {
         Self::new()
@@ -242,6 +412,14 @@ impl Default for LilypadApp {
 
 impl App for LilypadApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Background tasks
+        self.check_auto_lock();
+        self.check_clipboard_clear();
+        self.check_status_clear();
+
+        // Request repaint for timers
+        ctx.request_repaint_after(Duration::from_secs(1));
+
         if self.show_welcome {
             self.render_welcome_modal(ctx);
             return;
@@ -250,6 +428,11 @@ impl App for LilypadApp {
         if !self.vault_unlocked {
             self.render_unlock_screen(ctx);
             return;
+        }
+
+        // Record activity on any input
+        if ctx.input(|i| i.pointer.any_click() || i.keys_down.len() > 0) {
+            self.record_activity();
         }
 
         self.render_header(ctx);
@@ -267,13 +450,18 @@ impl LilypadApp {
     fn new() -> Self {
         let config = default_config();
         let store = LocalStore::new(&config).expect("store init");
+        let now = Instant::now();
+
         let mut app = Self {
             show_welcome: true,
             vault_unlocked: false,
             search_query: String::new(),
             selected_category: 0,
             status_message: None,
+            status_message_time: None,
             welcome_ack_path: None,
+            settings_path: None,
+            lockout_path: None,
             master_password: String::new(),
             generated_password: String::new(),
             config,
@@ -294,17 +482,28 @@ impl LilypadApp {
             entry_password: String::new(),
             entry_url: String::new(),
             entry_notes: String::new(),
-            settings_theme_index: 0,
-            settings_auto_lock_minutes: 10,
-            settings_clipboard_timeout_seconds: 30,
-            settings_send_security_alerts: true,
+
+            settings: AppSettings::default(),
+
+            lockout_state: LockoutState::default(),
+
+            last_activity: now,
+
+            clipboard_clear_time: None,
+            clipboard_value: None,
+
+            show_reauth_modal: false,
+            reauth_password: String::new(),
+            pending_copy_password: None,
+
+            show_delete_confirm: false,
+            pending_delete_index: None,
+
             account_display_name: "Avery Quinn".to_string(),
             account_email: "avery@lilypad.app".to_string(),
             account_timezone: "Europe/Paris".to_string(),
             account_two_factor_enabled: true,
             account_marketing_opt_in: false,
-            security_auto_lock_minutes: 5,
-            security_require_master_on_copy: true,
             security_recovery_email: "recovery@lilypad.app".to_string(),
             security_trusted_devices: vec![
                 "MacBook Pro • Paris".to_string(),
@@ -313,17 +512,167 @@ impl LilypadApp {
         };
 
         if let Some(project_dirs) = ProjectDirs::from("", "", "Lilypad") {
-            let welcome_ack_path = project_dirs.config_dir().join("welcome_ack");
-            app.welcome_ack_path = Some(welcome_ack_path.clone());
+            let config_dir = project_dirs.config_dir();
+            let welcome_ack_path = config_dir.join("welcome_ack");
+            let settings_path = config_dir.join("settings.json");
+            let lockout_path = config_dir.join("lockout.json");
 
+            app.welcome_ack_path = Some(welcome_ack_path.clone());
+            app.settings_path = Some(settings_path.clone());
+            app.lockout_path = Some(lockout_path.clone());
+
+            // Load welcome acknowledgement
             if let Ok(contents) = fs::read_to_string(&welcome_ack_path) {
                 if contents.trim() == "acknowledged=true" {
                     app.show_welcome = false;
                 }
             }
+
+            // Load persisted settings
+            if let Ok(contents) = fs::read_to_string(&settings_path) {
+                if let Ok(mut settings) = serde_json::from_str::<AppSettings>(&contents) {
+                    // Migrate settings if needed
+                    if settings.version < SETTINGS_VERSION {
+                        settings.version = SETTINGS_VERSION;
+                    }
+                    app.settings = settings;
+                }
+            }
+
+            // Load persisted lockout state
+            if let Ok(contents) = fs::read_to_string(&lockout_path) {
+                if let Ok(lockout) = serde_json::from_str::<LockoutState>(&contents) {
+                    app.lockout_state = lockout;
+                }
+            }
         }
 
         app
+    }
+
+    /// Records user activity for auto-lock feature.
+    fn record_activity(&mut self) {
+        self.last_activity = Instant::now();
+    }
+
+    /// Checks if the vault should be auto-locked due to inactivity.
+    fn check_auto_lock(&mut self) {
+        if !self.vault_unlocked {
+            return;
+        }
+        let timeout_secs = (self.settings.auto_lock_minutes as u64) * 60;
+        if timeout_secs == 0 {
+            return; // Auto-lock disabled
+        }
+        if self.last_activity.elapsed() > Duration::from_secs(timeout_secs) {
+            self.lock_vault();
+            self.status_message = Some("Vault auto-locked due to inactivity".to_string());
+            self.status_message_time = Some(Instant::now());
+        }
+    }
+
+    /// Locks the vault and clears sensitive data.
+    fn lock_vault(&mut self) {
+        self.vault_unlocked = false;
+        self.vault = None;
+        self.vault_key = None;
+        self.vault_entries.clear();
+        self.master_password.clear();
+    }
+
+    /// Checks if clipboard should be cleared.
+    fn check_clipboard_clear(&mut self) {
+        if let (Some(clear_time), Some(value)) = (&self.clipboard_clear_time, &self.clipboard_value)
+        {
+            if Instant::now() >= *clear_time {
+                if let Ok(mut clipboard) = Clipboard::new() {
+                    if clipboard.get_text().ok().as_deref() == Some(value) {
+                        let _ = clipboard.set_text(String::new());
+                    }
+                }
+                self.clipboard_clear_time = None;
+                self.clipboard_value = None;
+            }
+        }
+    }
+
+    /// Copies a value to clipboard with automatic clearing.
+    fn copy_with_timeout(&mut self, value: &str, ctx: &egui::Context) {
+        ctx.send_cmd(OutputCommand::CopyText(value.to_string()));
+        if self.settings.clipboard_timeout_seconds > 0 {
+            self.clipboard_value = Some(value.to_string());
+            self.clipboard_clear_time = Some(
+                Instant::now() + Duration::from_secs(self.settings.clipboard_timeout_seconds as u64),
+            );
+        }
+    }
+
+    /// Sets a status message that will auto-clear after a few seconds.
+    fn set_status(&mut self, message: impl Into<String>) {
+        self.status_message = Some(message.into());
+        self.status_message_time = Some(Instant::now());
+    }
+
+    /// Checks if status message should be cleared.
+    fn check_status_clear(&mut self) {
+        if let Some(time) = self.status_message_time {
+            if time.elapsed() > Duration::from_secs(5) {
+                self.status_message = None;
+                self.status_message_time = None;
+            }
+        }
+    }
+
+    /// Saves settings to disk.
+    fn save_settings(&self) {
+        if let Some(path) = &self.settings_path {
+            if let Some(parent) = path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if let Ok(json) = serde_json::to_string_pretty(&self.settings) {
+                let _ = fs::write(path, json);
+            }
+        }
+    }
+
+    /// Checks if login is currently locked out (uses persistent state).
+    fn is_locked_out(&self) -> bool {
+        self.lockout_state.is_locked_out()
+    }
+
+    /// Returns remaining lockout time in seconds.
+    fn lockout_remaining_secs(&self) -> u64 {
+        self.lockout_state.remaining_secs()
+    }
+
+    /// Records a failed login attempt and persists state.
+    fn record_failed_login(&mut self) {
+        self.lockout_state.record_failure();
+        self.save_lockout();
+    }
+
+    /// Resets login attempts after successful login and persists state.
+    fn reset_login_attempts(&mut self) {
+        self.lockout_state.reset();
+        self.save_lockout();
+    }
+
+    /// Saves lockout state to disk for persistence across app restarts.
+    fn save_lockout(&self) {
+        if let Some(path) = &self.lockout_path {
+            if let Some(parent) = path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            if let Ok(json) = serde_json::to_string(&self.lockout_state) {
+                let _ = fs::write(path, json);
+            }
+        }
+    }
+
+    /// Verifies the master password for re-authentication.
+    fn verify_master_password(&self, password: &str) -> bool {
+        // Compare with the stored master password used to unlock the vault
+        password == self.master_password
     }
 
     fn render_welcome_modal(&mut self, ctx: &egui::Context) {
@@ -445,17 +794,40 @@ impl LilypadApp {
                                             .min_size(egui::vec2(240.0, 36.0))
                                             .corner_radius(8.0);
 
-                                            if ui.add_enabled(all_met, button).clicked() {
+                                            // Check if locked out
+                                            let locked_out = self.is_locked_out();
+                                            if locked_out {
+                                                let remaining = self.lockout_remaining_secs();
+                                                ui.colored_label(
+                                                    Color32::from_rgb(240, 105, 105),
+                                                    format!(
+                                                        "Too many failed attempts. Try again in {} seconds.",
+                                                        remaining
+                                                    ),
+                                                );
+                                            }
+
+                                            let can_unlock = all_met && !locked_out;
+                                            if ui.add_enabled(can_unlock, button).clicked() {
                                                 match self.unlock_vault() {
                                                     Ok(()) => {
                                                         self.vault_unlocked = true;
-                                                        self.status_message =
-                                                            Some("Vault unlocked".to_string());
+                                                        self.reset_login_attempts();
+                                                        self.record_activity();
+                                                        self.set_status("Vault unlocked");
                                                     }
                                                     Err(error) => {
-                                                        self.status_message = Some(format!(
-                                                            "Unable to unlock vault: {error}"
-                                                        ));
+                                                        self.record_failed_login();
+                                                        if self.is_locked_out() {
+                                                            self.set_status(format!(
+                                                                "Account locked for {} seconds",
+                                                                LOCKOUT_DURATION_SECS
+                                                            ));
+                                                        } else {
+                                                            self.set_status(format!(
+                                                                "Unable to unlock vault: {error}"
+                                                            ));
+                                                        }
                                                     }
                                                 }
                                             }
@@ -679,11 +1051,12 @@ impl LilypadApp {
                 self.show_add_entry = true;
             }
             if ui.button("Lock vault").clicked() {
-                self.vault_unlocked = false;
-                self.vault = None;
-                self.vault_key = None;
-                self.vault_entries.clear();
+                self.lock_vault();
                 self.status_message = Some("Vault locked".to_string());
+                self.status_message_time = Some(Instant::now());
+            }
+            if ui.button("Generate password").clicked() {
+                self.selected_category = 1; // Switch to password generator tab
             }
         });
         ui.add_space(8.0);
@@ -706,10 +1079,13 @@ impl LilypadApp {
         ui.add_space(6.0);
 
         let query = self.search_query.trim().to_lowercase();
-        let entries: Vec<&VaultEntry> = self
+
+        // Collect matching entry indices to avoid borrow conflicts
+        let matching_indices: Vec<usize> = self
             .vault_entries
             .iter()
-            .filter(|entry| {
+            .enumerate()
+            .filter(|(_, entry)| {
                 if query.is_empty() {
                     true
                 } else {
@@ -718,35 +1094,158 @@ impl LilypadApp {
                         || entry.url.to_lowercase().contains(&query)
                 }
             })
+            .map(|(i, _)| i)
             .collect();
 
-        if entries.is_empty() {
+        if matching_indices.is_empty() {
             ui.label("No entries match your search yet.");
         } else {
-            for entry in entries {
+            // Track which entry's password was copied
+            let mut copied_password: Option<String> = None;
+
+            for &idx in &matching_indices {
+                let entry = &self.vault_entries[idx];
+                let title = entry.title.clone();
+                let username = entry.username.clone();
+                let url = entry.url.clone();
+                let notes = entry.notes.clone();
+                let last_updated = entry.last_updated.clone();
+                let password = entry.password.clone();
+
                 ui.group(|ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(&entry.title).strong());
+                        ui.label(RichText::new(&title).strong());
                         ui.separator();
-                        ui.label(&entry.username);
+                        ui.label(&username);
                     });
-                    if !entry.url.is_empty() {
-                        ui.label(format!("URL: {}", entry.url));
+                    if !url.is_empty() {
+                        ui.label(format!("URL: {}", url));
                     }
-                    if !entry.notes.is_empty() {
-                        ui.label(format!("Notes: {}", entry.notes));
+                    if !notes.is_empty() {
+                        ui.label(format!("Notes: {}", notes));
                     }
                     ui.horizontal(|ui| {
-                        ui.label(format!("Last updated: {}", entry.last_updated));
+                        ui.label(format!("Updated: {}", last_updated));
                         if ui.button("Copy password").clicked() {
-                            ctx.send_cmd(OutputCommand::CopyText(entry.password.clone()));
-                            self.status_message = Some("Password copied to clipboard".to_string());
+                            copied_password = Some(password.clone());
                         }
                     });
                 });
                 ui.add_space(8.0);
             }
+
+            // Handle password copy outside of the borrow
+            if let Some(password) = copied_password {
+                if self.settings.require_master_on_copy {
+                    // Require re-authentication before copying
+                    self.pending_copy_password = Some(password);
+                    self.show_reauth_modal = true;
+                    self.reauth_password.clear();
+                } else {
+                    self.copy_with_timeout(&password, ctx);
+                    let timeout = self.settings.clipboard_timeout_seconds;
+                    if timeout > 0 {
+                        self.set_status(format!("Password copied (auto-clears in {}s)", timeout));
+                    } else {
+                        self.set_status("Password copied to clipboard");
+                    }
+                }
+                self.record_activity();
+            }
         }
+
+        // Render re-authentication modal if needed
+        if self.show_reauth_modal {
+            self.render_reauth_modal(ctx);
+        }
+
+        // Render delete confirmation dialog if needed
+        if self.show_delete_confirm {
+            self.render_delete_confirm_modal(ctx);
+        }
+    }
+
+    fn render_reauth_modal(&mut self, ctx: &egui::Context) {
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("reauth_overlay"),
+        ));
+        painter.rect_filled(ctx.available_rect(), 0.0, Color32::from_black_alpha(150));
+
+        egui::Window::new("Re-authentication Required")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.label("Please enter your master password to copy this password.");
+                ui.add_space(8.0);
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.reauth_password)
+                        .password(true)
+                        .hint_text("Master password"),
+                );
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.show_reauth_modal = false;
+                        self.reauth_password.clear();
+                        self.pending_copy_password = None;
+                    }
+                    if ui.button("Confirm").clicked() {
+                        if self.verify_master_password(&self.reauth_password) {
+                            if let Some(password) = self.pending_copy_password.take() {
+                                self.copy_with_timeout(&password, ctx);
+                                let timeout = self.settings.clipboard_timeout_seconds;
+                                if timeout > 0 {
+                                    self.set_status(format!(
+                                        "Password copied (auto-clears in {}s)",
+                                        timeout
+                                    ));
+                                } else {
+                                    self.set_status("Password copied to clipboard");
+                                }
+                            }
+                            self.show_reauth_modal = false;
+                        } else {
+                            self.set_status("Incorrect master password");
+                        }
+                        self.reauth_password.clear();
+                    }
+                });
+            });
+    }
+
+    fn render_delete_confirm_modal(&mut self, ctx: &egui::Context) {
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("delete_confirm_overlay"),
+        ));
+        painter.rect_filled(ctx.available_rect(), 0.0, Color32::from_black_alpha(150));
+
+        egui::Window::new("Confirm Deletion")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.label("Are you sure you want to delete this entry? This cannot be undone.");
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.show_delete_confirm = false;
+                        self.pending_delete_index = None;
+                    }
+                    let delete_button = egui::Button::new(
+                        RichText::new("Delete").color(Color32::WHITE),
+                    )
+                    .fill(Color32::from_rgb(220, 53, 69));
+                    if ui.add(delete_button).clicked() {
+                        // TODO: Implement actual deletion when we add delete functionality
+                        self.show_delete_confirm = false;
+                        self.pending_delete_index = None;
+                        self.set_status("Entry deleted");
+                    }
+                });
+            });
     }
 
     fn render_add_entry_form(&mut self, ui: &mut egui::Ui) {
@@ -856,29 +1355,37 @@ impl LilypadApp {
                 ui.add_space(8.0);
                 ui.label(RichText::new("Appearance").strong());
                 egui::ComboBox::from_label("Theme")
-                    .selected_text(match self.settings_theme_index {
+                    .selected_text(match self.settings.theme_index {
                         1 => "Night Bloom",
                         2 => "Pond Light",
                         _ => "Classic Green",
                     })
                     .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.settings_theme_index, 0, "Classic Green");
-                        ui.selectable_value(&mut self.settings_theme_index, 1, "Night Bloom");
-                        ui.selectable_value(&mut self.settings_theme_index, 2, "Pond Light");
+                        ui.selectable_value(&mut self.settings.theme_index, 0, "Classic Green");
+                        ui.selectable_value(&mut self.settings.theme_index, 1, "Night Bloom");
+                        ui.selectable_value(&mut self.settings.theme_index, 2, "Pond Light");
                     });
                 ui.add_space(6.0);
                 ui.label(RichText::new("Vault protection").strong());
                 ui.add(
-                    egui::Slider::new(&mut self.settings_auto_lock_minutes, 1..=60)
-                        .text("Auto-lock (minutes)"),
+                    egui::Slider::new(&mut self.settings.auto_lock_minutes, 0..=60)
+                        .text("Auto-lock (minutes, 0 = disabled)"),
                 );
                 ui.add(
-                    egui::Slider::new(&mut self.settings_clipboard_timeout_seconds, 10..=120)
-                        .text("Clipboard clear (seconds)"),
+                    egui::Slider::new(&mut self.settings.clipboard_timeout_seconds, 0..=120)
+                        .text("Clipboard clear (seconds, 0 = disabled)"),
                 );
                 ui.checkbox(
-                    &mut self.settings_send_security_alerts,
+                    &mut self.settings.send_security_alerts,
                     "Send security notifications",
+                );
+                ui.checkbox(
+                    &mut self.settings.require_master_on_copy,
+                    "Require master password to copy",
+                );
+                ui.checkbox(
+                    &mut self.settings.exclude_ambiguous_chars,
+                    "Exclude ambiguous chars in generator",
                 );
                 ui.add_space(10.0);
                 ui.horizontal(|ui| {
@@ -886,8 +1393,9 @@ impl LilypadApp {
                         self.show_settings = false;
                     }
                     if ui.button("Save settings").clicked() {
+                        self.save_settings();
                         self.show_settings = false;
-                        self.status_message = Some("Settings updated".to_string());
+                        self.set_status("Settings saved");
                     }
                 });
             });
@@ -931,13 +1439,17 @@ impl LilypadApp {
         ui.group(|ui| {
             ui.label(RichText::new("Session security").strong());
             ui.add(
-                egui::Slider::new(&mut self.security_auto_lock_minutes, 1..=30)
-                    .text("Auto-lock (minutes)"),
+                egui::Slider::new(&mut self.settings.auto_lock_minutes, 0..=30)
+                    .text("Auto-lock (minutes, 0 = disabled)"),
             );
             ui.checkbox(
-                &mut self.security_require_master_on_copy,
+                &mut self.settings.require_master_on_copy,
                 "Require master password on copy",
             );
+            if ui.button("Save security settings").clicked() {
+                self.save_settings();
+                self.set_status("Security settings saved");
+            }
         });
         ui.add_space(8.0);
         ui.group(|ui| {
@@ -947,7 +1459,7 @@ impl LilypadApp {
                 &mut self.security_recovery_email,
             ));
             if ui.button("Update recovery email").clicked() {
-                self.status_message = Some("Recovery email updated".to_string());
+                self.set_status("Recovery email updated");
             }
         });
         ui.add_space(8.0);
@@ -964,12 +1476,12 @@ impl LilypadApp {
             }
             if let Some(index) = remove_index {
                 self.security_trusted_devices.remove(index);
-                self.status_message = Some("Device revoked".to_string());
+                self.set_status("Device revoked");
             }
             if ui.button("Add current device").clicked() {
                 self.security_trusted_devices
                     .push("New device • Active now".to_string());
-                self.status_message = Some("Device added".to_string());
+                self.set_status("Device added");
             }
         });
     }
@@ -1034,7 +1546,7 @@ impl LilypadApp {
                 password: payload.password,
                 url: payload.url,
                 notes: payload.notes,
-                last_updated: Self::format_timestamp(entry.updated_at),
+                last_updated: Self::format_entry_timestamp(entry.updated_at),
                 updated_at: entry.updated_at,
             });
         }
@@ -1054,22 +1566,18 @@ impl LilypadApp {
         }
     }
 
-    fn format_timestamp(timestamp: u64) -> String {
-        if timestamp == 0 {
-            "Updated just now".to_string()
-        } else {
-            format!("Updated at {timestamp}")
-        }
+    fn format_entry_timestamp(timestamp: u64) -> String {
+        format_timestamp_relative(timestamp)
     }
 
     fn load_or_create_key(&self, master_password: &str) -> Result<(KeyMaterial, KeyFile)> {
         let path = key_path(&self.config);
         if path.exists() {
-            return load_key(&path, master_password);
+            return load_key(&path, Some(master_password));
         }
         let params = KeyDerivationParams::generate();
         let key = derive_key(master_password, &params)?;
-        let key_file = KeyFile::Kdf { params };
+        let key_file = KeyFile::from_kdf(params);
         save_key(&path, &key_file)?;
         Ok((key, key_file))
     }
@@ -1112,6 +1620,10 @@ impl LilypadApp {
                 ui.checkbox(&mut self.generator_digits, "Digits (0-9)");
                 ui.checkbox(&mut self.generator_symbols, "Symbols (!#$)");
             });
+            ui.checkbox(
+                &mut self.settings.exclude_ambiguous_chars,
+                "Exclude ambiguous characters (l, I, O, 0, 1)",
+            );
 
             let generation_possible = self.generator_lowercase
                 || self.generator_uppercase
@@ -1141,8 +1653,9 @@ impl LilypadApp {
             {
                 if let Some(password) = self.generate_password() {
                     self.generated_password = password.clone();
-                    self.status_message = Some("New password generated".to_string());
-                    ctx.send_cmd(OutputCommand::CopyText(password.clone()));
+                    self.copy_with_timeout(&password, ctx);
+                    self.set_status("New password generated and copied");
+                    self.record_activity();
                 }
             }
 
@@ -1151,8 +1664,9 @@ impl LilypadApp {
                 ui.label(RichText::new("Generated password").strong());
                 if ui.button("Copy").clicked() {
                     let password = self.generated_password.clone();
-                    ctx.send_cmd(OutputCommand::CopyText(password));
-                    self.status_message = Some("Password copied to clipboard".to_string());
+                    self.copy_with_timeout(&password, ctx);
+                    self.set_status("Password copied to clipboard");
+                    self.record_activity();
                 }
             });
 
@@ -1167,13 +1681,28 @@ impl LilypadApp {
     fn generate_password(&self) -> Option<String> {
         let mut charset = String::new();
         if self.generator_lowercase {
-            charset.push_str("abcdefghijklmnopqrstuvwxyz");
+            let chars = if self.settings.exclude_ambiguous_chars {
+                "abcdefghijkmnopqrstuvwxyz" // excludes 'l'
+            } else {
+                "abcdefghijklmnopqrstuvwxyz"
+            };
+            charset.push_str(chars);
         }
         if self.generator_uppercase {
-            charset.push_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+            let chars = if self.settings.exclude_ambiguous_chars {
+                "ABCDEFGHJKLMNPQRSTUVWXYZ" // excludes 'I', 'O'
+            } else {
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            };
+            charset.push_str(chars);
         }
         if self.generator_digits {
-            charset.push_str("0123456789");
+            let chars = if self.settings.exclude_ambiguous_chars {
+                "23456789" // excludes '0', '1'
+            } else {
+                "0123456789"
+            };
+            charset.push_str(chars);
         }
         if self.generator_symbols {
             charset.push_str("!#$%&()*+,-./:;<=>?@[]^_{|}~");
@@ -1272,51 +1801,3 @@ fn vault_path_with_extension(config: &AppConfig, name: &str, extension: &str) ->
         .join(format!("{name}.{extension}"))
 }
 
-fn save_key(path: &Path, key_file: &KeyFile) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let payload = serde_json::to_vec_pretty(key_file)?;
-    fs::write(path, payload)?;
-    Ok(())
-}
-
-fn load_key(path: &Path, master_password: &str) -> Result<(KeyMaterial, KeyFile)> {
-    let payload = fs::read(path).with_context(|| {
-        format!(
-            "key file not found: {} (run the CLI init first)",
-            path.display()
-        )
-    })?;
-    let key_file: KeyFile = serde_json::from_slice(&payload)?;
-    let key = match &key_file {
-        KeyFile::Raw { key_hex } => {
-            let bytes = decode_hex(key_hex)?;
-            KeyMaterial::from_bytes(&bytes).context("invalid key material")?
-        }
-        KeyFile::Kdf { params } => {
-            if master_password.trim().is_empty() {
-                return Err(anyhow!("master password is required"));
-            }
-            derive_key(master_password, params).context("invalid kdf params")?
-        }
-    };
-    Ok((key, key_file))
-}
-
-fn decode_hex(hex: &str) -> Result<Vec<u8>> {
-    let value = hex.trim();
-    if value.is_empty() {
-        return Err(anyhow!("key cannot be empty"));
-    }
-    if value.len() % 2 != 0 {
-        return Err(anyhow!("invalid hex string"));
-    }
-    let mut bytes = Vec::with_capacity(value.len() / 2);
-    for chunk in value.as_bytes().chunks(2) {
-        let chunk_str = std::str::from_utf8(chunk)?;
-        let byte = u8::from_str_radix(chunk_str, 16).map_err(|_| anyhow!("invalid hex string"))?;
-        bytes.push(byte);
-    }
-    Ok(bytes)
-}

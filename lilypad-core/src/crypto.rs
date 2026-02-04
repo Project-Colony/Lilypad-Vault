@@ -4,6 +4,8 @@ use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use subtle::ConstantTimeEq;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::errors::{CoreError, Result};
 
@@ -30,10 +32,32 @@ pub struct Ciphertext {
     pub data: Vec<u8>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Cryptographic key material with secure memory handling.
+///
+/// The key bytes are automatically zeroed when the struct is dropped,
+/// preventing sensitive data from lingering in memory.
+#[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub struct KeyMaterial {
     key: [u8; KEY_LEN],
 }
+
+// Manual Debug impl to avoid leaking key bytes
+impl std::fmt::Debug for KeyMaterial {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyMaterial")
+            .field("key", &"[REDACTED]")
+            .finish()
+    }
+}
+
+// Manual PartialEq to allow comparisons using constant-time comparison
+impl PartialEq for KeyMaterial {
+    fn eq(&self, other: &Self) -> bool {
+        self.key.ct_eq(&other.key).into()
+    }
+}
+
+impl Eq for KeyMaterial {}
 
 impl KeyMaterial {
     pub fn generate() -> Self {
@@ -74,15 +98,125 @@ pub struct KeyDerivationParams {
 }
 
 impl KeyDerivationParams {
+    /// Generates new key derivation parameters with default settings.
+    ///
+    /// Uses 64 MiB memory, 3 iterations, and single-threaded processing.
+    /// For systems with limited resources, use `generate_adaptive()` instead.
     pub fn generate() -> Self {
         let mut salt = [0u8; SALT_LEN];
         OsRng.fill_bytes(&mut salt);
         Self {
             salt,
-            memory_kib: 64 * 1024,
+            memory_kib: 64 * 1024, // 64 MiB
             iterations: 3,
             parallelism: 1,
         }
+    }
+
+    /// Generates new key derivation parameters adapted to system capabilities.
+    ///
+    /// Adjusts memory usage based on available system RAM and parallelism
+    /// based on CPU core count. This ensures the KDF is as strong as possible
+    /// while remaining usable on the target system.
+    pub fn generate_adaptive() -> Self {
+        let mut salt = [0u8; SALT_LEN];
+        OsRng.fill_bytes(&mut salt);
+
+        // Detect system capabilities
+        let (memory_kib, iterations, parallelism) = Self::detect_optimal_params();
+
+        Self {
+            salt,
+            memory_kib,
+            iterations,
+            parallelism,
+        }
+    }
+
+    /// Detects optimal Argon2 parameters based on system capabilities.
+    ///
+    /// Returns (memory_kib, iterations, parallelism).
+    fn detect_optimal_params() -> (u32, u32, u32) {
+        // Get number of CPU cores (use 1 as fallback)
+        let num_cpus = std::thread::available_parallelism()
+            .map(|p| p.get() as u32)
+            .unwrap_or(1);
+
+        // Use at most 4 threads to avoid excessive resource usage
+        let parallelism = num_cpus.min(4);
+
+        // Try to detect available memory using sys-info or fallback to conservative defaults
+        // We aim to use about 1/16th of available RAM, capped between 16 MiB and 256 MiB
+        let memory_kib = Self::detect_available_memory_kib()
+            .map(|total| {
+                // Use 1/16th of total memory, but at least 16 MiB and at most 256 MiB
+                let target = total / 16;
+                target.clamp(16 * 1024, 256 * 1024) as u32
+            })
+            .unwrap_or(64 * 1024); // Default to 64 MiB if detection fails
+
+        // Adjust iterations based on memory: less memory = more iterations
+        // This maintains security even on low-memory systems
+        let iterations = if memory_kib >= 128 * 1024 {
+            2 // High memory: fewer iterations needed
+        } else if memory_kib >= 64 * 1024 {
+            3 // Medium memory: standard iterations
+        } else if memory_kib >= 32 * 1024 {
+            4 // Low memory: more iterations
+        } else {
+            6 // Very low memory: many iterations to compensate
+        };
+
+        (memory_kib, iterations, parallelism)
+    }
+
+    /// Attempts to detect available system memory in KiB.
+    ///
+    /// Returns None if detection fails.
+    #[cfg(target_os = "linux")]
+    fn detect_available_memory_kib() -> Option<u64> {
+        // Read from /proc/meminfo
+        std::fs::read_to_string("/proc/meminfo")
+            .ok()
+            .and_then(|content| {
+                content
+                    .lines()
+                    .find(|line| line.starts_with("MemTotal:"))
+                    .and_then(|line| {
+                        line.split_whitespace()
+                            .nth(1)
+                            .and_then(|s| s.parse::<u64>().ok())
+                    })
+            })
+    }
+
+    #[cfg(target_os = "macos")]
+    fn detect_available_memory_kib() -> Option<u64> {
+        // Use sysctl on macOS
+        use std::process::Command;
+        Command::new("sysctl")
+            .args(["-n", "hw.memsize"])
+            .output()
+            .ok()
+            .and_then(|output| {
+                String::from_utf8_lossy(&output.stdout)
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+                    .map(|bytes| bytes / 1024) // Convert to KiB
+            })
+    }
+
+    #[cfg(target_os = "windows")]
+    fn detect_available_memory_kib() -> Option<u64> {
+        // On Windows, we'd need to use Windows API
+        // For simplicity, return None to use defaults
+        None
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    fn detect_available_memory_kib() -> Option<u64> {
+        None
     }
 
     pub fn argon2(&self) -> Result<Argon2<'static>> {
@@ -133,7 +267,7 @@ pub fn decrypt(key: &KeyMaterial, ciphertext: &Ciphertext) -> Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{decrypt, derive_key, encrypt, KeyDerivationParams, KeyMaterial};
+    use super::{decrypt, derive_key, encrypt, Ciphertext, KeyDerivationParams, KeyMaterial};
 
     #[test]
     fn encrypts_and_decrypts() {
@@ -157,5 +291,120 @@ mod tests {
         let params = KeyDerivationParams::generate();
         let key = derive_key("correct horse battery staple", &params).expect("derive");
         assert_eq!(key.as_bytes().len(), 32);
+    }
+
+    // Negative tests
+
+    #[test]
+    fn decrypt_with_wrong_key_fails() {
+        let key1 = KeyMaterial::generate();
+        let key2 = KeyMaterial::generate();
+        let message = b"secret-note";
+        let ciphertext = encrypt(&key1, message).expect("encrypt");
+
+        // Decrypting with a different key should fail
+        let result = decrypt(&key2, &ciphertext);
+        assert!(result.is_err(), "decryption with wrong key should fail");
+    }
+
+    #[test]
+    fn decrypt_with_corrupted_ciphertext_fails() {
+        let key = KeyMaterial::generate();
+        let message = b"secret-note";
+        let mut ciphertext = encrypt(&key, message).expect("encrypt");
+
+        // Corrupt the ciphertext data
+        if !ciphertext.data.is_empty() {
+            ciphertext.data[0] ^= 0xFF;
+        }
+
+        let result = decrypt(&key, &ciphertext);
+        assert!(result.is_err(), "decryption with corrupted ciphertext should fail");
+    }
+
+    #[test]
+    fn decrypt_with_corrupted_nonce_fails() {
+        let key = KeyMaterial::generate();
+        let message = b"secret-note";
+        let mut ciphertext = encrypt(&key, message).expect("encrypt");
+
+        // Corrupt the nonce
+        ciphertext.nonce[0] ^= 0xFF;
+
+        let result = decrypt(&key, &ciphertext);
+        assert!(result.is_err(), "decryption with corrupted nonce should fail");
+    }
+
+    #[test]
+    fn decrypt_with_truncated_ciphertext_fails() {
+        let key = KeyMaterial::generate();
+        let message = b"secret-note-that-is-longer-for-truncation";
+        let ciphertext = encrypt(&key, message).expect("encrypt");
+
+        // Truncate the ciphertext
+        let truncated = Ciphertext {
+            nonce: ciphertext.nonce,
+            data: ciphertext.data[..ciphertext.data.len() / 2].to_vec(),
+        };
+
+        let result = decrypt(&key, &truncated);
+        assert!(result.is_err(), "decryption with truncated ciphertext should fail");
+    }
+
+    #[test]
+    fn derive_key_with_empty_password_fails() {
+        let params = KeyDerivationParams::generate();
+        let result = derive_key("", &params);
+        assert!(result.is_err(), "key derivation with empty password should fail");
+    }
+
+    #[test]
+    fn derive_key_with_whitespace_password_fails() {
+        let params = KeyDerivationParams::generate();
+        let result = derive_key("   ", &params);
+        assert!(result.is_err(), "key derivation with whitespace-only password should fail");
+    }
+
+    #[test]
+    fn key_from_wrong_length_bytes_fails() {
+        // Too short
+        let result = KeyMaterial::from_bytes(&[0u8; 16]);
+        assert!(result.is_err(), "key from 16 bytes should fail");
+
+        // Too long
+        let result = KeyMaterial::from_bytes(&[0u8; 64]);
+        assert!(result.is_err(), "key from 64 bytes should fail");
+    }
+
+    #[test]
+    fn different_passwords_derive_different_keys() {
+        let params = KeyDerivationParams::generate();
+        let key1 = derive_key("password1", &params).expect("derive key1");
+        let key2 = derive_key("password2", &params).expect("derive key2");
+
+        assert_ne!(key1.as_bytes(), key2.as_bytes(), "different passwords should derive different keys");
+    }
+
+    #[test]
+    fn same_password_different_salts_derive_different_keys() {
+        let params1 = KeyDerivationParams::generate();
+        let params2 = KeyDerivationParams::generate();
+
+        let key1 = derive_key("same-password", &params1).expect("derive key1");
+        let key2 = derive_key("same-password", &params2).expect("derive key2");
+
+        assert_ne!(key1.as_bytes(), key2.as_bytes(), "same password with different salts should derive different keys");
+    }
+
+    #[test]
+    fn key_equality_is_constant_time() {
+        // This test ensures the PartialEq implementation using constant-time comparison
+        // We can't directly test timing, but we verify the comparison works correctly
+        let key1 = KeyMaterial::from_bytes(&[42u8; 32]).expect("key1");
+        let key2 = KeyMaterial::from_bytes(&[42u8; 32]).expect("key2");
+        let key3 = KeyMaterial::from_bytes(&[43u8; 32]).expect("key3");
+
+        assert_eq!(key1, key2, "equal keys should be equal");
+        assert_ne!(key1, key3, "different keys should not be equal");
     }
 }
