@@ -1,0 +1,25 @@
+[package]
+name = "lilypad-oauth"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "OAuth authentication and GitHub vault sync for Lilypad"
+
+[dependencies]
+anyhow.workspace = true
+base64.workspace = true
+chrono.workspace = true
+hex.workspace = true
+reqwest = { workspace = true, features = ["blocking", "json"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+zeroize.workspace = true
+
+# OAuth specific dependencies
+rand = "0.8"
+url = "2.5"
+webbrowser = "1.0"
+tiny_http = "0.12"
+dirs = "5.0"

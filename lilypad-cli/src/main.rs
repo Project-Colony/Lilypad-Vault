@@ -12,7 +12,7 @@ use std::io;
 use std::path::PathBuf;
 
 use commands::{
-    backup, entries, export, import, security, vault,
+    backup, entries, export, import, oauth, security, vault,
     utils::{non_empty_value, OutputFormat, SecureString},
 };
 use lilypad_core::default_config;
@@ -391,6 +391,44 @@ enum Commands {
         #[arg(value_parser = non_empty_value)]
         vault: String,
     },
+
+    // ============== GitHub OAuth & Sync Commands ==============
+
+    /// Log in to GitHub for vault synchronization.
+    Login,
+
+    /// Log out from GitHub.
+    Logout,
+
+    /// Show GitHub authentication status.
+    AuthStatus,
+
+    /// Sync commands for GitHub vault storage.
+    #[command(subcommand)]
+    Sync(SyncCommands),
+}
+
+/// Subcommands for vault synchronization.
+#[derive(Debug, Subcommand)]
+enum SyncCommands {
+    /// Push a vault to GitHub.
+    Push {
+        /// Vault name to push
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
+    },
+    /// Pull a vault from GitHub.
+    Pull {
+        /// Vault name to pull
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
+    },
+    /// Show sync status for a vault.
+    Status {
+        /// Vault name to check
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -499,5 +537,21 @@ fn main() -> Result<()> {
             generate(shell, &mut cmd, name, &mut io::stdout());
             Ok(())
         }
+
+        // OAuth and Sync commands
+        Commands::Login => oauth::login(output_format),
+        Commands::Logout => oauth::logout(output_format),
+        Commands::AuthStatus => oauth::status(output_format),
+        Commands::Sync(sync_cmd) => match sync_cmd {
+            SyncCommands::Push { vault } => {
+                oauth::sync_push(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()), output_format)
+            }
+            SyncCommands::Pull { vault } => {
+                oauth::sync_pull(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()), output_format)
+            }
+            SyncCommands::Status { vault } => {
+                oauth::sync_status(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()), output_format)
+            }
+        },
     }
 }

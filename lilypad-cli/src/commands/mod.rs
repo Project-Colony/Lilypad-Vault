@@ -6,6 +6,7 @@ pub mod backup;
 pub mod entries;
 pub mod export;
 pub mod import;
+pub mod oauth;
 pub mod security;
 pub mod utils;
 pub mod vault;

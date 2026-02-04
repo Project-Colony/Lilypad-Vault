@@ -3,6 +3,7 @@ members = [
     "lilypad-cli",
     "lilypad-common",
     "lilypad-core",
+    "lilypad-oauth",
     "lilypad-storage",
     "ui/desktop",
     "ui/tui",
