@@ -126,6 +126,14 @@ pub struct LilypadApp {
 
     // Health dashboard
     pub health_report: Option<lilypad_common::HealthReport>,
+
+    // GitHub OAuth & Sync
+    pub github_username: Option<String>,
+    pub github_authenticated: bool,
+    pub sync_status_text: Option<String>,
+    pub sync_in_progress: bool,
+    pub device_flow_code: Option<String>,
+    pub device_flow_uri: Option<String>,
 }
 
 impl Drop for LilypadApp {
@@ -213,7 +221,26 @@ impl LilypadApp {
                 "iPhone 15 - Bordeaux".to_string(),
             ],
             health_report: None,
+            github_username: None,
+            github_authenticated: false,
+            sync_status_text: None,
+            sync_in_progress: false,
+            device_flow_code: None,
+            device_flow_uri: None,
         };
+
+        // Check GitHub OAuth status on startup
+        if let Ok(has_token) = lilypad_oauth::GitHubSyncBackend::has_valid_token() {
+            if has_token {
+                app.github_authenticated = true;
+                let token_store = lilypad_oauth::TokenStoreManager::new().ok();
+                if let Some(store) = token_store {
+                    if let Ok(Some(token)) = store.load_token(lilypad_oauth::OAuthProvider::GitHub) {
+                        app.github_username = token.username.clone();
+                    }
+                }
+            }
+        }
 
         // Load persisted state
         if let Some(project_dirs) = ProjectDirs::from("", "", "Lilypad") {
@@ -546,8 +573,73 @@ impl LilypadApp {
             }
 
             // File Operations
-            Message::ImportVault | Message::ExportVault | Message::FileSelected(_) => {
-                // TODO: Implement file operations
+            Message::ExportVault => {
+                return self.export_vault_encrypted();
+            }
+            Message::ExportVaultJson => {
+                return self.export_vault_json();
+            }
+            Message::ImportVault => {
+                return self.import_vault_dialog();
+            }
+            Message::FileSelected(path) => {
+                if let Some(path) = path {
+                    return self.import_vault_file(path);
+                }
+            }
+
+            // GitHub OAuth & Sync
+            Message::GitHubLogin => {
+                return self.github_login();
+            }
+            Message::GitHubLogout => {
+                return self.github_logout();
+            }
+            Message::GitHubLoginResult(result) => {
+                self.sync_in_progress = false;
+                match result {
+                    Ok(username) => {
+                        self.github_authenticated = true;
+                        self.github_username = Some(username.clone());
+                        self.device_flow_code = None;
+                        self.device_flow_uri = None;
+                        self.set_status(format!("Logged in as {}", username));
+                    }
+                    Err(e) => {
+                        self.device_flow_code = None;
+                        self.device_flow_uri = None;
+                        self.set_status(format!("Login failed: {}", e));
+                    }
+                }
+            }
+            Message::DeviceFlowCode {
+                user_code,
+                verification_uri,
+            } => {
+                self.device_flow_code = Some(user_code);
+                self.device_flow_uri = Some(verification_uri);
+            }
+            Message::SyncCheckStatus => {
+                return self.sync_check_status();
+            }
+            Message::SyncPush => {
+                return self.sync_push();
+            }
+            Message::SyncPull => {
+                return self.sync_pull();
+            }
+            Message::SyncCompleted(result) => {
+                self.sync_in_progress = false;
+                match result {
+                    Ok(msg) => {
+                        self.set_status(msg);
+                        // Refresh entries after pull
+                        let _ = self.unlock_vault_internal();
+                    }
+                    Err(e) => {
+                        self.set_status(format!("Sync error: {}", e));
+                    }
+                }
             }
 
             Message::None => {}
@@ -578,6 +670,7 @@ impl LilypadApp {
             &self.available_vaults,
             &self.search_query,
             self.show_vault_selector,
+            self.github_authenticated,
         );
 
         let main_content: Element<Message> = match Category::from_index(self.selected_category) {
@@ -604,6 +697,14 @@ impl LilypadApp {
                 self.generator_digits,
                 self.generator_symbols,
                 self.settings.exclude_ambiguous_chars,
+            ),
+            Category::Sync => views::sync::view(
+                self.theme,
+                self.github_authenticated,
+                self.github_username.as_deref(),
+                self.sync_in_progress,
+                self.device_flow_code.as_deref(),
+                self.device_flow_uri.as_deref(),
             ),
             Category::Account => views::settings::account_view(
                 self.theme,
@@ -1144,4 +1245,466 @@ impl LilypadApp {
 
         self.health_report = Some(analyze_vault_health(&health_data));
     }
+
+    // ========================================================================
+    // Export / Import
+    // ========================================================================
+
+    fn export_vault_encrypted(&mut self) -> Task<Message> {
+        let vault_name = self.active_vault.clone();
+
+        // Get the raw encrypted payload (no key needed for encrypted export)
+        let payload = match self.store.sync_payload(&vault_name) {
+            Ok(p) => p,
+            Err(e) => {
+                self.set_status(format!("Export failed: {}", e));
+                return Task::none();
+            }
+        };
+
+        let default_filename = format!("{}.lily", vault_name);
+        let file = rfd::FileDialog::new()
+            .set_title("Export Vault (Encrypted)")
+            .set_file_name(&default_filename)
+            .add_filter("Lilypad Vault", &["lily"])
+            .save_file();
+
+        if let Some(path) = file {
+            match std::fs::write(&path, &payload) {
+                Ok(()) => self.set_status(format!("Vault exported to {}", path.display())),
+                Err(e) => self.set_status(format!("Export failed: {}", e)),
+            }
+        }
+
+        Task::none()
+    }
+
+    fn export_vault_json(&mut self) -> Task<Message> {
+        let Some(ref key) = self.vault_key else {
+            self.set_status("Vault must be unlocked to export as JSON");
+            return Task::none();
+        };
+        let Some(ref vault) = self.vault else {
+            return Task::none();
+        };
+
+        // Build plaintext export
+        let mut entries_json: Vec<serde_json::Value> = Vec::new();
+        for entry in &vault.entries {
+            if let Ok(decrypted) = decrypt(key, &entry.ciphertext) {
+                if let Ok(payload) = serde_json::from_slice::<DesktopEntryPayload>(&decrypted) {
+                    entries_json.push(serde_json::json!({
+                        "label": entry.label,
+                        "username": payload.username,
+                        "password": payload.password,
+                        "url": payload.url,
+                        "notes": payload.notes,
+                        "is_favorite": entry.is_favorite,
+                        "created_at": entry.created_at,
+                        "updated_at": entry.updated_at,
+                    }));
+                }
+            }
+        }
+
+        let export = serde_json::json!({
+            "name": vault.name,
+            "exported_at": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            "entries": entries_json,
+        });
+
+        let json_str = match serde_json::to_string_pretty(&export) {
+            Ok(s) => s,
+            Err(e) => {
+                self.set_status(format!("Export failed: {}", e));
+                return Task::none();
+            }
+        };
+
+        let default_filename = format!("{}.json", vault.name);
+        let file = rfd::FileDialog::new()
+            .set_title("Export Vault (JSON - PLAINTEXT)")
+            .set_file_name(&default_filename)
+            .add_filter("JSON", &["json"])
+            .save_file();
+
+        if let Some(path) = file {
+            match std::fs::write(&path, json_str.as_bytes()) {
+                Ok(()) => self.set_status(format!("Vault exported to {}", path.display())),
+                Err(e) => self.set_status(format!("Export failed: {}", e)),
+            }
+        }
+
+        Task::none()
+    }
+
+    fn import_vault_dialog(&mut self) -> Task<Message> {
+        let file = rfd::FileDialog::new()
+            .set_title("Import Vault")
+            .add_filter("Lilypad Vault", &["lily"])
+            .add_filter("JSON", &["json"])
+            .add_filter("All Files", &["*"])
+            .pick_file();
+
+        if let Some(path) = file {
+            return Task::done(Message::FileSelected(Some(path)));
+        }
+
+        Task::none()
+    }
+
+    fn import_vault_file(&mut self, path: std::path::PathBuf) -> Task<Message> {
+        let extension = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+
+        match extension.as_str() {
+            "lily" => {
+                // Import encrypted vault file
+                match std::fs::read(&path) {
+                    Ok(data) => {
+                        let vault_name = &self.active_vault;
+                        match self.store.apply_sync_payload(vault_name, &data) {
+                            Ok(()) => {
+                                // Re-decrypt to refresh entries
+                                let _ = self.unlock_vault_internal();
+                                self.set_status("Vault imported successfully");
+                            }
+                            Err(e) => {
+                                self.set_status(format!("Import failed: {}", e));
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        self.set_status(format!("Failed to read file: {}", e));
+                    }
+                }
+            }
+            "json" => {
+                // Import JSON plaintext entries
+                let Some(ref key) = self.vault_key else {
+                    self.set_status("Vault must be unlocked to import JSON");
+                    return Task::none();
+                };
+                let Some(ref mut vault) = self.vault else {
+                    return Task::none();
+                };
+
+                match std::fs::read_to_string(&path) {
+                    Ok(contents) => {
+                        if let Ok(data) = serde_json::from_str::<serde_json::Value>(&contents) {
+                            let entries = data["entries"].as_array();
+                            let mut imported = 0u32;
+
+                            if let Some(entries) = entries {
+                                for entry_val in entries {
+                                    let label = entry_val["label"]
+                                        .as_str()
+                                        .unwrap_or("Imported")
+                                        .to_string();
+                                    let username = entry_val["username"]
+                                        .as_str()
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let password = entry_val["password"]
+                                        .as_str()
+                                        .unwrap_or("")
+                                        .to_string();
+                                    let url =
+                                        entry_val["url"].as_str().unwrap_or("").to_string();
+                                    let notes =
+                                        entry_val["notes"].as_str().unwrap_or("").to_string();
+
+                                    let payload = DesktopEntryPayload {
+                                        username: username.clone(),
+                                        password,
+                                        url: url.clone(),
+                                        notes,
+                                    };
+
+                                    let payload_bytes =
+                                        serde_json::to_vec(&payload).unwrap_or_default();
+                                    if let Ok(ciphertext) = encrypt(key, &payload_bytes) {
+                                        let metadata = EntryMetadata {
+                                            username: if username.is_empty() {
+                                                None
+                                            } else {
+                                                Some(username)
+                                            },
+                                            url: if url.is_empty() {
+                                                None
+                                            } else {
+                                                Some(url)
+                                            },
+                                            ..Default::default()
+                                        };
+                                        let entry = Entry::new_with_metadata(
+                                            &label, metadata, ciphertext,
+                                        );
+                                        let _ = vault.add_entry(entry);
+                                        imported += 1;
+                                    }
+                                }
+                            }
+
+                            let _ = self.store.save_vault(vault, key);
+                            let _ = self.unlock_vault_internal();
+                            self.set_status(format!("{} entries imported", imported));
+                        } else {
+                            self.set_status("Invalid JSON format");
+                        }
+                    }
+                    Err(e) => {
+                        self.set_status(format!("Failed to read file: {}", e));
+                    }
+                }
+            }
+            _ => {
+                self.set_status("Unsupported file format. Use .lily or .json");
+            }
+        }
+
+        Task::none()
+    }
+
+    // ========================================================================
+    // GitHub OAuth & Sync
+    // ========================================================================
+
+    fn github_login(&mut self) -> Task<Message> {
+        if self.github_authenticated {
+            self.set_status("Already logged in to GitHub");
+            return Task::none();
+        }
+
+        self.sync_in_progress = true;
+        self.set_status("Starting GitHub login...");
+
+        // Run OAuth in a background task
+        Task::perform(
+            async {
+                tokio::task::spawn_blocking(|| {
+                    let config = match lilypad_oauth::OAuthConfig::from_env() {
+                        Ok(c) => c,
+                        Err(e) => {
+                            return Err(format!(
+                                "OAuth not configured. Set LILYPAD_GITHUB_CLIENT_ID env var. Error: {}",
+                                e
+                            ));
+                        }
+                    };
+
+                    let backend = match lilypad_oauth::GitHubSyncBackend::authenticate(config) {
+                        Ok(b) => b,
+                        Err(e) => {
+                            return Err(format!("{}", e));
+                        }
+                    };
+
+                    Ok(backend.username().to_string())
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+            },
+            Message::GitHubLoginResult,
+        )
+    }
+
+    fn github_logout(&mut self) -> Task<Message> {
+        if !self.github_authenticated {
+            self.set_status("Not logged in to GitHub");
+            return Task::none();
+        }
+
+        match lilypad_oauth::GitHubSyncBackend::logout() {
+            Ok(()) => {
+                self.github_authenticated = false;
+                self.github_username = None;
+                self.sync_status_text = None;
+                self.set_status("Logged out from GitHub");
+            }
+            Err(e) => {
+                self.set_status(format!("Logout failed: {}", e));
+            }
+        }
+
+        Task::none()
+    }
+
+    fn sync_check_status(&mut self) -> Task<Message> {
+        if !self.github_authenticated {
+            self.sync_status_text = Some("Not authenticated".to_string());
+            return Task::none();
+        }
+
+        let Some(ref key) = self.vault_key else {
+            self.set_status("Vault must be unlocked to check sync status");
+            return Task::none();
+        };
+
+        // Calculate local checksum
+        let payload = match self.store.sync_payload(&self.active_vault) {
+            Ok(p) => p,
+            Err(e) => {
+                self.set_status(format!("Failed to get vault payload: {}", e));
+                return Task::none();
+            }
+        };
+
+        let local_checksum = calculate_checksum(&payload);
+        let _key_clone = key.clone();
+
+        self.sync_in_progress = true;
+
+        Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    let mut backend = lilypad_oauth::GitHubSyncBackend::from_stored_token()
+                        .map_err(|e| format!("{}", e))?;
+                    let status = backend
+                        .get_status(&local_checksum)
+                        .map_err(|e| format!("{}", e))?;
+
+                    let msg = match status {
+                        lilypad_oauth::SyncStatus::InSync => "In sync with GitHub".to_string(),
+                        lilypad_oauth::SyncStatus::LocalAhead => {
+                            "Local changes pending push".to_string()
+                        }
+                        lilypad_oauth::SyncStatus::RemoteAhead => {
+                            "Remote changes available".to_string()
+                        }
+                        lilypad_oauth::SyncStatus::Conflict => {
+                            "Conflict: both local and remote changed".to_string()
+                        }
+                        lilypad_oauth::SyncStatus::NoRemoteVault => {
+                            "No remote vault. Push to create.".to_string()
+                        }
+                        lilypad_oauth::SyncStatus::NotAuthenticated => {
+                            "Not authenticated".to_string()
+                        }
+                        lilypad_oauth::SyncStatus::Unknown(msg) => format!("Unknown: {}", msg),
+                    };
+
+                    Ok(msg)
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+            },
+            |result: std::result::Result<String, String>| match result {
+                Ok(msg) => Message::SetStatus(msg),
+                Err(e) => Message::SetStatus(format!("Status check failed: {}", e)),
+            },
+        )
+    }
+
+    fn sync_push(&mut self) -> Task<Message> {
+        if !self.github_authenticated {
+            self.set_status("Login to GitHub first");
+            return Task::none();
+        }
+
+        let vault_name = self.active_vault.clone();
+
+        let payload = match self.store.sync_payload(&vault_name) {
+            Ok(p) => p,
+            Err(e) => {
+                self.set_status(format!("Failed to prepare vault: {}", e));
+                return Task::none();
+            }
+        };
+
+        self.sync_in_progress = true;
+        self.set_status("Pushing vault to GitHub...");
+
+        Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    let mut backend = lilypad_oauth::GitHubSyncBackend::from_stored_token()
+                        .map_err(|e| format!("{}", e))?;
+                    backend.ensure_repo().map_err(|e| format!("{}", e))?;
+                    backend
+                        .push(&vault_name, &payload)
+                        .map_err(|e| format!("{}", e))?;
+                    Ok(format!(
+                        "Vault '{}' pushed to GitHub successfully",
+                        vault_name
+                    ))
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+            },
+            Message::SyncCompleted,
+        )
+    }
+
+    fn sync_pull(&mut self) -> Task<Message> {
+        if !self.github_authenticated {
+            self.set_status("Login to GitHub first");
+            return Task::none();
+        }
+
+        let Some(ref key) = self.vault_key else {
+            self.set_status("Vault must be unlocked to pull");
+            return Task::none();
+        };
+
+        let vault_name = self.active_vault.clone();
+        let store_root = std::path::PathBuf::from(&self.config.data_dir);
+        let key_clone = key.clone();
+
+        self.sync_in_progress = true;
+        self.set_status("Pulling vault from GitHub...");
+
+        Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    let mut backend = lilypad_oauth::GitHubSyncBackend::from_stored_token()
+                        .map_err(|e| format!("{}", e))?;
+                    let payload = backend
+                        .pull(&vault_name)
+                        .map_err(|e| format!("{}", e))?;
+
+                    match payload {
+                        Some(data) => {
+                            // Create a temporary store to apply the payload
+                            let config = lilypad_core::AppConfig {
+                                data_dir: store_root.to_string_lossy().to_string(),
+                                ..lilypad_core::default_config()
+                            };
+                            let store =
+                                lilypad_storage::LocalStore::new(&config).map_err(|e| format!("{}", e))?;
+                            store
+                                .apply_sync_payload(&vault_name, &data)
+                                .map_err(|e| format!("{}", e))?;
+                            // Verify decryption works
+                            let _vault = store
+                                .load_vault(&vault_name, &key_clone)
+                                .map_err(|e| format!("Decryption failed: {}", e))?;
+                            Ok(format!(
+                                "Vault '{}' pulled from GitHub ({} bytes)",
+                                vault_name,
+                                data.len()
+                            ))
+                        }
+                        None => Ok("No remote vault data found on GitHub".to_string()),
+                    }
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+            },
+            Message::SyncCompleted,
+        )
+    }
+}
+
+/// Calculate SHA-256 checksum of data
+fn calculate_checksum(data: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let result = Sha256::digest(data);
+    result.iter().map(|b| format!("{:02x}", b)).collect()
 }

@@ -174,6 +174,7 @@ pub enum Category {
     Credentials,
     Health,
     Generator,
+    Sync,
     Account,
     Security,
 }
@@ -185,8 +186,9 @@ impl Category {
             0 => Category::Credentials,
             1 => Category::Health,
             2 => Category::Generator,
-            3 => Category::Account,
-            4 => Category::Security,
+            3 => Category::Sync,
+            4 => Category::Account,
+            5 => Category::Security,
             _ => Category::Credentials,
         }
     }
@@ -196,8 +198,9 @@ impl Category {
             Category::Credentials => 0,
             Category::Health => 1,
             Category::Generator => 2,
-            Category::Account => 3,
-            Category::Security => 4,
+            Category::Sync => 3,
+            Category::Account => 4,
+            Category::Security => 5,
         }
     }
 
@@ -206,6 +209,7 @@ impl Category {
             Category::Credentials => "Credentials",
             Category::Health => "Health",
             Category::Generator => "Generator",
+            Category::Sync => "Sync",
             Category::Account => "Account",
             Category::Security => "Security",
         }
@@ -216,6 +220,7 @@ impl Category {
             Category::Credentials => "🔐",
             Category::Health => "💚",
             Category::Generator => "🎲",
+            Category::Sync => "🔄",
             Category::Account => "👤",
             Category::Security => "🛡",
         }

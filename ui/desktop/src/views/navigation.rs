@@ -17,7 +17,7 @@ struct NavItem {
     label: &'static str,
 }
 
-const NAV_ITEMS: [NavItem; 5] = [
+const NAV_ITEMS: [NavItem; 6] = [
     NavItem {
         category: Category::Credentials,
         icon: "🔐",
@@ -32,6 +32,11 @@ const NAV_ITEMS: [NavItem; 5] = [
         category: Category::Generator,
         icon: "🎲",
         label: "Generator",
+    },
+    NavItem {
+        category: Category::Sync,
+        icon: "🔄",
+        label: "Sync",
     },
     NavItem {
         category: Category::Account,

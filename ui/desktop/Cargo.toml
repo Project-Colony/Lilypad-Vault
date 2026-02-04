@@ -32,6 +32,10 @@ zeroize.workspace = true
 lilypad-common = { path = "../../lilypad-common" }
 lilypad-core = { path = "../../lilypad-core" }
 lilypad-storage = { path = "../../lilypad-storage" }
+lilypad-oauth = { path = "../../lilypad-oauth" }
+
+# Cryptographic hashing for sync checksums
+sha2 = "0.10"
 
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }

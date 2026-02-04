@@ -8,6 +8,7 @@ pub mod health;
 pub mod modals;
 pub mod navigation;
 pub mod settings;
+pub mod sync;
 pub mod unlock;
 pub mod vault;
 pub mod welcome;

@@ -16,6 +16,7 @@ pub fn view(
     available_vaults: &[String],
     search_query: &str,
     show_vault_selector: bool,
+    github_authenticated: bool,
 ) -> Element<'static, Message> {
     let palette = theme.palette();
     let active_vault_owned = active_vault.to_string();
@@ -170,6 +171,19 @@ pub fn view(
     })
     .on_press(Message::ShowAddEntry);
 
+    // GitHub sync status indicator
+    let sync_indicator: Element<'static, Message> = if github_authenticated {
+        text("●")
+            .size(10)
+            .color(palette.success)
+            .into()
+    } else {
+        text("○")
+            .size(10)
+            .color(palette.text_muted)
+            .into()
+    };
+
     let settings_btn = button(text("⚙").size(18).color(palette.text_secondary))
         .padding([10, 12])
         .style(move |_theme, status| match status {
@@ -198,6 +212,8 @@ pub fn view(
         search_row,
         Space::with_width(Length::Fill),
         add_entry_btn,
+        Space::with_width(8),
+        sync_indicator,
         Space::with_width(8),
         settings_btn,
         Space::with_width(4),

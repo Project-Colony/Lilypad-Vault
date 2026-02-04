@@ -186,10 +186,35 @@ pub enum Message {
     // ========================================================================
     /// Import vault from file
     ImportVault,
-    /// Export vault to file
+    /// Export vault to file (encrypted .lily format)
     ExportVault,
+    /// Export vault as plaintext JSON
+    ExportVaultJson,
     /// File selected for import
     FileSelected(Option<std::path::PathBuf>),
+
+    // ========================================================================
+    // GitHub OAuth & Sync
+    // ========================================================================
+    /// Initiate GitHub OAuth login (Device Flow)
+    GitHubLogin,
+    /// Logout from GitHub
+    GitHubLogout,
+    /// OAuth login completed (result)
+    GitHubLoginResult(std::result::Result<String, String>),
+    /// Check sync status
+    SyncCheckStatus,
+    /// Push vault to GitHub
+    SyncPush,
+    /// Pull vault from GitHub
+    SyncPull,
+    /// Sync operation completed (result message)
+    SyncCompleted(std::result::Result<String, String>),
+    /// Device flow: show user code for manual entry
+    DeviceFlowCode {
+        user_code: String,
+        verification_uri: String,
+    },
 
     // ========================================================================
     // No-op
