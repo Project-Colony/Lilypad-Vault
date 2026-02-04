@@ -10,10 +10,8 @@ use crate::message::Message;
 use crate::theme::{self, LilypadTheme};
 
 /// Render the settings modal
-pub fn settings_modal<'a>(
-    theme: LilypadTheme,
-    current_theme: LilypadTheme,
-) -> Element<'a, Message> {
+pub fn settings_modal<'a>(theme: LilypadTheme) -> Element<'a, Message> {
+    let current_theme = theme;
     let palette = theme.palette();
 
     let title = text("Settings")

@@ -196,16 +196,7 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
 
     // Color indicator
     let color_indicator: Option<Element<'static, Message>> = if let Some(color) = &entry.color {
-        let color_rgb = match color {
-            lilypad_core::EntryColor::Red => iced::Color::from_rgb8(239, 68, 68),
-            lilypad_core::EntryColor::Orange => iced::Color::from_rgb8(249, 115, 22),
-            lilypad_core::EntryColor::Yellow => iced::Color::from_rgb8(234, 179, 8),
-            lilypad_core::EntryColor::Green => iced::Color::from_rgb8(34, 197, 94),
-            lilypad_core::EntryColor::Blue => iced::Color::from_rgb8(59, 130, 246),
-            lilypad_core::EntryColor::Purple => iced::Color::from_rgb8(139, 92, 246),
-            lilypad_core::EntryColor::Pink => iced::Color::from_rgb8(236, 72, 153),
-            lilypad_core::EntryColor::Gray => iced::Color::from_rgb8(107, 114, 128),
-        };
+        let color_rgb = theme::entry_color_to_iced(color);
         Some(
             container(Space::new(Length::Fixed(4.0), Length::Fixed(50.0)))
                 .style(move |_| container::Style {
@@ -385,7 +376,7 @@ fn entry_form(
         "Username / Email",
         "e.g., john@example.com",
         entry_username.to_string(),
-        |s| Message::EntryUsernameChanged(s),
+        Message::EntryUsernameChanged,
     );
 
     let password_row = row![
@@ -426,7 +417,7 @@ fn entry_form(
         "URL (optional)",
         "e.g., https://github.com",
         entry_url.to_string(),
-        |s| Message::EntryUrlChanged(s),
+        Message::EntryUrlChanged,
     );
 
     let notes_label = text("Notes (optional)")

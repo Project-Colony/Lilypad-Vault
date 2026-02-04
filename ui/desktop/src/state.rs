@@ -2,15 +2,10 @@
 //!
 //! Contains all the state structures for the application.
 
-use lilypad_common::{HealthReport, PasswordStrength};
-use lilypad_core::{AppConfig, EntryColor, KeyMaterial, Vault};
-use lilypad_storage::LocalStore;
+use lilypad_common::PasswordStrength;
+use lilypad_core::EntryColor;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
-use std::time::Instant;
 use zeroize::Zeroize;
-
-use crate::theme::LilypadTheme;
 
 /// Default vault name
 pub const DEFAULT_VAULT_NAME: &str = "primary";
@@ -193,7 +188,7 @@ impl Category {
         }
     }
 
-    pub fn to_index(&self) -> usize {
+    pub fn to_index(self) -> usize {
         match self {
             Category::Credentials => 0,
             Category::Health => 1,
@@ -227,115 +222,3 @@ impl Category {
     }
 }
 
-/// Main application state (alternative struct for future refactoring)
-#[allow(dead_code)]
-pub struct LilypadState {
-    // Application mode
-    pub show_welcome: bool,
-    pub vault_unlocked: bool,
-
-    // Search
-    pub search_query: String,
-
-    // Navigation
-    pub selected_category: usize,
-    pub vault_view_mode: VaultViewMode,
-
-    // Status messages
-    pub status_message: Option<String>,
-    pub status_message_time: Option<Instant>,
-
-    // Paths
-    pub welcome_ack_path: Option<PathBuf>,
-    pub settings_path: Option<PathBuf>,
-    pub lockout_path: Option<PathBuf>,
-
-    // Sensitive data (zeroized on drop)
-    pub master_password: String,
-    pub generated_password: String,
-
-    // Core
-    pub config: AppConfig,
-    pub store: LocalStore,
-    pub active_vault: String,
-    pub vault: Option<Vault>,
-    pub vault_key: Option<KeyMaterial>,
-
-    // Password generator settings
-    pub generator_length: usize,
-    pub generator_lowercase: bool,
-    pub generator_uppercase: bool,
-    pub generator_digits: bool,
-    pub generator_symbols: bool,
-
-    // Entry form
-    pub show_add_entry: bool,
-    pub vault_entries: Vec<VaultEntry>,
-    pub entry_title: String,
-    pub entry_username: String,
-    pub entry_password: String,
-    pub entry_url: String,
-    pub entry_notes: String,
-
-    // Settings
-    pub settings: AppSettings,
-    pub show_settings: bool,
-    pub theme: LilypadTheme,
-
-    // Security
-    pub lockout_state: LockoutState,
-    pub last_activity: Instant,
-
-    // Clipboard management
-    pub clipboard_clear_time: Option<Instant>,
-    pub clipboard_value: Option<String>,
-
-    // Re-authentication modal
-    pub show_reauth_modal: bool,
-    pub reauth_password: String,
-    pub pending_copy_password: Option<String>,
-
-    // Delete confirmation
-    pub show_delete_confirm: bool,
-    pub pending_delete_index: Option<usize>,
-
-    // Edit mode
-    pub edit_mode: bool,
-    pub edit_index: Option<usize>,
-
-    // Multi-vault
-    pub available_vaults: Vec<String>,
-    pub show_vault_selector: bool,
-    pub show_new_vault_modal: bool,
-    pub new_vault_name: String,
-
-    // Account settings (demo)
-    pub account_display_name: String,
-    pub account_email: String,
-    pub account_timezone: String,
-    pub account_two_factor_enabled: bool,
-    pub account_marketing_opt_in: bool,
-    pub security_recovery_email: String,
-    pub security_trusted_devices: Vec<String>,
-
-    // Health dashboard
-    pub health_report: Option<HealthReport>,
-}
-
-impl Drop for LilypadState {
-    fn drop(&mut self) {
-        self.master_password.zeroize();
-        self.generated_password.zeroize();
-        self.entry_password.zeroize();
-        self.reauth_password.zeroize();
-        if let Some(ref mut value) = self.clipboard_value {
-            value.zeroize();
-        }
-        if let Some(ref mut value) = self.pending_copy_password {
-            value.zeroize();
-        }
-        for entry in &mut self.vault_entries {
-            entry.password.zeroize();
-        }
-    }
-}

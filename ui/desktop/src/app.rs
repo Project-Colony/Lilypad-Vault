@@ -307,6 +307,10 @@ impl LilypadApp {
             // Navigation
             Message::SelectCategory(cat) => {
                 self.selected_category = cat;
+                // Close open forms/modals when switching tabs
+                self.show_add_entry = false;
+                self.show_vault_selector = false;
+                self.edit_mode = false;
             }
             Message::SetViewMode(mode) => {
                 self.vault_view_mode = mode;
@@ -422,14 +426,14 @@ impl LilypadApp {
                         self.set_status("Password copied to clipboard");
                     }
                     self.show_reauth_modal = false;
-                    self.reauth_password.clear();
+                    self.reauth_password.zeroize();
                 } else {
                     self.set_status("Invalid password");
                 }
             }
             Message::CancelReauth => {
                 self.show_reauth_modal = false;
-                self.reauth_password.clear();
+                self.reauth_password.zeroize();
                 self.pending_copy_password = None;
             }
 
@@ -755,7 +759,7 @@ impl LilypadApp {
         if self.show_settings {
             return iced::widget::stack![
                 content,
-                views::modals::settings_modal(self.theme, self.theme),
+                views::modals::settings_modal(self.theme),
             ]
             .into();
         }
@@ -824,8 +828,14 @@ impl LilypadApp {
         self.vault_unlocked = false;
         self.vault = None;
         self.vault_key = None;
+        // Zeroize sensitive entry data before clearing
+        for entry in &mut self.vault_entries {
+            entry.password.zeroize();
+        }
         self.vault_entries.clear();
-        self.master_password.clear();
+        self.master_password.zeroize();
+        self.entry_password.zeroize();
+        self.generated_password.zeroize();
         self.show_add_entry = false;
         self.show_settings = false;
     }
@@ -904,7 +914,8 @@ impl LilypadApp {
     }
 
     fn verify_master_password(&self, password: &str) -> bool {
-        password == self.master_password
+        use subtle::ConstantTimeEq;
+        password.as_bytes().ct_eq(self.master_password.as_bytes()).into()
     }
 
     fn try_unlock_vault(&mut self) -> Task<Message> {
@@ -1084,10 +1095,19 @@ impl LilypadApp {
             notes: self.entry_notes.clone(),
         };
 
-        let payload_bytes = serde_json::to_vec(&payload).unwrap_or_default();
+        let payload_bytes = match serde_json::to_vec(&payload) {
+            Ok(b) => b,
+            Err(e) => {
+                self.set_status(format!("Failed to serialize entry: {}", e));
+                return Task::none();
+            }
+        };
         let ciphertext = match encrypt(key, &payload_bytes) {
             Ok(c) => c,
-            Err(_) => return Task::none(),
+            Err(e) => {
+                self.set_status(format!("Encryption failed: {}", e));
+                return Task::none();
+            }
         };
 
         let was_edit_mode = self.edit_mode;
@@ -1290,19 +1310,30 @@ impl LilypadApp {
 
         // Build plaintext export
         let mut entries_json: Vec<serde_json::Value> = Vec::new();
+        let mut failed_count = 0u32;
+        let total_count = vault.entries.len();
         for entry in &vault.entries {
-            if let Ok(decrypted) = decrypt(key, &entry.ciphertext) {
-                if let Ok(payload) = serde_json::from_slice::<DesktopEntryPayload>(&decrypted) {
-                    entries_json.push(serde_json::json!({
-                        "label": entry.label,
-                        "username": payload.username,
-                        "password": payload.password,
-                        "url": payload.url,
-                        "notes": payload.notes,
-                        "is_favorite": entry.is_favorite,
-                        "created_at": entry.created_at,
-                        "updated_at": entry.updated_at,
-                    }));
+            match decrypt(key, &entry.ciphertext) {
+                Ok(decrypted) => {
+                    if let Ok(payload) =
+                        serde_json::from_slice::<DesktopEntryPayload>(&decrypted)
+                    {
+                        entries_json.push(serde_json::json!({
+                            "label": entry.label,
+                            "username": payload.username,
+                            "password": payload.password,
+                            "url": payload.url,
+                            "notes": payload.notes,
+                            "is_favorite": entry.is_favorite,
+                            "created_at": entry.created_at,
+                            "updated_at": entry.updated_at,
+                        }));
+                    } else {
+                        failed_count += 1;
+                    }
+                }
+                Err(_) => {
+                    failed_count += 1;
                 }
             }
         }
@@ -1333,7 +1364,20 @@ impl LilypadApp {
 
         if let Some(path) = file {
             match std::fs::write(&path, json_str.as_bytes()) {
-                Ok(()) => self.set_status(format!("Vault exported to {}", path.display())),
+                Ok(()) => {
+                    let msg = if failed_count > 0 {
+                        format!(
+                            "Exported {}/{} entries to {} ({} failed to decrypt)",
+                            total_count - failed_count as usize,
+                            total_count,
+                            path.display(),
+                            failed_count
+                        )
+                    } else {
+                        format!("Exported {} entries to {}", total_count, path.display())
+                    };
+                    self.set_status(msg);
+                }
                 Err(e) => self.set_status(format!("Export failed: {}", e)),
             }
         }
