@@ -22,47 +22,6 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use zeroize::Zeroize;
 
-/// A String wrapper that zeroizes its contents on drop for security.
-struct SecureString(String);
-
-impl SecureString {
-    fn new() -> Self {
-        Self(String::new())
-    }
-
-    fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    fn clear(&mut self) {
-        self.0.zeroize();
-        self.0 = String::new();
-    }
-}
-
-impl std::ops::Deref for SecureString {
-    type Target = String;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl std::ops::DerefMut for SecureString {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl Drop for SecureString {
-    fn drop(&mut self) {
-        self.0.zeroize();
-    }
-}
-
 fn main() -> eframe::Result<()> {
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
@@ -357,6 +316,15 @@ struct LilypadApp {
     show_delete_confirm: bool,
     pending_delete_index: Option<usize>,
 
+    // Edit mode
+    edit_mode: bool,
+    edit_index: Option<usize>,
+
+    // Multi-vault support
+    available_vaults: Vec<String>,
+    show_vault_selector: bool,
+    new_vault_name: String,
+
     // Account settings (not persisted - demo)
     account_display_name: String,
     account_email: String,
@@ -498,6 +466,13 @@ impl LilypadApp {
 
             show_delete_confirm: false,
             pending_delete_index: None,
+
+            edit_mode: false,
+            edit_index: None,
+
+            available_vaults: Vec::new(),
+            show_vault_selector: false,
+            new_vault_name: String::new(),
 
             account_display_name: "Avery Quinn".to_string(),
             account_email: "avery@lilypad.app".to_string(),
@@ -885,6 +860,32 @@ impl LilypadApp {
             ui.horizontal(|ui| {
                 ui.heading("Lilypad Vault");
                 ui.separator();
+
+                // Vault selector dropdown
+                egui::ComboBox::from_label("")
+                    .selected_text(format!("Vault: {}", &self.active_vault))
+                    .show_ui(ui, |ui| {
+                        // Refresh available vaults
+                        if let Ok(vaults) = self.store.list_vaults() {
+                            self.available_vaults = vaults;
+                        }
+                        for vault_name in &self.available_vaults.clone() {
+                            if ui.selectable_value(&mut self.active_vault, vault_name.clone(), vault_name).clicked() {
+                                // Switch to selected vault
+                                if let Err(e) = self.switch_vault(vault_name) {
+                                    self.set_status(format!("Failed to switch vault: {}", e));
+                                } else {
+                                    self.set_status(format!("Switched to vault '{}'", vault_name));
+                                }
+                            }
+                        }
+                        ui.separator();
+                        if ui.button("+ Create new vault").clicked() {
+                            self.show_vault_selector = true;
+                        }
+                    });
+
+                ui.separator();
                 ui.label("Search");
                 ui.add(
                     egui::TextEdit::singleline(&mut self.search_query).hint_text("Search entries"),
@@ -892,6 +893,7 @@ impl LilypadApp {
                 ui.separator();
                 if ui.button("Add Entry").clicked() {
                     self.show_add_entry = true;
+                    self.edit_mode = false;
                     self.selected_category = 0;
                 }
                 if ui.button("Settings").clicked() {
@@ -899,6 +901,96 @@ impl LilypadApp {
                 }
             });
         });
+
+        // Render new vault modal if needed
+        if self.show_vault_selector {
+            self.render_new_vault_modal(ctx);
+        }
+    }
+
+    fn render_new_vault_modal(&mut self, ctx: &egui::Context) {
+        let painter = ctx.layer_painter(egui::LayerId::new(
+            egui::Order::Foreground,
+            egui::Id::new("new_vault_overlay"),
+        ));
+        painter.rect_filled(ctx.available_rect(), 0.0, Color32::from_black_alpha(150));
+
+        egui::Window::new("Create New Vault")
+            .collapsible(false)
+            .resizable(false)
+            .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+            .show(ctx, |ui| {
+                ui.label("Enter a name for the new vault:");
+                ui.add_space(8.0);
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.new_vault_name)
+                        .hint_text("vault-name"),
+                );
+                ui.add_space(12.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        self.show_vault_selector = false;
+                        self.new_vault_name.clear();
+                    }
+                    let create_enabled = !self.new_vault_name.trim().is_empty();
+                    if ui.add_enabled(create_enabled, egui::Button::new("Create")).clicked() {
+                        let vault_name = self.new_vault_name.trim().to_string();
+                        match self.create_new_vault(&vault_name) {
+                            Ok(()) => {
+                                self.set_status(format!("Created vault '{}' and switched to it", vault_name));
+                                self.show_vault_selector = false;
+                                self.new_vault_name.clear();
+                            }
+                            Err(e) => {
+                                self.set_status(format!("Failed to create vault: {}", e));
+                            }
+                        }
+                    }
+                });
+            });
+    }
+
+    /// Switches to a different vault.
+    fn switch_vault(&mut self, vault_name: &str) -> Result<()> {
+        let key = self
+            .vault_key
+            .as_ref()
+            .ok_or_else(|| anyhow!("vault key is unavailable"))?;
+
+        let vault = self.store.load_vault(vault_name, key)?;
+        let entries = Self::entries_from_vault(&vault, key)?;
+
+        self.active_vault = vault_name.to_string();
+        self.vault = Some(vault);
+        self.vault_entries = entries;
+        self.clear_entry_form();
+        Ok(())
+    }
+
+    /// Creates a new vault and switches to it.
+    fn create_new_vault(&mut self, vault_name: &str) -> Result<()> {
+        let key = self
+            .vault_key
+            .as_ref()
+            .ok_or_else(|| anyhow!("vault key is unavailable"))?;
+
+        // Check if vault already exists
+        if vault_exists(&self.config, vault_name) {
+            return Err(anyhow!("vault '{}' already exists", vault_name));
+        }
+
+        // Create the vault with the current key
+        let metadata = KeyMetadata::new(key, CryptoAlgorithm::XChaCha20Poly1305).with_kdf("argon2id");
+        let vault = Vault::new(vault_name, metadata);
+        self.store.save_vault(&vault, key)?;
+
+        // Switch to the new vault
+        self.active_vault = vault_name.to_string();
+        self.vault = Some(vault);
+        self.vault_entries.clear();
+        self.clear_entry_form();
+
+        Ok(())
     }
 
     fn render_navigation_bar(&mut self, ctx: &egui::Context) {
@@ -1100,8 +1192,10 @@ impl LilypadApp {
         if matching_indices.is_empty() {
             ui.label("No entries match your search yet.");
         } else {
-            // Track which entry's password was copied
+            // Track actions to perform outside the borrow
             let mut copied_password: Option<String> = None;
+            let mut edit_entry_index: Option<usize> = None;
+            let mut delete_entry_index: Option<usize> = None;
 
             for &idx in &matching_indices {
                 let entry = &self.vault_entries[idx];
@@ -1117,6 +1211,19 @@ impl LilypadApp {
                         ui.label(RichText::new(&title).strong());
                         ui.separator();
                         ui.label(&username);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            // Delete button (red)
+                            let delete_btn = egui::Button::new(
+                                RichText::new("Delete").color(Color32::from_rgb(220, 53, 69))
+                            );
+                            if ui.add(delete_btn).clicked() {
+                                delete_entry_index = Some(idx);
+                            }
+                            // Edit button
+                            if ui.button("Edit").clicked() {
+                                edit_entry_index = Some(idx);
+                            }
+                        });
                     });
                     if !url.is_empty() {
                         ui.label(format!("URL: {}", url));
@@ -1132,6 +1239,26 @@ impl LilypadApp {
                     });
                 });
                 ui.add_space(8.0);
+            }
+
+            // Handle edit action
+            if let Some(idx) = edit_entry_index {
+                if let Some(entry) = self.vault_entries.get(idx) {
+                    self.entry_title = entry.title.clone();
+                    self.entry_username = entry.username.clone();
+                    self.entry_password = entry.password.clone();
+                    self.entry_url = entry.url.clone();
+                    self.entry_notes = entry.notes.clone();
+                    self.edit_mode = true;
+                    self.edit_index = Some(idx);
+                    self.show_add_entry = true;
+                }
+            }
+
+            // Handle delete action
+            if let Some(idx) = delete_entry_index {
+                self.pending_delete_index = Some(idx);
+                self.show_delete_confirm = true;
             }
 
             // Handle password copy outside of the borrow
@@ -1227,7 +1354,11 @@ impl LilypadApp {
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
             .show(ctx, |ui| {
-                ui.label("Are you sure you want to delete this entry? This cannot be undone.");
+                let entry_title = self.pending_delete_index
+                    .and_then(|idx| self.vault_entries.get(idx))
+                    .map(|e| e.title.clone())
+                    .unwrap_or_else(|| "this entry".to_string());
+                ui.label(format!("Are you sure you want to delete '{}'? This cannot be undone.", entry_title));
                 ui.add_space(12.0);
                 ui.horizontal(|ui| {
                     if ui.button("Cancel").clicked() {
@@ -1239,21 +1370,53 @@ impl LilypadApp {
                     )
                     .fill(Color32::from_rgb(220, 53, 69));
                     if ui.add(delete_button).clicked() {
-                        // TODO: Implement actual deletion when we add delete functionality
+                        if let Some(idx) = self.pending_delete_index {
+                            if let Some(entry) = self.vault_entries.get(idx) {
+                                let label = entry.title.clone();
+                                if let Err(e) = self.delete_entry_from_vault(&label) {
+                                    self.set_status(format!("Failed to delete entry: {}", e));
+                                } else {
+                                    self.set_status(format!("Entry '{}' deleted", label));
+                                }
+                            }
+                        }
                         self.show_delete_confirm = false;
                         self.pending_delete_index = None;
-                        self.set_status("Entry deleted");
                     }
                 });
             });
     }
 
+    /// Deletes an entry from the vault by label.
+    fn delete_entry_from_vault(&mut self, label: &str) -> Result<()> {
+        let key = self
+            .vault_key
+            .as_ref()
+            .ok_or_else(|| anyhow!("vault key is unavailable"))?;
+        let vault = self
+            .vault
+            .as_mut()
+            .ok_or_else(|| anyhow!("vault is not loaded"))?;
+
+        vault.remove_entry(label)?;
+        self.store.save_vault(vault, key)?;
+        self.vault_entries = Self::entries_from_vault(vault, key)?;
+        Ok(())
+    }
+
     fn render_add_entry_form(&mut self, ui: &mut egui::Ui) {
         ui.group(|ui| {
-            ui.label(RichText::new("New vault entry").strong());
+            let form_title = if self.edit_mode { "Edit vault entry" } else { "New vault entry" };
+            ui.label(RichText::new(form_title).strong());
             ui.add_space(6.0);
+
+            // Title field is read-only in edit mode (it's the key)
             ui.label("Title");
-            ui.add(egui::TextEdit::singleline(&mut self.entry_title).hint_text("e.g. Bank login"));
+            if self.edit_mode {
+                ui.label(RichText::new(&self.entry_title).italics());
+            } else {
+                ui.add(egui::TextEdit::singleline(&mut self.entry_title).hint_text("e.g. Bank login"));
+            }
             ui.add_space(6.0);
             ui.label("Username");
             ui.add(
@@ -1278,23 +1441,24 @@ impl LilypadApp {
                     self.entry_password = self.generated_password.clone();
                 }
                 if ui.button("Cancel").clicked() {
-                    self.show_add_entry = false;
+                    self.clear_entry_form();
                 }
                 let save_enabled =
                     !self.entry_title.trim().is_empty() && !self.entry_password.trim().is_empty();
+                let save_label = if self.edit_mode { "Update entry" } else { "Save entry" };
                 if ui
-                    .add_enabled(save_enabled, egui::Button::new("Save entry"))
+                    .add_enabled(save_enabled, egui::Button::new(save_label))
                     .clicked()
                 {
                     match self.save_entry_to_vault() {
                         Ok(()) => {
-                            self.entry_title.clear();
-                            self.entry_username.clear();
-                            self.entry_password.clear();
-                            self.entry_url.clear();
-                            self.entry_notes.clear();
-                            self.show_add_entry = false;
-                            self.status_message = Some("Entry saved to vault".to_string());
+                            let msg = if self.edit_mode {
+                                "Entry updated"
+                            } else {
+                                "Entry saved to vault"
+                            };
+                            self.clear_entry_form();
+                            self.status_message = Some(msg.to_string());
                         }
                         Err(error) => {
                             self.status_message =
@@ -1304,6 +1468,18 @@ impl LilypadApp {
                 }
             });
         });
+    }
+
+    /// Clears the entry form and resets edit mode.
+    fn clear_entry_form(&mut self) {
+        self.entry_title.clear();
+        self.entry_username.clear();
+        self.entry_password.clear();
+        self.entry_url.clear();
+        self.entry_notes.clear();
+        self.show_add_entry = false;
+        self.edit_mode = false;
+        self.edit_index = None;
     }
 
     fn export_vault_file(&mut self) {
