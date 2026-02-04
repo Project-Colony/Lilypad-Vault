@@ -1,0 +1,575 @@
+//! Advanced search functionality for vault entries.
+//!
+//! This module provides powerful search and filtering capabilities
+//! for finding entries in a vault.
+
+use serde::{Deserialize, Serialize};
+
+/// Sort order for search results.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum SortOrder {
+    /// Sort in ascending order (A-Z, oldest first, etc.).
+    #[default]
+    Ascending,
+    /// Sort in descending order (Z-A, newest first, etc.).
+    Descending,
+}
+
+/// Fields that can be used for sorting search results.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum SortField {
+    /// Sort by entry label (alphabetically).
+    #[default]
+    Label,
+    /// Sort by username.
+    Username,
+    /// Sort by creation date.
+    CreatedAt,
+    /// Sort by last update date.
+    UpdatedAt,
+    /// Sort by last access date.
+    LastAccessed,
+    /// Sort by access count (frequency).
+    AccessCount,
+    /// Sort by password age.
+    PasswordAge,
+}
+
+/// Comprehensive search filter for vault entries.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SearchFilter {
+    /// Text query to search in label, username, URL, and notes.
+    pub query: Option<String>,
+
+    /// Filter by entry type (Login, Card, etc.).
+    pub entry_types: Vec<String>,
+
+    /// Filter by tags (entries must have at least one of these tags).
+    pub tags: Vec<String>,
+
+    /// Filter by folder (exact match).
+    pub folder: Option<String>,
+
+    /// Include entries in subfolders when filtering by folder.
+    pub include_subfolders: bool,
+
+    /// Only show favorite entries.
+    pub favorites_only: bool,
+
+    /// Only show entries with TOTP enabled.
+    pub has_totp: Option<bool>,
+
+    /// Only show entries with attachments.
+    pub has_attachments: Option<bool>,
+
+    /// Only show entries with weak passwords.
+    pub weak_passwords_only: bool,
+
+    /// Only show entries with expired passwords.
+    pub expired_only: bool,
+
+    /// Only show entries with passwords expiring within N days.
+    pub expiring_within_days: Option<u32>,
+
+    /// Only show entries older than N days (by password age).
+    pub password_older_than_days: Option<u32>,
+
+    /// Only show entries with a specific color.
+    pub color: Option<String>,
+
+    /// Only show entries created after this timestamp.
+    pub created_after: Option<u64>,
+
+    /// Only show entries created before this timestamp.
+    pub created_before: Option<u64>,
+
+    /// Only show entries updated after this timestamp.
+    pub updated_after: Option<u64>,
+
+    /// Only show entries updated before this timestamp.
+    pub updated_before: Option<u64>,
+
+    /// Sort field.
+    pub sort_by: SortField,
+
+    /// Sort order.
+    pub sort_order: SortOrder,
+
+    /// Maximum number of results to return (0 = no limit).
+    pub limit: usize,
+
+    /// Number of results to skip (for pagination).
+    pub offset: usize,
+}
+
+impl SearchFilter {
+    /// Creates a new empty search filter.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the text query.
+    pub fn with_query(mut self, query: impl Into<String>) -> Self {
+        self.query = Some(query.into());
+        self
+    }
+
+    /// Adds an entry type filter.
+    pub fn with_entry_type(mut self, entry_type: impl Into<String>) -> Self {
+        self.entry_types.push(entry_type.into());
+        self
+    }
+
+    /// Adds a tag filter.
+    pub fn with_tag(mut self, tag: impl Into<String>) -> Self {
+        self.tags.push(tag.into());
+        self
+    }
+
+    /// Sets the folder filter.
+    pub fn with_folder(mut self, folder: impl Into<String>, include_subfolders: bool) -> Self {
+        self.folder = Some(folder.into());
+        self.include_subfolders = include_subfolders;
+        self
+    }
+
+    /// Filters to favorites only.
+    pub fn favorites_only(mut self) -> Self {
+        self.favorites_only = true;
+        self
+    }
+
+    /// Filters to entries with TOTP.
+    pub fn with_totp(mut self, has_totp: bool) -> Self {
+        self.has_totp = Some(has_totp);
+        self
+    }
+
+    /// Filters to entries with weak passwords.
+    pub fn weak_passwords_only(mut self) -> Self {
+        self.weak_passwords_only = true;
+        self
+    }
+
+    /// Filters to expired entries.
+    pub fn expired_only(mut self) -> Self {
+        self.expired_only = true;
+        self
+    }
+
+    /// Filters to entries expiring within N days.
+    pub fn expiring_within(mut self, days: u32) -> Self {
+        self.expiring_within_days = Some(days);
+        self
+    }
+
+    /// Sets the sort field and order.
+    pub fn sorted_by(mut self, field: SortField, order: SortOrder) -> Self {
+        self.sort_by = field;
+        self.sort_order = order;
+        self
+    }
+
+    /// Sets pagination.
+    pub fn paginate(mut self, limit: usize, offset: usize) -> Self {
+        self.limit = limit;
+        self.offset = offset;
+        self
+    }
+}
+
+/// Entry data for search (simplified for filtering).
+#[derive(Debug, Clone)]
+pub struct SearchableEntry {
+    /// Entry label.
+    pub label: String,
+    /// Username if set.
+    pub username: Option<String>,
+    /// URL if set.
+    pub url: Option<String>,
+    /// Entry type as string.
+    pub entry_type: String,
+    /// Tags.
+    pub tags: Vec<String>,
+    /// Folder path.
+    pub folder: Option<String>,
+    /// Is favorite.
+    pub is_favorite: bool,
+    /// Has TOTP enabled.
+    pub has_totp: bool,
+    /// Has attachments.
+    pub has_attachments: bool,
+    /// Notes (for search).
+    pub notes: Option<String>,
+    /// Created timestamp.
+    pub created_at: u64,
+    /// Updated timestamp.
+    pub updated_at: u64,
+    /// Last accessed timestamp.
+    pub last_accessed_at: Option<u64>,
+    /// Access count.
+    pub access_count: u64,
+    /// Password age in days.
+    pub password_age_days: u64,
+    /// Days until password expires (None if no expiry).
+    pub days_until_expiry: Option<i64>,
+    /// Is password expired.
+    pub is_expired: bool,
+    /// Is password weak.
+    pub is_weak_password: bool,
+    /// Color label.
+    pub color: Option<String>,
+}
+
+/// Result of a search operation.
+#[derive(Debug, Clone)]
+pub struct SearchResult {
+    /// Entry labels that match the filter.
+    pub entries: Vec<String>,
+    /// Total count before pagination.
+    pub total_count: usize,
+    /// Whether there are more results.
+    pub has_more: bool,
+}
+
+/// Advanced search engine for vault entries.
+pub struct AdvancedSearch;
+
+impl AdvancedSearch {
+    /// Searches entries using the given filter.
+    pub fn search(entries: &[SearchableEntry], filter: &SearchFilter) -> SearchResult {
+        let mut matching: Vec<&SearchableEntry> = entries
+            .iter()
+            .filter(|entry| Self::matches_filter(entry, filter))
+            .collect();
+
+        let total_count = matching.len();
+
+        // Sort results
+        Self::sort_entries(&mut matching, filter.sort_by, filter.sort_order);
+
+        // Apply pagination
+        let has_more = if filter.limit > 0 {
+            filter.offset + filter.limit < total_count
+        } else {
+            false
+        };
+
+        let entries: Vec<String> = if filter.limit > 0 {
+            matching
+                .into_iter()
+                .skip(filter.offset)
+                .take(filter.limit)
+                .map(|e| e.label.clone())
+                .collect()
+        } else {
+            matching
+                .into_iter()
+                .skip(filter.offset)
+                .map(|e| e.label.clone())
+                .collect()
+        };
+
+        SearchResult {
+            entries,
+            total_count,
+            has_more,
+        }
+    }
+
+    /// Checks if an entry matches the filter.
+    fn matches_filter(entry: &SearchableEntry, filter: &SearchFilter) -> bool {
+        // Text query
+        if let Some(ref query) = filter.query {
+            let q = query.to_lowercase();
+            let matches_label = entry.label.to_lowercase().contains(&q);
+            let matches_username = entry
+                .username
+                .as_ref()
+                .map(|u| u.to_lowercase().contains(&q))
+                .unwrap_or(false);
+            let matches_url = entry
+                .url
+                .as_ref()
+                .map(|u| u.to_lowercase().contains(&q))
+                .unwrap_or(false);
+            let matches_notes = entry
+                .notes
+                .as_ref()
+                .map(|n| n.to_lowercase().contains(&q))
+                .unwrap_or(false);
+            let matches_tags = entry.tags.iter().any(|t| t.to_lowercase().contains(&q));
+
+            if !(matches_label || matches_username || matches_url || matches_notes || matches_tags)
+            {
+                return false;
+            }
+        }
+
+        // Entry type filter
+        if !filter.entry_types.is_empty()
+            && !filter
+                .entry_types
+                .iter()
+                .any(|t| t.eq_ignore_ascii_case(&entry.entry_type))
+        {
+            return false;
+        }
+
+        // Tag filter
+        if !filter.tags.is_empty() {
+            let has_matching_tag = filter.tags.iter().any(|filter_tag| {
+                entry
+                    .tags
+                    .iter()
+                    .any(|entry_tag| entry_tag.eq_ignore_ascii_case(filter_tag))
+            });
+            if !has_matching_tag {
+                return false;
+            }
+        }
+
+        // Folder filter
+        if let Some(ref folder) = filter.folder {
+            match &entry.folder {
+                Some(entry_folder) => {
+                    if filter.include_subfolders {
+                        let prefix = format!("{}/", folder);
+                        if entry_folder != folder && !entry_folder.starts_with(&prefix) {
+                            return false;
+                        }
+                    } else if entry_folder != folder {
+                        return false;
+                    }
+                }
+                None => return false,
+            }
+        }
+
+        // Favorites filter
+        if filter.favorites_only && !entry.is_favorite {
+            return false;
+        }
+
+        // TOTP filter
+        if let Some(has_totp) = filter.has_totp {
+            if entry.has_totp != has_totp {
+                return false;
+            }
+        }
+
+        // Attachments filter
+        if let Some(has_attachments) = filter.has_attachments {
+            if entry.has_attachments != has_attachments {
+                return false;
+            }
+        }
+
+        // Weak password filter
+        if filter.weak_passwords_only && !entry.is_weak_password {
+            return false;
+        }
+
+        // Expired filter
+        if filter.expired_only && !entry.is_expired {
+            return false;
+        }
+
+        // Expiring within N days filter
+        if let Some(days) = filter.expiring_within_days {
+            match entry.days_until_expiry {
+                Some(d) if d >= 0 && d <= days as i64 => {}
+                _ => return false,
+            }
+        }
+
+        // Password older than N days filter
+        if let Some(days) = filter.password_older_than_days {
+            if entry.password_age_days < days as u64 {
+                return false;
+            }
+        }
+
+        // Color filter
+        if let Some(ref color) = filter.color {
+            match &entry.color {
+                Some(c) if c.eq_ignore_ascii_case(color) => {}
+                _ => return false,
+            }
+        }
+
+        // Date range filters
+        if let Some(after) = filter.created_after {
+            if entry.created_at < after {
+                return false;
+            }
+        }
+
+        if let Some(before) = filter.created_before {
+            if entry.created_at > before {
+                return false;
+            }
+        }
+
+        if let Some(after) = filter.updated_after {
+            if entry.updated_at < after {
+                return false;
+            }
+        }
+
+        if let Some(before) = filter.updated_before {
+            if entry.updated_at > before {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Sorts entries by the specified field and order.
+    fn sort_entries(
+        entries: &mut [&SearchableEntry],
+        field: SortField,
+        order: SortOrder,
+    ) {
+        entries.sort_by(|a, b| {
+            let cmp = match field {
+                SortField::Label => a.label.to_lowercase().cmp(&b.label.to_lowercase()),
+                SortField::Username => {
+                    let a_user = a.username.as_deref().unwrap_or("");
+                    let b_user = b.username.as_deref().unwrap_or("");
+                    a_user.to_lowercase().cmp(&b_user.to_lowercase())
+                }
+                SortField::CreatedAt => a.created_at.cmp(&b.created_at),
+                SortField::UpdatedAt => a.updated_at.cmp(&b.updated_at),
+                SortField::LastAccessed => {
+                    a.last_accessed_at.unwrap_or(0).cmp(&b.last_accessed_at.unwrap_or(0))
+                }
+                SortField::AccessCount => a.access_count.cmp(&b.access_count),
+                SortField::PasswordAge => a.password_age_days.cmp(&b.password_age_days),
+            };
+
+            match order {
+                SortOrder::Ascending => cmp,
+                SortOrder::Descending => cmp.reverse(),
+            }
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_entry(label: &str) -> SearchableEntry {
+        SearchableEntry {
+            label: label.to_string(),
+            username: Some("user".to_string()),
+            url: Some("https://example.com".to_string()),
+            entry_type: "Login".to_string(),
+            tags: vec!["test".to_string()],
+            folder: Some("Work".to_string()),
+            is_favorite: false,
+            has_totp: false,
+            has_attachments: false,
+            notes: None,
+            created_at: 1000,
+            updated_at: 2000,
+            last_accessed_at: Some(3000),
+            access_count: 5,
+            password_age_days: 30,
+            days_until_expiry: None,
+            is_expired: false,
+            is_weak_password: false,
+            color: None,
+        }
+    }
+
+    #[test]
+    fn test_query_search() {
+        let entries = vec![
+            create_test_entry("Gmail"),
+            create_test_entry("GitHub"),
+            create_test_entry("Facebook"),
+        ];
+
+        let filter = SearchFilter::new().with_query("git");
+        let result = AdvancedSearch::search(&entries, &filter);
+
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "GitHub");
+    }
+
+    #[test]
+    fn test_favorites_filter() {
+        let mut entries = vec![
+            create_test_entry("Entry1"),
+            create_test_entry("Entry2"),
+        ];
+        entries[0].is_favorite = true;
+
+        let filter = SearchFilter::new().favorites_only();
+        let result = AdvancedSearch::search(&entries, &filter);
+
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "Entry1");
+    }
+
+    #[test]
+    fn test_folder_filter() {
+        let mut entries = vec![
+            create_test_entry("Entry1"),
+            create_test_entry("Entry2"),
+        ];
+        entries[0].folder = Some("Work".to_string());
+        entries[1].folder = Some("Work/Projects".to_string());
+
+        // Exact folder match
+        let filter = SearchFilter::new().with_folder("Work", false);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+
+        // Including subfolders
+        let filter = SearchFilter::new().with_folder("Work", true);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 2);
+    }
+
+    #[test]
+    fn test_sorting() {
+        let mut entries = vec![
+            create_test_entry("Zebra"),
+            create_test_entry("Apple"),
+            create_test_entry("Mango"),
+        ];
+        entries[0].access_count = 10;
+        entries[1].access_count = 5;
+        entries[2].access_count = 15;
+
+        let filter = SearchFilter::new().sorted_by(SortField::Label, SortOrder::Ascending);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.entries, vec!["Apple", "Mango", "Zebra"]);
+
+        let filter = SearchFilter::new().sorted_by(SortField::AccessCount, SortOrder::Descending);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.entries, vec!["Mango", "Zebra", "Apple"]);
+    }
+
+    #[test]
+    fn test_pagination() {
+        let entries: Vec<SearchableEntry> = (0..10)
+            .map(|i| create_test_entry(&format!("Entry{}", i)))
+            .collect();
+
+        let filter = SearchFilter::new().paginate(3, 0);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.entries.len(), 3);
+        assert_eq!(result.total_count, 10);
+        assert!(result.has_more);
+
+        let filter = SearchFilter::new().paginate(3, 9);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.entries.len(), 1);
+        assert!(!result.has_more);
+    }
+}
