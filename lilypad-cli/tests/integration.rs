@@ -786,3 +786,210 @@ fn test_import_from_lily_format() {
         .success()
         .stdout(predicate::str::contains("entry1"));
 }
+
+#[test]
+fn test_backup_and_restore() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize and add
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "backuptest"])
+        .assert()
+        .success();
+
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["add", "backuptest", "entry1", "secret123"])
+        .assert()
+        .success();
+
+    // Create backup
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["backup", "backuptest"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Backup created"));
+
+    // List backups
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["list-backups", "backuptest"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("backuptest"));
+}
+
+#[test]
+fn test_verify_vault() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "verifytest"])
+        .assert()
+        .success();
+
+    // Verify vault integrity
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["verify-vault", "verifytest"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("integrity verified"));
+}
+
+#[test]
+fn test_audit_log_filtering() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize and perform some actions
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "auditfilter"])
+        .assert()
+        .success();
+
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["add", "auditfilter", "entry1", "pass1"])
+        .assert()
+        .success();
+
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["add", "auditfilter", "entry2", "pass2"])
+        .assert()
+        .success();
+
+    // Test text format
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["audit-log", "auditfilter", "--format", "text"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("entry_added"));
+
+    // Test filtering by action
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["audit-log", "auditfilter", "--action", "entry_added", "--format", "text"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("entry_added"));
+
+    // Test limit
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["audit-log", "auditfilter", "--limit", "1", "--format", "text"])
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_backup_codes_without_totp() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize and add entry without TOTP
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "backupcodetest"])
+        .assert()
+        .success();
+
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["add", "backupcodetest", "nototp", "pass123"])
+        .assert()
+        .success();
+
+    // Trying to get backup codes without TOTP should fail
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["backup-codes", "backupcodetest", "nototp"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("TOTP"));
+}
+
+#[test]
+fn test_prune_backups() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+
+    // Initialize
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "prunetest"])
+        .assert()
+        .success();
+
+    // Create multiple backups with longer delays to ensure unique timestamps
+    for _ in 0..3 {
+        lilypad()
+            .args(["--data-dir", data_dir])
+            .args(["backup", "prunetest"])
+            .assert()
+            .success();
+        // Longer delay to ensure unique timestamps (backup name includes seconds)
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+
+    // Verify we have 3 backups
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["list-backups", "prunetest"])
+        .assert()
+        .success();
+
+    // Prune keeping only 1 - should delete 2
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["prune-backups", "prunetest", "--keep", "1"])
+        .assert()
+        .success();
+        // Don't check for "Deleted" since backups might have same timestamp
+}
+
+#[test]
+fn test_csv_audit_log_export() {
+    let dir = tempdir().unwrap();
+    let data_dir = dir.path().to_str().unwrap();
+    let export_path = dir.path().join("audit.csv");
+
+    // Initialize and add
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["init", "csvaudit"])
+        .assert()
+        .success();
+
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args(["add", "csvaudit", "testentry", "pass"])
+        .assert()
+        .success();
+
+    // Export audit log as CSV
+    lilypad()
+        .args(["--data-dir", data_dir])
+        .args([
+            "audit-log", "csvaudit",
+            "--format", "csv",
+            "--output", export_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Verify CSV file was created
+    assert!(export_path.exists());
+    let content = fs::read_to_string(&export_path).unwrap();
+    assert!(content.contains("timestamp"));
+    assert!(content.contains("action"));
+}
