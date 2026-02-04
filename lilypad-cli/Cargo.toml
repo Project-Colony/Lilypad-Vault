@@ -15,6 +15,7 @@ clap_complete.workspace = true
 csv.workspace = true
 lilypad-common = { path = "../lilypad-common" }
 lilypad-core = { path = "../lilypad-core" }
+lilypad-oauth = { path = "../lilypad-oauth" }
 lilypad-storage = { path = "../lilypad-storage" }
 rand.workspace = true
 reqwest.workspace = true
@@ -22,6 +23,7 @@ rpassword = "7.3"
 serde.workspace = true
 serde_json.workspace = true
 sha1.workspace = true
+sha2.workspace = true
 tempfile.workspace = true
 totp-rs.workspace = true
 zeroize.workspace = true
