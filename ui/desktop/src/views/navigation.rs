@@ -70,6 +70,7 @@ pub fn view(theme: LilypadTheme, selected_category: usize) -> Element<'static, M
                         palette.text_muted
                     }),
             ]
+            .width(Length::Fill)
             .align_x(Horizontal::Center);
 
             let style_fn = move |_theme: &iced::Theme, status: button::Status| {
