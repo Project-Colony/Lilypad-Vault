@@ -23,6 +23,11 @@ pub struct VaultViewParams<'a> {
     pub entry_password: &'a str,
     pub entry_url: &'a str,
     pub entry_notes: &'a str,
+    pub entry_email: &'a str,
+    pub entry_phone: &'a str,
+    pub entry_folder: &'a str,
+    pub entry_tags: &'a [String],
+    pub entry_new_tag: &'a str,
 }
 
 /// Render the vault entries section
@@ -39,6 +44,11 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
         entry_password,
         entry_url,
         entry_notes,
+        entry_email,
+        entry_phone,
+        entry_folder,
+        entry_tags,
+        entry_new_tag,
     } = params;
     let palette = theme.palette();
 
@@ -48,19 +58,12 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
         .enumerate()
         .filter(|(_, entry)| {
             // Search filter
+            let query_lower = search_query.to_lowercase();
             let matches_search = search_query.is_empty()
-                || entry
-                    .title
-                    .to_lowercase()
-                    .contains(&search_query.to_lowercase())
-                || entry
-                    .username
-                    .to_lowercase()
-                    .contains(&search_query.to_lowercase())
-                || entry
-                    .url
-                    .to_lowercase()
-                    .contains(&search_query.to_lowercase());
+                || entry.title.to_lowercase().contains(&query_lower)
+                || entry.username.to_lowercase().contains(&query_lower)
+                || entry.url.to_lowercase().contains(&query_lower)
+                || entry.tags.iter().any(|t| t.to_lowercase().contains(&query_lower));
 
             // View mode filter
             let matches_mode = match view_mode {
@@ -186,6 +189,11 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
             entry_password,
             entry_url,
             entry_notes,
+            entry_email,
+            entry_phone,
+            entry_folder,
+            entry_tags,
+            entry_new_tag,
         ))
     } else {
         None
@@ -254,7 +262,62 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
         .size(13)
         .color(palette.text_secondary);
 
-    let info_column = column![title_text, username_text,].spacing(2);
+    let mut info_column = column![title_text, username_text,].spacing(2);
+
+    // Show tags as small badges and folder/TOTP indicators
+    let has_tags = !entry.tags.is_empty();
+    let has_folder = entry.folder.is_some();
+    let has_totp = entry.totp_secret.is_some();
+
+    if has_tags || has_folder || has_totp {
+        let mut badge_row = row![].spacing(4).align_y(Vertical::Center);
+
+        if has_totp {
+            badge_row = badge_row.push(
+                container(text("TOTP").size(10).color(palette.primary))
+                    .padding([2, 6])
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(iced::Color {
+                            a: 0.15,
+                            ..palette.primary
+                        })),
+                        border: iced::Border {
+                            radius: 3.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }),
+            );
+        }
+
+        if let Some(ref folder) = entry.folder {
+            let folder_str = folder.clone();
+            badge_row = badge_row.push(
+                text(format!("/{}", folder_str))
+                    .size(10)
+                    .color(palette.text_muted),
+            );
+        }
+
+        for tag in &entry.tags {
+            let tag_str = tag.clone();
+            badge_row = badge_row.push(
+                container(text(tag_str).size(10).color(palette.text_muted))
+                    .padding([1, 5])
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(palette.surface_variant)),
+                        border: iced::Border {
+                            radius: 3.0.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    }),
+            );
+        }
+
+        info_column = info_column.push(Space::with_height(2));
+        info_column = info_column.push(badge_row);
+    }
 
     // Strength indicator
     let strength_color = match entry.password_strength {
@@ -368,6 +431,7 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
 }
 
 /// Render the add/edit entry form
+#[allow(clippy::too_many_arguments)]
 fn entry_form(
     theme: LilypadTheme,
     edit_mode: bool,
@@ -376,6 +440,11 @@ fn entry_form(
     entry_password: &str,
     entry_url: &str,
     entry_notes: &str,
+    entry_email: &str,
+    entry_phone: &str,
+    entry_folder: &str,
+    entry_tags: &[String],
+    entry_new_tag: &str,
 ) -> Element<'static, Message> {
     let palette = theme.palette();
 
@@ -389,10 +458,18 @@ fn entry_form(
 
     let username_input = labeled_input(
         theme,
-        "Username / Email",
-        "e.g., john@example.com",
+        "Username",
+        "e.g., john_doe",
         entry_username.to_string(),
         Message::EntryUsernameChanged,
+    );
+
+    let email_input = labeled_input(
+        theme,
+        "Email (optional)",
+        "e.g., john@example.com",
+        entry_email.to_string(),
+        Message::EntryEmailChanged,
     );
 
     let password_row = row![
@@ -436,6 +513,67 @@ fn entry_form(
         Message::EntryUrlChanged,
     );
 
+    let phone_input = labeled_input(
+        theme,
+        "Phone (optional)",
+        "e.g., +33 6 12 34 56 78",
+        entry_phone.to_string(),
+        Message::EntryPhoneChanged,
+    );
+
+    let folder_input = labeled_input(
+        theme,
+        "Folder (optional)",
+        "e.g., Work/Email",
+        entry_folder.to_string(),
+        Message::EntryFolderChanged,
+    );
+
+    // Tags section
+    let tags_label = text("Tags (optional)")
+        .size(13)
+        .color(palette.text_secondary);
+
+    let mut tags_display = row![].spacing(6).align_y(Vertical::Center);
+    for (i, tag) in entry_tags.iter().enumerate() {
+        let tag_str = tag.clone();
+        tags_display = tags_display.push(
+            row![
+                text(tag_str).size(12).color(palette.text_secondary),
+                button(text("x").size(10).color(palette.text_muted))
+                    .padding([2, 4])
+                    .style(move |_theme, status| match status {
+                        button::Status::Hovered => theme::icon_button_hovered(theme),
+                        _ => theme::icon_button(theme),
+                    })
+                    .on_press(Message::RemoveEntryTag(i)),
+            ]
+            .spacing(2)
+            .align_y(Vertical::Center),
+        );
+    }
+
+    let tag_input_row = row![
+        text_input("Add tag...", entry_new_tag)
+            .padding(10)
+            .size(13)
+            .on_input(Message::EntryNewTagChanged)
+            .on_submit(Message::AddEntryTag)
+            .style(move |_theme, status| match status {
+                text_input::Status::Focused => theme::text_input_focused(theme),
+                _ => theme::text_input_style(theme),
+            }),
+        Space::with_width(8),
+        button(text("+").size(14))
+            .padding([8, 14])
+            .style(move |_theme, status| match status {
+                button::Status::Hovered => theme::secondary_button_hovered(theme),
+                _ => theme::secondary_button(theme),
+            })
+            .on_press(Message::AddEntryTag),
+    ]
+    .align_y(Vertical::Center);
+
     let notes_label = text("Notes (optional)")
         .size(13)
         .color(palette.text_secondary);
@@ -478,9 +616,21 @@ fn entry_form(
         Space::with_height(16),
         username_input,
         Space::with_height(16),
+        email_input,
+        Space::with_height(16),
         password_row,
         Space::with_height(16),
         url_input,
+        Space::with_height(16),
+        phone_input,
+        Space::with_height(16),
+        folder_input,
+        Space::with_height(16),
+        tags_label,
+        Space::with_height(6),
+        tags_display,
+        Space::with_height(6),
+        tag_input_row,
         Space::with_height(16),
         notes_label,
         Space::with_height(6),

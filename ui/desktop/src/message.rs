@@ -56,6 +56,18 @@ pub enum Message {
     EntryUrlChanged(String),
     /// Entry notes changed
     EntryNotesChanged(String),
+    /// Entry email changed
+    EntryEmailChanged(String),
+    /// Entry phone changed
+    EntryPhoneChanged(String),
+    /// Entry folder changed
+    EntryFolderChanged(String),
+    /// New tag input changed
+    EntryNewTagChanged(String),
+    /// Add a tag to the entry being edited
+    AddEntryTag,
+    /// Remove a tag from the entry being edited
+    RemoveEntryTag(usize),
     /// Save the current entry (add or update)
     SaveEntry,
     /// Start editing an entry by index
