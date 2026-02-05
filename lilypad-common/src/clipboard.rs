@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
+use zeroize::Zeroize;
 
 /// Global generation counter for clipboard operations.
 /// Each copy operation increments this counter, and the clear operation
@@ -52,14 +53,14 @@ pub fn copy_to_clipboard_with_timeout(value: &str, timeout_secs: u64) -> Result<
     let our_generation = CLIPBOARD_GENERATION.load(Ordering::SeqCst);
 
     if timeout_secs > 0 {
-        let value = value.to_string();
+        let mut value = value.to_string();
         thread::spawn(move || {
             thread::sleep(Duration::from_secs(timeout_secs));
 
             // Only clear if no newer copy operation has occurred
             let current_generation = CLIPBOARD_GENERATION.load(Ordering::SeqCst);
             if current_generation != our_generation {
-                // A newer copy operation occurred, don't clear
+                value.zeroize();
                 return;
             }
 
@@ -69,6 +70,7 @@ pub fn copy_to_clipboard_with_timeout(value: &str, timeout_secs: u64) -> Result<
                     let _ = clipboard.set_text(String::new());
                 }
             }
+            value.zeroize();
         });
     }
 
@@ -151,6 +153,12 @@ impl ClipboardGuard {
     /// Returns the timeout in seconds.
     pub fn timeout_secs(&self) -> u64 {
         self.timeout_secs
+    }
+}
+
+impl Drop for ClipboardGuard {
+    fn drop(&mut self) {
+        self.value.zeroize();
     }
 }
 

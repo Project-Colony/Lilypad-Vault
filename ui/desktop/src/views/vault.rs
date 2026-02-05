@@ -10,20 +10,36 @@ use crate::message::Message;
 use crate::state::{VaultEntry, VaultViewMode};
 use crate::theme::{self, LilypadTheme};
 
+/// Parameters for the vault view.
+pub struct VaultViewParams<'a> {
+    pub theme: LilypadTheme,
+    pub entries: &'a [VaultEntry],
+    pub search_query: &'a str,
+    pub view_mode: VaultViewMode,
+    pub show_add_entry: bool,
+    pub edit_mode: bool,
+    pub entry_title: &'a str,
+    pub entry_username: &'a str,
+    pub entry_password: &'a str,
+    pub entry_url: &'a str,
+    pub entry_notes: &'a str,
+}
+
 /// Render the vault entries section
-pub fn view(
-    theme: LilypadTheme,
-    entries: &[VaultEntry],
-    search_query: &str,
-    view_mode: VaultViewMode,
-    show_add_entry: bool,
-    edit_mode: bool,
-    entry_title: &str,
-    entry_username: &str,
-    entry_password: &str,
-    entry_url: &str,
-    entry_notes: &str,
-) -> Element<'static, Message> {
+pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
+    let VaultViewParams {
+        theme,
+        entries,
+        search_query,
+        view_mode,
+        show_add_entry,
+        edit_mode,
+        entry_title,
+        entry_username,
+        entry_password,
+        entry_url,
+        entry_notes,
+    } = params;
     let palette = theme.palette();
 
     // Filter entries based on search and view mode

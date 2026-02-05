@@ -4,17 +4,12 @@ use crate::error::{OAuthError, Result};
 use serde::{Deserialize, Serialize};
 
 /// OAuth provider enumeration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum OAuthProvider {
     /// GitHub OAuth provider.
+    #[default]
     GitHub,
-}
-
-impl Default for OAuthProvider {
-    fn default() -> Self {
-        OAuthProvider::GitHub
-    }
 }
 
 impl std::fmt::Display for OAuthProvider {

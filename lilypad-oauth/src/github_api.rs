@@ -430,7 +430,7 @@ impl GitHubClient {
                 let path = parts.get(7..).map(|p| p.join("/")).unwrap_or_default();
                 return Err(OAuthError::FileNotFound { repo, path });
             } else {
-                let repo = url.split('/').last().unwrap_or("unknown").to_string();
+                let repo = url.split('/').next_back().unwrap_or("unknown").to_string();
                 return Err(OAuthError::RepoNotFound(repo));
             }
         }

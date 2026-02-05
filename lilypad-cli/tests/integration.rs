@@ -1,12 +1,13 @@
 //! Integration tests for the Lilypad CLI.
 
+use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
 use predicates::prelude::*;
 use std::fs;
 use tempfile::tempdir;
 
 fn lilypad() -> Command {
-    Command::cargo_bin("lilypad-cli").unwrap()
+    cargo_bin_cmd!("lilypad-cli")
 }
 
 #[test]

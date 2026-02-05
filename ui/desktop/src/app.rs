@@ -158,7 +158,15 @@ impl LilypadApp {
     /// Create a new application instance
     pub fn new() -> (Self, Task<Message>) {
         let config = default_config();
-        let store = LocalStore::new(&config).expect("store init");
+        let store = match LocalStore::new(&config) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Failed to initialize store: {e}");
+                // Create a minimal store with fallback data dir so the app can still display an error
+                LocalStore::new(&default_config())
+                    .expect("fallback store init with default config must succeed")
+            }
+        };
         let now = Instant::now();
 
         let mut app = Self {
@@ -678,30 +686,30 @@ impl LilypadApp {
         );
 
         let main_content: Element<Message> = match Category::from_index(self.selected_category) {
-            Category::Credentials => views::vault::view(
-                self.theme,
-                &self.vault_entries,
-                &self.search_query,
-                self.vault_view_mode,
-                self.show_add_entry,
-                self.edit_mode,
-                &self.entry_title,
-                &self.entry_username,
-                &self.entry_password,
-                &self.entry_url,
-                &self.entry_notes,
-            ),
+            Category::Credentials => views::vault::view(views::vault::VaultViewParams {
+                theme: self.theme,
+                entries: &self.vault_entries,
+                search_query: &self.search_query,
+                view_mode: self.vault_view_mode,
+                show_add_entry: self.show_add_entry,
+                edit_mode: self.edit_mode,
+                entry_title: &self.entry_title,
+                entry_username: &self.entry_username,
+                entry_password: &self.entry_password,
+                entry_url: &self.entry_url,
+                entry_notes: &self.entry_notes,
+            }),
             Category::Health => views::health::view(self.theme, self.health_report.as_ref()),
-            Category::Generator => views::generator::view(
-                self.theme,
-                &self.generated_password,
-                self.generator_length,
-                self.generator_lowercase,
-                self.generator_uppercase,
-                self.generator_digits,
-                self.generator_symbols,
-                self.settings.exclude_ambiguous_chars,
-            ),
+            Category::Generator => views::generator::view(views::generator::GeneratorViewParams {
+                theme: self.theme,
+                generated_password: &self.generated_password,
+                generator_length: self.generator_length,
+                generator_lowercase: self.generator_lowercase,
+                generator_uppercase: self.generator_uppercase,
+                generator_digits: self.generator_digits,
+                generator_symbols: self.generator_symbols,
+                exclude_ambiguous: self.settings.exclude_ambiguous_chars,
+            }),
             Category::Sync => views::sync::view(
                 self.theme,
                 self.github_authenticated,
@@ -1239,26 +1247,41 @@ impl LilypadApp {
     }
 
     fn refresh_health_report(&mut self) {
+        let vault_entries_ref = self.vault.as_ref().map(|v| &v.entries);
+
         let health_data: Vec<EntryHealthData> = self
             .vault_entries
             .iter()
-            .map(|e| {
-                // Calculate password age in days
+            .enumerate()
+            .map(|(i, e)| {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
                 let password_age_days = (now.saturating_sub(e.updated_at)) / (24 * 60 * 60);
 
+                // Cross-reference with the core Entry for password expiry data
+                let (days_until_expiry, is_expired_from_entry) =
+                    if let Some(core_entry) = vault_entries_ref.and_then(|entries| entries.get(i)) {
+                        (
+                            core_entry.days_until_password_expires(),
+                            core_entry.is_password_expired(),
+                        )
+                    } else {
+                        (None, e.is_expired)
+                    };
+
                 EntryHealthData {
                     label: e.title.clone(),
                     password: e.password.clone(),
                     has_username: !e.username.is_empty(),
                     has_url: !e.url.is_empty(),
-                    has_totp: false, // TODO: Check if entry has TOTP
+                    // TOTP status is stored in encrypted EntrySecret (CLI only);
+                    // desktop does not yet manage TOTP secrets
+                    has_totp: false,
                     password_age_days,
-                    days_until_expiry: None, // TODO: Get from entry if set
-                    is_expired: e.is_expired,
+                    days_until_expiry,
+                    is_expired: is_expired_from_entry,
                 }
             })
             .collect();

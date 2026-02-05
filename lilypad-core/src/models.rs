@@ -584,14 +584,13 @@ impl Vault {
         }
         let mut modified = 0;
         for entry in &mut self.entries {
-            if labels.contains(&entry.label.as_str()) {
-                if entry.metadata.tags.len() < MAX_TAGS_PER_ENTRY
-                    && !entry.metadata.tags.iter().any(|t| t == &tag)
-                {
-                    entry.metadata.tags.push(tag.clone());
-                    entry.updated_at = current_timestamp();
-                    modified += 1;
-                }
+            if labels.contains(&entry.label.as_str())
+                && entry.metadata.tags.len() < MAX_TAGS_PER_ENTRY
+                && !entry.metadata.tags.iter().any(|t| t == &tag)
+            {
+                entry.metadata.tags.push(tag.clone());
+                entry.updated_at = current_timestamp();
+                modified += 1;
             }
         }
         if modified > 0 {
@@ -1069,8 +1068,9 @@ impl EntryMetadata {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum EntryType {
+    #[default]
     Login,
     Card,
     Identity,
@@ -1079,12 +1079,6 @@ pub enum EntryType {
     Wifi,
     Server,
     Custom,
-}
-
-impl Default for EntryType {
-    fn default() -> Self {
-        EntryType::Login
-    }
 }
 
 /// Custom field for storing additional data with entries.

@@ -308,7 +308,7 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
             stats.expired_passwords += 1;
             expired_entries.push(entry.label.clone());
         } else if let Some(days) = entry.days_until_expiry {
-            if days <= 7 && days >= 0 {
+            if (0..=7).contains(&days) {
                 stats.expiring_soon += 1;
                 expiring_soon_entries.push(entry.label.clone());
             }
@@ -342,7 +342,7 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
 
     // Find reused passwords
     let mut reused_entries: Vec<String> = Vec::new();
-    for (_, labels) in &password_counts {
+    for labels in password_counts.values() {
         if labels.len() > 1 {
             stats.reused_passwords += labels.len();
             reused_entries.extend(labels.clone());
