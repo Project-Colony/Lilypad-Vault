@@ -259,12 +259,6 @@ impl TokenStoreManager {
     }
 }
 
-impl Default for TokenStoreManager {
-    fn default() -> Self {
-        Self::new().expect("failed to create default token store")
-    }
-}
-
 /// Returns the current Unix timestamp.
 fn current_timestamp() -> u64 {
     SystemTime::now()

@@ -131,7 +131,7 @@ impl OAuthFlow {
                     let response = tiny_http::Response::from_string(html)
                         .with_header(
                             tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html"[..])
-                                .unwrap(),
+                                .expect("valid static Content-Type header"),
                         );
                     let _ = request.respond(response);
 

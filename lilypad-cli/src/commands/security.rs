@@ -441,7 +441,7 @@ pub fn audit_vault(
         if entry.is_password_expired() {
             expired.push(entry.label.clone());
         } else if let Some(days) = entry.days_until_password_expires() {
-            if days <= 7 && days >= 0 {
+            if (0..=7).contains(&days) {
                 expiring_soon.push((entry.label.clone(), days));
             }
         }

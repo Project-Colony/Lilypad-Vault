@@ -3,7 +3,7 @@
 //! Contains all the state structures for the application.
 
 use lilypad_common::PasswordStrength;
-use lilypad_core::EntryColor;
+use lilypad_core::{CustomField, EntryColor, EntryType};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
@@ -50,15 +50,6 @@ impl VaultViewMode {
         VaultViewMode::Weak,
         VaultViewMode::Expired,
     ];
-}
-
-/// Entry payload for desktop (decrypted data)
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DesktopEntryPayload {
-    pub username: String,
-    pub password: String,
-    pub url: String,
-    pub notes: String,
 }
 
 /// Persisted application settings with versioning for forward compatibility
@@ -137,15 +128,32 @@ impl LockoutState {
     }
 }
 
-/// A decrypted vault entry with health metadata
+/// A decrypted vault entry with health metadata.
+///
+/// Contains data from both `EntryMetadata` (unencrypted) and `EntrySecret`
+/// (decrypted), providing a complete view of the entry for the Desktop UI.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct VaultEntry {
+    // Core fields
     pub title: String,
     pub username: String,
     pub password: String,
     pub url: String,
     pub notes: String,
+
+    // Additional secret fields (from EntrySecret)
+    pub email: String,
+    pub phone: String,
+    pub totp_secret: Option<String>,
+    pub custom_fields: Vec<CustomField>,
+
+    // Metadata fields (from EntryMetadata, unencrypted)
+    pub tags: Vec<String>,
+    pub folder: Option<String>,
+    pub entry_type: EntryType,
+
+    // Display / health data
     pub last_updated: String,
     pub updated_at: u64,
     pub is_favorite: bool,
@@ -159,6 +167,9 @@ pub struct VaultEntry {
 impl Drop for VaultEntry {
     fn drop(&mut self) {
         self.password.zeroize();
+        if let Some(ref mut totp) = self.totp_secret {
+            totp.zeroize();
+        }
     }
 }
 

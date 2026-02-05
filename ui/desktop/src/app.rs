@@ -20,15 +20,15 @@ use lilypad_common::{
 };
 use lilypad_core::{
     decrypt, default_config, derive_key, encrypt, CryptoAlgorithm, Entry, EntryMetadata,
-    KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
+    EntrySecret, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
 };
 use lilypad_storage::LocalStore;
 use zeroize::Zeroize;
 
 use crate::message::Message;
 use crate::state::{
-    AppSettings, Category, DesktopEntryPayload, LockoutState, VaultEntry, VaultViewMode,
-    DEFAULT_VAULT_NAME, SETTINGS_VERSION,
+    AppSettings, Category, LockoutState, VaultEntry, VaultViewMode, DEFAULT_VAULT_NAME,
+    SETTINGS_VERSION,
 };
 use crate::theme::{self, LilypadTheme};
 use crate::views;
@@ -82,6 +82,11 @@ pub struct LilypadApp {
     pub entry_password: String,
     pub entry_url: String,
     pub entry_notes: String,
+    pub entry_email: String,
+    pub entry_phone: String,
+    pub entry_folder: String,
+    pub entry_tags: Vec<String>,
+    pub entry_new_tag: String,
 
     // Settings
     pub settings: AppSettings,
@@ -158,7 +163,15 @@ impl LilypadApp {
     /// Create a new application instance
     pub fn new() -> (Self, Task<Message>) {
         let config = default_config();
-        let store = LocalStore::new(&config).expect("store init");
+        let store = match LocalStore::new(&config) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Failed to initialize store: {e}");
+                // Create a minimal store with fallback data dir so the app can still display an error
+                LocalStore::new(&default_config())
+                    .expect("fallback store init with default config must succeed")
+            }
+        };
         let now = Instant::now();
 
         let mut app = Self {
@@ -192,6 +205,11 @@ impl LilypadApp {
             entry_password: String::new(),
             entry_url: String::new(),
             entry_notes: String::new(),
+            entry_email: String::new(),
+            entry_phone: String::new(),
+            entry_folder: String::new(),
+            entry_tags: Vec::new(),
+            entry_new_tag: String::new(),
             settings: AppSettings::default(),
             show_settings: false,
             theme: LilypadTheme::ClassicGreen,
@@ -365,6 +383,30 @@ impl LilypadApp {
             }
             Message::EntryNotesChanged(notes) => {
                 self.entry_notes = notes;
+            }
+            Message::EntryEmailChanged(email) => {
+                self.entry_email = email;
+            }
+            Message::EntryPhoneChanged(phone) => {
+                self.entry_phone = phone;
+            }
+            Message::EntryFolderChanged(folder) => {
+                self.entry_folder = folder;
+            }
+            Message::EntryNewTagChanged(tag) => {
+                self.entry_new_tag = tag;
+            }
+            Message::AddEntryTag => {
+                let tag = self.entry_new_tag.trim().to_string();
+                if !tag.is_empty() && !self.entry_tags.contains(&tag) {
+                    self.entry_tags.push(tag);
+                    self.entry_new_tag.clear();
+                }
+            }
+            Message::RemoveEntryTag(index) => {
+                if index < self.entry_tags.len() {
+                    self.entry_tags.remove(index);
+                }
             }
             Message::SaveEntry => {
                 return self.save_entry();
@@ -678,30 +720,35 @@ impl LilypadApp {
         );
 
         let main_content: Element<Message> = match Category::from_index(self.selected_category) {
-            Category::Credentials => views::vault::view(
-                self.theme,
-                &self.vault_entries,
-                &self.search_query,
-                self.vault_view_mode,
-                self.show_add_entry,
-                self.edit_mode,
-                &self.entry_title,
-                &self.entry_username,
-                &self.entry_password,
-                &self.entry_url,
-                &self.entry_notes,
-            ),
+            Category::Credentials => views::vault::view(views::vault::VaultViewParams {
+                theme: self.theme,
+                entries: &self.vault_entries,
+                search_query: &self.search_query,
+                view_mode: self.vault_view_mode,
+                show_add_entry: self.show_add_entry,
+                edit_mode: self.edit_mode,
+                entry_title: &self.entry_title,
+                entry_username: &self.entry_username,
+                entry_password: &self.entry_password,
+                entry_url: &self.entry_url,
+                entry_notes: &self.entry_notes,
+                entry_email: &self.entry_email,
+                entry_phone: &self.entry_phone,
+                entry_folder: &self.entry_folder,
+                entry_tags: &self.entry_tags,
+                entry_new_tag: &self.entry_new_tag,
+            }),
             Category::Health => views::health::view(self.theme, self.health_report.as_ref()),
-            Category::Generator => views::generator::view(
-                self.theme,
-                &self.generated_password,
-                self.generator_length,
-                self.generator_lowercase,
-                self.generator_uppercase,
-                self.generator_digits,
-                self.generator_symbols,
-                self.settings.exclude_ambiguous_chars,
-            ),
+            Category::Generator => views::generator::view(views::generator::GeneratorViewParams {
+                theme: self.theme,
+                generated_password: &self.generated_password,
+                generator_length: self.generator_length,
+                generator_lowercase: self.generator_lowercase,
+                generator_uppercase: self.generator_uppercase,
+                generator_digits: self.generator_digits,
+                generator_symbols: self.generator_symbols,
+                exclude_ambiguous: self.settings.exclude_ambiguous_chars,
+            }),
             Category::Sync => views::sync::view(
                 self.theme,
                 self.github_authenticated,
@@ -985,26 +1032,42 @@ impl LilypadApp {
             v
         };
 
-        // Decrypt entries and build UI representation
+        // Decrypt entries and build UI representation.
+        // Deserialize as EntrySecret (the canonical encrypted format used by CLI).
+        // This is backwards-compatible with old DesktopEntryPayload data because
+        // serde ignores unknown fields and all EntrySecret fields except `password`
+        // have #[serde(default)].
         self.vault_entries = vault
             .entries
             .iter()
             .filter_map(|entry| {
                 let decrypted = decrypt(&key, &entry.ciphertext).ok()?;
-                let payload: DesktopEntryPayload = serde_json::from_slice(&decrypted).ok()?;
+                let secret: EntrySecret = serde_json::from_slice(&decrypted).ok()?;
 
-                let strength = validate_password_strength(&payload.password);
+                let strength = validate_password_strength(&secret.password);
+                let is_expired = entry.is_password_expired();
 
-                // Check if password is expired (older than 90 days)
-                let password_age_days = entry.password_age_days();
-                let is_expired = password_age_days > 90;
+                // Username and URL come from unencrypted EntryMetadata (canonical source)
+                let username = entry
+                    .metadata
+                    .username
+                    .clone()
+                    .unwrap_or_default();
+                let url = entry.metadata.url.clone().unwrap_or_default();
 
                 Some(VaultEntry {
                     title: entry.label.clone(),
-                    username: payload.username,
-                    password: payload.password,
-                    url: payload.url,
-                    notes: payload.notes,
+                    username,
+                    password: secret.password,
+                    url,
+                    notes: secret.notes.unwrap_or_default(),
+                    email: secret.email.unwrap_or_default(),
+                    phone: secret.phone.unwrap_or_default(),
+                    totp_secret: secret.totp_secret,
+                    custom_fields: secret.custom_fields,
+                    tags: entry.metadata.tags.clone(),
+                    folder: entry.metadata.folder.clone(),
+                    entry_type: entry.metadata.entry_type.clone(),
                     last_updated: format_timestamp_relative(entry.updated_at),
                     updated_at: entry.updated_at,
                     is_favorite: entry.is_favorite,
@@ -1064,6 +1127,11 @@ impl LilypadApp {
         self.entry_password.clear();
         self.entry_url.clear();
         self.entry_notes.clear();
+        self.entry_email.clear();
+        self.entry_phone.clear();
+        self.entry_folder.clear();
+        self.entry_tags.clear();
+        self.entry_new_tag.clear();
         self.edit_index = None;
     }
 
@@ -1074,6 +1142,11 @@ impl LilypadApp {
             self.entry_password = entry.password.clone();
             self.entry_url = entry.url.clone();
             self.entry_notes = entry.notes.clone();
+            self.entry_email = entry.email.clone();
+            self.entry_phone = entry.phone.clone();
+            self.entry_folder = entry.folder.clone().unwrap_or_default();
+            self.entry_tags = entry.tags.clone();
+            self.entry_new_tag.clear();
             self.edit_mode = true;
             self.edit_index = Some(index);
             self.show_add_entry = true;
@@ -1088,21 +1161,46 @@ impl LilypadApp {
             return Task::none();
         };
 
-        let payload = DesktopEntryPayload {
-            username: self.entry_username.clone(),
-            password: self.entry_password.clone(),
-            url: self.entry_url.clone(),
-            notes: self.entry_notes.clone(),
+        let was_edit_mode = self.edit_mode;
+
+        // When editing, load the existing EntrySecret to preserve fields we don't
+        // expose in the UI (attachments, totp_backup_codes, etc.)
+        let mut secret = if was_edit_mode {
+            self.edit_index
+                .and_then(|idx| vault.entries.get(idx))
+                .and_then(|entry| decrypt(key, &entry.ciphertext).ok())
+                .and_then(|bytes| serde_json::from_slice::<EntrySecret>(&bytes).ok())
+                .unwrap_or_else(|| EntrySecret::new(&self.entry_password))
+        } else {
+            EntrySecret::new(&self.entry_password)
         };
 
-        let payload_bytes = match serde_json::to_vec(&payload) {
+        // Update the fields that the form exposes
+        secret.password = self.entry_password.clone();
+        secret.notes = if self.entry_notes.is_empty() {
+            None
+        } else {
+            Some(self.entry_notes.clone())
+        };
+        secret.email = if self.entry_email.is_empty() {
+            None
+        } else {
+            Some(self.entry_email.clone())
+        };
+        secret.phone = if self.entry_phone.is_empty() {
+            None
+        } else {
+            Some(self.entry_phone.clone())
+        };
+
+        let secret_bytes = match serde_json::to_vec(&secret) {
             Ok(b) => b,
             Err(e) => {
                 self.set_status(format!("Failed to serialize entry: {}", e));
                 return Task::none();
             }
         };
-        let ciphertext = match encrypt(key, &payload_bytes) {
+        let ciphertext = match encrypt(key, &secret_bytes) {
             Ok(c) => c,
             Err(e) => {
                 self.set_status(format!("Encryption failed: {}", e));
@@ -1110,27 +1208,36 @@ impl LilypadApp {
             }
         };
 
-        let was_edit_mode = self.edit_mode;
+        // Build metadata with tags and folder
+        let metadata = EntryMetadata {
+            username: if self.entry_username.is_empty() {
+                None
+            } else {
+                Some(self.entry_username.clone())
+            },
+            url: if self.entry_url.is_empty() {
+                None
+            } else {
+                Some(self.entry_url.clone())
+            },
+            tags: self.entry_tags.clone(),
+            folder: if self.entry_folder.is_empty() {
+                None
+            } else {
+                Some(self.entry_folder.clone())
+            },
+            ..Default::default()
+        };
 
         if was_edit_mode {
             if let Some(index) = self.edit_index {
                 if let Some(entry) = vault.entries.get(index) {
                     let label = entry.label.clone();
-                    // Update entry ciphertext
                     let _ = vault.update_entry(&label, ciphertext);
+                    let _ = vault.update_entry_metadata(&label, metadata);
                 }
             }
         } else {
-            // Create new entry with metadata
-            let metadata = EntryMetadata {
-                username: Some(self.entry_username.clone()),
-                url: if self.entry_url.is_empty() {
-                    None
-                } else {
-                    Some(self.entry_url.clone())
-                },
-                ..Default::default()
-            };
             let entry = Entry::new_with_metadata(&self.entry_title, metadata, ciphertext);
             let _ = vault.add_entry(entry);
         }
@@ -1239,26 +1346,41 @@ impl LilypadApp {
     }
 
     fn refresh_health_report(&mut self) {
+        let vault_entries_ref = self.vault.as_ref().map(|v| &v.entries);
+
         let health_data: Vec<EntryHealthData> = self
             .vault_entries
             .iter()
-            .map(|e| {
-                // Calculate password age in days
+            .enumerate()
+            .map(|(i, e)| {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
                 let password_age_days = (now.saturating_sub(e.updated_at)) / (24 * 60 * 60);
 
+                // Cross-reference with the core Entry for password expiry data
+                let (days_until_expiry, is_expired_from_entry) =
+                    if let Some(core_entry) = vault_entries_ref.and_then(|entries| entries.get(i)) {
+                        (
+                            core_entry.days_until_password_expires(),
+                            core_entry.is_password_expired(),
+                        )
+                    } else {
+                        (None, e.is_expired)
+                    };
+
                 EntryHealthData {
                     label: e.title.clone(),
                     password: e.password.clone(),
                     has_username: !e.username.is_empty(),
                     has_url: !e.url.is_empty(),
-                    has_totp: false, // TODO: Check if entry has TOTP
+                    // TOTP status is stored in encrypted EntrySecret (CLI only);
+                    // desktop does not yet manage TOTP secrets
+                    has_totp: false,
                     password_age_days,
-                    days_until_expiry: None, // TODO: Get from entry if set
-                    is_expired: e.is_expired,
+                    days_until_expiry,
+                    is_expired: is_expired_from_entry,
                 }
             })
             .collect();
@@ -1315,15 +1437,20 @@ impl LilypadApp {
         for entry in &vault.entries {
             match decrypt(key, &entry.ciphertext) {
                 Ok(decrypted) => {
-                    if let Ok(payload) =
-                        serde_json::from_slice::<DesktopEntryPayload>(&decrypted)
+                    if let Ok(secret) =
+                        serde_json::from_slice::<EntrySecret>(&decrypted)
                     {
                         entries_json.push(serde_json::json!({
                             "label": entry.label,
-                            "username": payload.username,
-                            "password": payload.password,
-                            "url": payload.url,
-                            "notes": payload.notes,
+                            "username": entry.metadata.username,
+                            "password": secret.password,
+                            "url": entry.metadata.url,
+                            "notes": secret.notes,
+                            "email": secret.email,
+                            "phone": secret.phone,
+                            "totp_secret": secret.totp_secret,
+                            "tags": entry.metadata.tags,
+                            "folder": entry.metadata.folder,
                             "is_favorite": entry.is_favorite,
                             "created_at": entry.created_at,
                             "updated_at": entry.updated_at,
@@ -1463,17 +1590,30 @@ impl LilypadApp {
                                         entry_val["url"].as_str().unwrap_or("").to_string();
                                     let notes =
                                         entry_val["notes"].as_str().unwrap_or("").to_string();
+                                    let email =
+                                        entry_val["email"].as_str().unwrap_or("").to_string();
+                                    let tags: Vec<String> = entry_val["tags"]
+                                        .as_array()
+                                        .map(|arr| {
+                                            arr.iter()
+                                                .filter_map(|v| v.as_str().map(String::from))
+                                                .collect()
+                                        })
+                                        .unwrap_or_default();
+                                    let folder =
+                                        entry_val["folder"].as_str().map(String::from);
 
-                                    let payload = DesktopEntryPayload {
-                                        username: username.clone(),
-                                        password,
-                                        url: url.clone(),
-                                        notes,
-                                    };
+                                    let mut secret = EntrySecret::new(&password);
+                                    if !notes.is_empty() {
+                                        secret.notes = Some(notes);
+                                    }
+                                    if !email.is_empty() {
+                                        secret.email = Some(email);
+                                    }
 
-                                    let payload_bytes =
-                                        serde_json::to_vec(&payload).unwrap_or_default();
-                                    if let Ok(ciphertext) = encrypt(key, &payload_bytes) {
+                                    let secret_bytes =
+                                        serde_json::to_vec(&secret).unwrap_or_default();
+                                    if let Ok(ciphertext) = encrypt(key, &secret_bytes) {
                                         let metadata = EntryMetadata {
                                             username: if username.is_empty() {
                                                 None
@@ -1485,6 +1625,8 @@ impl LilypadApp {
                                             } else {
                                                 Some(url)
                                             },
+                                            tags,
+                                            folder,
                                             ..Default::default()
                                         };
                                         let entry = Entry::new_with_metadata(

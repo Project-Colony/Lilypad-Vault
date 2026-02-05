@@ -384,7 +384,7 @@ impl LocalStore {
     // ============== END BACKUP METHODS ==============
 
     /// Reads a vault file with a shared lock to prevent concurrent write issues.
-    fn read_vault_file_locked(&self, path: &PathBuf) -> Result<Vec<u8>> {
+    fn read_vault_file_locked(&self, path: &std::path::Path) -> Result<Vec<u8>> {
         let file = File::open(path)
             .with_context(|| format!("failed to open vault file: {}", path.display()))?;
 
@@ -409,7 +409,7 @@ impl LocalStore {
     /// This ensures that the vault file is never in an inconsistent state:
     /// - If the write fails, the original file remains unchanged
     /// - If the process crashes during write, the temp file is left behind (not the corrupted vault)
-    fn write_vault_file_atomic(&self, path: &PathBuf, bytes: &[u8]) -> Result<()> {
+    fn write_vault_file_atomic(&self, path: &std::path::Path, bytes: &[u8]) -> Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -457,8 +457,8 @@ impl LocalStore {
 /// Computes a SHA-256 checksum of the ciphertext for integrity verification.
 fn compute_checksum(ciphertext: &lilypad_core::Ciphertext) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(&ciphertext.nonce);
-    hasher.update(&ciphertext.data);
+    hasher.update(ciphertext.nonce);
+    hasher.update(&ciphertext.data); // Vec<u8> needs borrow
     let result = hasher.finalize();
     hex::encode(result)
 }

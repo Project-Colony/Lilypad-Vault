@@ -9,17 +9,31 @@ use iced::{Element, Length};
 use crate::message::Message;
 use crate::theme::{self, LilypadTheme};
 
+/// Parameters for the password generator view.
+pub struct GeneratorViewParams<'a> {
+    pub theme: LilypadTheme,
+    pub generated_password: &'a str,
+    pub generator_length: usize,
+    pub generator_lowercase: bool,
+    pub generator_uppercase: bool,
+    pub generator_digits: bool,
+    pub generator_symbols: bool,
+    pub exclude_ambiguous: bool,
+}
+
 /// Render the password generator section
-pub fn view(
-    theme: LilypadTheme,
-    generated_password: &str,
-    generator_length: usize,
-    generator_lowercase: bool,
-    generator_uppercase: bool,
-    generator_digits: bool,
-    generator_symbols: bool,
-    exclude_ambiguous: bool,
-) -> Element<'static, Message> {
+#[allow(clippy::too_many_arguments)]
+pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
+    let GeneratorViewParams {
+        theme,
+        generated_password,
+        generator_length,
+        generator_lowercase,
+        generator_uppercase,
+        generator_digits,
+        generator_symbols,
+        exclude_ambiguous,
+    } = params;
     let palette = theme.palette();
     let generated_password_owned = generated_password.to_string();
 

@@ -83,7 +83,7 @@ impl KeyMaterial {
 
     pub fn key_id(&self) -> String {
         let mut hasher = Sha256::new();
-        hasher.update(&self.key);
+        hasher.update(self.key);
         let digest = hasher.finalize();
         digest.iter().map(|byte| format!("{byte:02x}")).collect()
     }

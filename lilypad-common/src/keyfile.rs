@@ -102,7 +102,7 @@ pub fn decode_hex(hex: &str) -> Result<Vec<u8>> {
     if value.is_empty() {
         return Err(anyhow!("key cannot be empty"));
     }
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return Err(anyhow!("invalid hex string length"));
     }
     let mut bytes = Vec::with_capacity(value.len() / 2);

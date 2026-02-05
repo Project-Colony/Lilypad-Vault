@@ -75,6 +75,8 @@ impl SyncMetadata {
 pub struct GitHubSyncBackend {
     client: GitHubClient,
     username: String,
+    /// Token store retained for future token refresh support.
+    #[allow(dead_code)]
     token_store: TokenStoreManager,
     /// Cached sync metadata.
     metadata: Option<SyncMetadata>,
@@ -180,10 +182,10 @@ impl GitHubSyncBackend {
     /// Pushes local vault data to GitHub.
     pub fn push(&mut self, vault_name: &str, payload: &[u8]) -> Result<()> {
         // Get current SHA if updating existing file
-        let sha = match self.client.get_vault_data(&self.username)? {
-            Some((_, sha)) => Some(sha),
-            None => None,
-        };
+        let sha = self
+            .client
+            .get_vault_data(&self.username)?
+            .map(|(_, sha)| sha);
 
         // Upload vault data
         let new_sha = self.client.save_vault_data(
@@ -200,10 +202,10 @@ impl GitHubSyncBackend {
         let meta_json = serde_json::to_string_pretty(&meta)?;
 
         // Get metadata SHA if exists
-        let meta_sha = match self.client.get_sync_metadata(&self.username)? {
-            Some((_, sha)) => Some(sha),
-            None => None,
-        };
+        let meta_sha = self
+            .client
+            .get_sync_metadata(&self.username)?
+            .map(|(_, sha)| sha);
 
         self.client.save_sync_metadata(&self.username, &meta_json, meta_sha.as_deref())?;
 
@@ -253,41 +255,6 @@ impl GitHubSyncBackend {
             }
             None => Ok(None),
         }
-    }
-}
-
-/// Adapter to implement the SyncBackend trait from lilypad-storage.
-/// This allows GitHubSyncBackend to be used with LocalStore.
-pub struct GitHubSyncAdapter {
-    backend: GitHubSyncBackend,
-}
-
-impl GitHubSyncAdapter {
-    /// Creates a new adapter from an existing backend.
-    pub fn new(backend: GitHubSyncBackend) -> Self {
-        Self { backend }
-    }
-
-    /// Creates a new adapter from stored credentials.
-    pub fn from_stored_token() -> Result<Self> {
-        let backend = GitHubSyncBackend::from_stored_token()?;
-        Ok(Self { backend })
-    }
-}
-
-// Note: The actual SyncBackend trait implementation would need to be
-// in lilypad-storage or through a feature flag to avoid circular dependencies.
-// For now, we provide the push/pull methods directly.
-
-impl GitHubSyncAdapter {
-    /// Pushes vault data to GitHub.
-    pub fn push(&mut self, vault_name: &str, payload: &[u8]) -> anyhow::Result<()> {
-        self.backend.push(vault_name, payload).map_err(|e| anyhow::anyhow!("{}", e))
-    }
-
-    /// Pulls vault data from GitHub.
-    pub fn pull(&mut self, vault_name: &str) -> anyhow::Result<Option<Vec<u8>>> {
-        self.backend.pull(vault_name).map_err(|e| anyhow::anyhow!("{}", e))
     }
 }
 
