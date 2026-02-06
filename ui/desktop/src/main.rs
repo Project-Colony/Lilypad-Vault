@@ -5,6 +5,7 @@
 //! This is the main entry point for the Lilypad desktop application.
 
 mod app;
+mod fonts;
 mod message;
 mod state;
 mod theme;
@@ -22,10 +23,16 @@ fn main() -> iced::Result {
         )
         .init();
 
-    // Run the application
+    // Run the application with custom fonts
     iced::application("Lilypad", LilypadApp::update, LilypadApp::view)
         .subscription(LilypadApp::subscription)
         .window_size(Size::new(1200.0, 800.0))
+        .font(fonts::JETBRAINS_MONO_REGULAR)
+        .font(fonts::JETBRAINS_MONO_BOLD)
+        .font(fonts::JETBRAINS_MONO_SEMIBOLD)
+        .font(fonts::JETBRAINS_MONO_MEDIUM)
+        .font(fonts::JETBRAINS_MONO_LIGHT)
+        .default_font(fonts::FONT_REGULAR)
         .run_with(LilypadApp::new)
 }
 

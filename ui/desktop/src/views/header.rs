@@ -6,6 +6,7 @@ use iced::alignment::Vertical;
 use iced::widget::{button, column, container, row, text, text_input, Space};
 use iced::{Element, Length};
 
+use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::theme::{self, LilypadTheme};
 
@@ -25,11 +26,11 @@ pub fn view(
     // Vault selector button
     let vault_btn = button(
         row![
-            text("🔐").size(16),
+            text(icons::VAULT).size(14).font(fonts::FONT_REGULAR).color(palette.primary),
             Space::with_width(8),
-            text(active_vault_owned).size(14).color(palette.text_primary),
+            text(active_vault_owned).size(14).font(fonts::FONT_MEDIUM).color(palette.text_primary),
             Space::with_width(8),
-            text("▼").size(10).color(palette.text_muted),
+            text(icons::CHEVRON_DOWN).size(10).font(fonts::FONT_REGULAR).color(palette.text_muted),
         ]
         .align_y(Vertical::Center),
     )
@@ -58,7 +59,7 @@ pub fn view(
     let has_search = !search_query.is_empty();
     let clear_search_btn: Option<Element<'static, Message>> = if has_search {
         Some(
-            button(text("✕").size(12).color(palette.text_muted))
+            button(text(icons::CLOSE).size(12).font(fonts::FONT_REGULAR).color(palette.text_muted))
                 .padding([8, 10])
                 .style(move |_theme, status| match status {
                     button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -82,9 +83,9 @@ pub fn view(
     // Action buttons
     let add_entry_btn = button(
         row![
-            text("+").size(16),
+            text(icons::PLUS).size(14).font(fonts::FONT_REGULAR),
             Space::with_width(6),
-            text("Add Entry").size(14),
+            text("Add Entry").size(14).font(fonts::FONT_SEMIBOLD),
         ]
         .align_y(Vertical::Center),
     )
@@ -97,18 +98,20 @@ pub fn view(
 
     // GitHub sync status indicator
     let sync_indicator: Element<'static, Message> = if github_authenticated {
-        text("●")
+        text(icons::CIRCLE)
             .size(10)
+            .font(fonts::FONT_REGULAR)
             .color(palette.success)
             .into()
     } else {
-        text("○")
+        text(icons::CIRCLE)
             .size(10)
+            .font(fonts::FONT_REGULAR)
             .color(palette.text_muted)
             .into()
     };
 
-    let settings_btn = button(text("⚙").size(18).color(palette.text_secondary))
+    let settings_btn = button(text(icons::COG).size(16).font(fonts::FONT_REGULAR).color(palette.text_secondary))
         .padding([10, 12])
         .style(move |_theme, status| match status {
             button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -116,7 +119,7 @@ pub fn view(
         })
         .on_press(Message::ShowSettings);
 
-    let lock_btn = button(text("🔒").size(18).color(palette.text_secondary))
+    let lock_btn = button(text(icons::LOCK).size(16).font(fonts::FONT_REGULAR).color(palette.text_secondary))
         .padding([10, 12])
         .style(move |_theme, status| match status {
             button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -163,11 +166,12 @@ pub fn vault_dropdown_overlay(
             let name_owned = name.clone();
             button(
                 row![
-                    text(if is_active { "●" } else { "" })
+                    text(if is_active { icons::CIRCLE } else { "" })
                         .size(8)
+                        .font(fonts::FONT_REGULAR)
                         .color(palette.primary)
                         .width(Length::Fixed(16.0)),
-                    text(name.clone()).size(14).color(palette.text_primary),
+                    text(name.clone()).size(14).font(fonts::FONT_REGULAR).color(palette.text_primary),
                 ]
                 .align_y(Vertical::Center),
             )
@@ -199,10 +203,11 @@ pub fn vault_dropdown_overlay(
     items.push(
         button(
             row![
-                text("+").size(14).color(palette.primary),
+                text(icons::PLUS).size(14).font(fonts::FONT_REGULAR).color(palette.primary),
                 Space::with_width(8),
                 text("Create new vault")
                     .size(14)
+                    .font(fonts::FONT_MEDIUM)
                     .color(palette.primary),
             ]
             .align_y(Vertical::Center),
