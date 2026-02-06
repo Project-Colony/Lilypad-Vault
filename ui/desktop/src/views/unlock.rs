@@ -23,15 +23,21 @@ pub fn view(
 
     // Logo/Brand
     let logo = text("🌸")
-        .size(64);
+        .size(64)
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
 
     let title = text("Lilypad")
         .size(36)
-        .color(palette.text_primary);
+        .color(palette.text_primary)
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
 
     let subtitle = text("Password Manager")
         .size(16)
-        .color(palette.text_secondary);
+        .color(palette.text_secondary)
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
 
     // Check if locked out
     let is_locked = lockout_state.is_locked_out();
