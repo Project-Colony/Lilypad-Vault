@@ -164,7 +164,32 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
 
     // Use a simple row with colored portions for the strength bar
     let fill_portion = (strength_score as u16).max(1);
-    let empty_portion = (100u16.saturating_sub(strength_score as u16)).max(1);
+    let empty_portion = 100u16.saturating_sub(strength_score as u16);
+
+    // Build the bar - only include empty portion if there's any empty space
+    let bar_content: Element<'static, Message> = if empty_portion == 0 {
+        // Full bar - no empty portion needed
+        container(Space::new(Length::Fill, Length::Fixed(8.0)))
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(strength_color)),
+                ..Default::default()
+            })
+            .into()
+    } else {
+        row![
+            container(Space::new(Length::FillPortion(fill_portion), Length::Fixed(8.0)))
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(strength_color)),
+                    ..Default::default()
+                }),
+            container(Space::new(Length::FillPortion(empty_portion), Length::Fixed(8.0)))
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(palette.surface_variant)),
+                    ..Default::default()
+                }),
+        ]
+        .into()
+    };
 
     let strength_section: Element<'static, Message> = column![
         row![
@@ -173,28 +198,15 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
             text(strength_label).size(14).color(strength_color),
         ],
         Space::with_height(8),
-        container(
-            row![
-                container(Space::new(Length::FillPortion(fill_portion), Length::Fixed(8.0)))
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(strength_color)),
-                        ..Default::default()
-                    }),
-                container(Space::new(Length::FillPortion(empty_portion), Length::Fixed(8.0)))
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(palette.surface_variant)),
-                        ..Default::default()
-                    }),
-            ]
-        )
-        .width(Length::Fill)
-        .style(move |_| container::Style {
-            border: iced::Border {
-                radius: 4.0.into(),
+        container(bar_content)
+            .width(Length::Fill)
+            .style(move |_| container::Style {
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
-        }),
+            }),
     ]
     .into();
 
