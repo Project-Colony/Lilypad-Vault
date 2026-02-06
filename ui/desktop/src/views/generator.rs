@@ -154,17 +154,19 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     .count();
 
     let strength_score = calculate_strength(generator_length, options_count);
-    let (strength_label, strength_color) = match strength_score {
-        0..=20 => ("Very Weak", palette.danger),
-        21..=40 => ("Weak", iced::Color::from_rgb8(249, 115, 22)),
-        41..=60 => ("Medium", palette.warning),
-        61..=80 => ("Strong", iced::Color::from_rgb8(132, 204, 22)),
-        _ => ("Very Strong", palette.success),
+    // Map score to category with label, color, and visual fill percentage
+    // The bar fill is tied to the category, not the raw score, for consistent visual feedback
+    let (strength_label, strength_color, fill_percent) = match strength_score {
+        0..=20 => ("Very Weak", palette.danger, 20u16),
+        21..=40 => ("Weak", iced::Color::from_rgb8(249, 115, 22), 40u16),
+        41..=60 => ("Medium", palette.warning, 60u16),
+        61..=80 => ("Strong", iced::Color::from_rgb8(132, 204, 22), 80u16),
+        _ => ("Very Strong", palette.success, 100u16),
     };
 
-    // Use a simple row with colored portions for the strength bar
-    let fill_portion = (strength_score as u16).max(1);
-    let empty_portion = 100u16.saturating_sub(strength_score as u16);
+    // Use category-based fill for consistent visual feedback
+    let fill_portion = fill_percent;
+    let empty_portion = 100u16.saturating_sub(fill_percent);
 
     // Build the bar - only include empty portion if there's any empty space
     let bar_content: Element<'static, Message> = if empty_portion == 0 {
