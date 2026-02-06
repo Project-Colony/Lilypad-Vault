@@ -202,6 +202,8 @@ pub fn view(
     container(full_content)
         .width(Length::Fill)
         .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
         .style(move |_| theme::app_container(theme))
         .into()
 }
