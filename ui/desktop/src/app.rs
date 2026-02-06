@@ -802,6 +802,19 @@ impl LilypadApp {
             .style(move |_| theme::app_container(self.theme))
             .into();
 
+        // Add vault selector dropdown overlay
+        if self.show_vault_selector {
+            return iced::widget::stack![
+                content,
+                views::header::vault_dropdown_overlay(
+                    self.theme,
+                    &self.active_vault,
+                    &self.available_vaults,
+                ),
+            ]
+            .into();
+        }
+
         // Add modal overlays
         if self.show_settings {
             return iced::widget::stack![

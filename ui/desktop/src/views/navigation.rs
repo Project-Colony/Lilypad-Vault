@@ -6,6 +6,7 @@ use iced::alignment::{Horizontal, Vertical};
 use iced::widget::{button, column, container, row, text, Space};
 use iced::{Element, Length};
 
+use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::state::Category;
 use crate::theme::{self, LilypadTheme};
@@ -20,32 +21,32 @@ struct NavItem {
 const NAV_ITEMS: [NavItem; 6] = [
     NavItem {
         category: Category::Credentials,
-        icon: "🔐",
+        icon: icons::KEY,
         label: "Credentials",
     },
     NavItem {
         category: Category::Health,
-        icon: "💚",
+        icon: icons::HEART_PULSE,
         label: "Health",
     },
     NavItem {
         category: Category::Generator,
-        icon: "🎲",
+        icon: icons::DICE,
         label: "Generator",
     },
     NavItem {
         category: Category::Sync,
-        icon: "🔄",
+        icon: icons::SYNC,
         label: "Sync",
     },
     NavItem {
         category: Category::Account,
-        icon: "👤",
+        icon: icons::USER,
         label: "Account",
     },
     NavItem {
         category: Category::Security,
-        icon: "🛡",
+        icon: icons::SHIELD,
         label: "Security",
     },
 ];
@@ -60,16 +61,25 @@ pub fn view(theme: LilypadTheme, selected_category: usize) -> Element<'static, M
             let is_active = item.category.to_index() == selected_category;
 
             let btn_content = column![
-                text(item.icon).size(20),
+                text(item.icon)
+                    .size(18)
+                    .font(fonts::FONT_REGULAR)
+                    .color(if is_active {
+                        palette.primary
+                    } else {
+                        palette.text_muted
+                    }),
                 Space::with_height(4),
                 text(item.label)
                     .size(11)
+                    .font(fonts::FONT_MEDIUM)
                     .color(if is_active {
                         palette.primary
                     } else {
                         palette.text_muted
                     }),
             ]
+            .width(Length::Fill)
             .align_x(Horizontal::Center);
 
             let style_fn = move |_theme: &iced::Theme, status: button::Status| {

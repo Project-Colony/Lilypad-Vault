@@ -6,6 +6,7 @@ use iced::alignment::Vertical;
 use iced::widget::{button, column, container, row, text, text_input, Space};
 use iced::{Element, Length};
 
+use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::theme::{self, LilypadTheme};
 
@@ -13,7 +14,7 @@ use crate::theme::{self, LilypadTheme};
 pub fn view(
     theme: LilypadTheme,
     active_vault: &str,
-    available_vaults: &[String],
+    _available_vaults: &[String], // Dropdown uses vault_dropdown_overlay instead
     search_query: &str,
     show_vault_selector: bool,
     github_authenticated: bool,
@@ -25,11 +26,11 @@ pub fn view(
     // Vault selector button
     let vault_btn = button(
         row![
-            text("🔐").size(16),
+            text(icons::VAULT).size(14).font(fonts::FONT_REGULAR).color(palette.primary),
             Space::with_width(8),
-            text(active_vault_owned.clone()).size(14).color(palette.text_primary),
+            text(active_vault_owned).size(14).font(fonts::FONT_MEDIUM).color(palette.text_primary),
             Space::with_width(8),
-            text("▼").size(10).color(palette.text_muted),
+            text(icons::CHEVRON_DOWN).size(10).font(fonts::FONT_REGULAR).color(palette.text_muted),
         ]
         .align_y(Vertical::Center),
     )
@@ -43,82 +44,6 @@ pub fn view(
     } else {
         Message::ShowVaultSelector
     });
-
-    // Vault selector dropdown (if visible)
-    let vault_dropdown: Option<Element<'static, Message>> = if show_vault_selector {
-        let active_vault_for_dropdown = active_vault_owned.clone();
-        let mut items: Vec<Element<'static, Message>> = available_vaults
-            .iter()
-            .map(|name| {
-                let is_active = name == &active_vault_for_dropdown;
-                let name_owned = name.clone();
-                button(
-                    row![
-                        text(if is_active { "●" } else { "" })
-                            .size(8)
-                            .color(palette.primary)
-                            .width(Length::Fixed(16.0)),
-                        text(name.clone()).size(14).color(palette.text_primary),
-                    ]
-                    .align_y(Vertical::Center),
-                )
-                .width(Length::Fill)
-                .padding([10, 12])
-                .style(move |_theme, status| match status {
-                    button::Status::Hovered => theme::ghost_button_hovered(theme),
-                    _ => theme::ghost_button(theme),
-                })
-                .on_press(Message::SelectVault(name_owned))
-                .into()
-            })
-            .collect();
-
-        // Add divider
-        items.push(
-            container(
-                container(Space::new(Length::Fill, Length::Fixed(1.0)))
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(palette.border)),
-                        ..Default::default()
-                    }),
-            )
-            .padding([8, 0])
-            .into(),
-        );
-
-        // Add "Create new vault" option
-        items.push(
-            button(
-                row![
-                    text("+").size(14).color(palette.primary),
-                    Space::with_width(8),
-                    text("Create new vault")
-                        .size(14)
-                        .color(palette.primary),
-                ]
-                .align_y(Vertical::Center),
-            )
-            .width(Length::Fill)
-            .padding([10, 12])
-            .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::ghost_button_hovered(theme),
-                _ => theme::ghost_button(theme),
-            })
-            .on_press(Message::ShowNewVaultModal)
-            .into(),
-        );
-
-        let dropdown_content = column(items).spacing(0);
-
-        Some(
-            container(dropdown_content)
-                .style(move |_| theme::card_container(theme))
-                .width(Length::Fixed(200.0))
-                .into(),
-        )
-    } else {
-        None
-    };
 
     // Search bar
     let search_input = text_input("Search credentials...", &search_query_owned)
@@ -134,7 +59,7 @@ pub fn view(
     let has_search = !search_query.is_empty();
     let clear_search_btn: Option<Element<'static, Message>> = if has_search {
         Some(
-            button(text("✕").size(12).color(palette.text_muted))
+            button(text(icons::CLOSE).size(12).font(fonts::FONT_REGULAR).color(palette.text_muted))
                 .padding([8, 10])
                 .style(move |_theme, status| match status {
                     button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -158,9 +83,9 @@ pub fn view(
     // Action buttons
     let add_entry_btn = button(
         row![
-            text("+").size(16),
+            text(icons::PLUS).size(14).font(fonts::FONT_REGULAR),
             Space::with_width(6),
-            text("Add Entry").size(14),
+            text("Add Entry").size(14).font(fonts::FONT_SEMIBOLD),
         ]
         .align_y(Vertical::Center),
     )
@@ -173,18 +98,20 @@ pub fn view(
 
     // GitHub sync status indicator
     let sync_indicator: Element<'static, Message> = if github_authenticated {
-        text("●")
+        text(icons::CIRCLE)
             .size(10)
+            .font(fonts::FONT_REGULAR)
             .color(palette.success)
             .into()
     } else {
-        text("○")
+        text(icons::CIRCLE)
             .size(10)
+            .font(fonts::FONT_REGULAR)
             .color(palette.text_muted)
             .into()
     };
 
-    let settings_btn = button(text("⚙").size(18).color(palette.text_secondary))
+    let settings_btn = button(text(icons::COG).size(16).font(fonts::FONT_REGULAR).color(palette.text_secondary))
         .padding([10, 12])
         .style(move |_theme, status| match status {
             button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -192,7 +119,7 @@ pub fn view(
         })
         .on_press(Message::ShowSettings);
 
-    let lock_btn = button(text("🔒").size(18).color(palette.text_secondary))
+    let lock_btn = button(text(icons::LOCK).size(16).font(fonts::FONT_REGULAR).color(palette.text_secondary))
         .padding([10, 12])
         .style(move |_theme, status| match status {
             button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -200,14 +127,9 @@ pub fn view(
         })
         .on_press(Message::LockVault);
 
-    // Main header row
-    let mut vault_section = column![vault_btn,];
-    if let Some(dropdown) = vault_dropdown {
-        vault_section = vault_section.push(dropdown);
-    }
-
+    // Main header row (dropdown is rendered as overlay in app.rs)
     let header_content = row![
-        vault_section,
+        vault_btn,
         Space::with_width(Length::Fill),
         search_row,
         Space::with_width(Length::Fill),
@@ -225,5 +147,98 @@ pub fn view(
     container(header_content)
         .width(Length::Fill)
         .style(move |_| theme::header_container(theme))
+        .into()
+}
+
+/// Render the vault selector dropdown as an overlay
+pub fn vault_dropdown_overlay(
+    theme: LilypadTheme,
+    active_vault: &str,
+    available_vaults: &[String],
+) -> Element<'static, Message> {
+    let palette = theme.palette();
+    let active_vault_owned = active_vault.to_string();
+
+    let mut items: Vec<Element<'static, Message>> = available_vaults
+        .iter()
+        .map(|name| {
+            let is_active = name == &active_vault_owned;
+            let name_owned = name.clone();
+            button(
+                row![
+                    text(if is_active { icons::CIRCLE } else { "" })
+                        .size(8)
+                        .font(fonts::FONT_REGULAR)
+                        .color(palette.primary)
+                        .width(Length::Fixed(16.0)),
+                    text(name.clone()).size(14).font(fonts::FONT_REGULAR).color(palette.text_primary),
+                ]
+                .align_y(Vertical::Center),
+            )
+            .width(Length::Fill)
+            .padding([10, 12])
+            .style(move |_theme, status| match status {
+                button::Status::Hovered => theme::ghost_button_hovered(theme),
+                _ => theme::ghost_button(theme),
+            })
+            .on_press(Message::SelectVault(name_owned))
+            .into()
+        })
+        .collect();
+
+    // Add divider
+    items.push(
+        container(
+            container(Space::new(Length::Fill, Length::Fixed(1.0)))
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(palette.border)),
+                    ..Default::default()
+                }),
+        )
+        .padding([8, 0])
+        .into(),
+    );
+
+    // Add "Create new vault" option
+    items.push(
+        button(
+            row![
+                text(icons::PLUS).size(14).font(fonts::FONT_REGULAR).color(palette.primary),
+                Space::with_width(8),
+                text("Create new vault")
+                    .size(14)
+                    .font(fonts::FONT_MEDIUM)
+                    .color(palette.primary),
+            ]
+            .align_y(Vertical::Center),
+        )
+        .width(Length::Fill)
+        .padding([10, 12])
+        .style(move |_theme, status| match status {
+            button::Status::Hovered => theme::ghost_button_hovered(theme),
+            _ => theme::ghost_button(theme),
+        })
+        .on_press(Message::ShowNewVaultModal)
+        .into(),
+    );
+
+    let dropdown_content = column(items).spacing(0);
+
+    let dropdown_card = container(dropdown_content)
+        .style(move |_| theme::card_container(theme))
+        .width(Length::Fixed(200.0));
+
+    // Position the dropdown at the top-left below the header button
+    let positioned = column![
+        Space::with_height(56), // Offset below header
+        row![
+            Space::with_width(20), // Left margin
+            dropdown_card,
+        ],
+    ];
+
+    container(positioned)
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
 }

@@ -6,6 +6,7 @@ use iced::alignment::{Horizontal, Vertical};
 use iced::widget::{button, column, container, row, text, text_input, Space};
 use iced::{Element, Length};
 
+use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::state::LockoutState;
 use crate::theme::{self, LilypadTheme};
@@ -22,16 +23,26 @@ pub fn view(
     let error_message_owned = error_message.map(|s| s.to_string());
 
     // Logo/Brand
-    let logo = text("🌸")
-        .size(64);
+    let logo = text(icons::SHIELD)
+        .size(56)
+        .font(fonts::FONT_REGULAR)
+        .color(palette.primary)
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
 
     let title = text("Lilypad")
         .size(36)
-        .color(palette.text_primary);
+        .font(fonts::FONT_BOLD)
+        .color(palette.text_primary)
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
 
     let subtitle = text("Password Manager")
         .size(16)
-        .color(palette.text_secondary);
+        .font(fonts::FONT_LIGHT)
+        .color(palette.text_secondary)
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
 
     // Check if locked out
     let is_locked = lockout_state.is_locked_out();
@@ -42,6 +53,7 @@ pub fn view(
         // Lockout message
         let lockout_title = text("Too Many Attempts")
             .size(20)
+            .font(fonts::FONT_SEMIBOLD)
             .color(palette.danger);
 
         let lockout_msg = text(format!(
@@ -49,6 +61,7 @@ pub fn view(
             remaining
         ))
         .size(14)
+        .font(fonts::FONT_REGULAR)
         .color(palette.text_secondary);
 
         let attempts_info = text(format!(
@@ -56,6 +69,7 @@ pub fn view(
             failed_attempts
         ))
         .size(12)
+        .font(fonts::FONT_REGULAR)
         .color(palette.text_muted);
 
         column![
@@ -78,6 +92,7 @@ pub fn view(
         // Normal login form
         let password_label = text("Master Password")
             .size(14)
+            .font(fonts::FONT_MEDIUM)
             .color(palette.text_secondary);
 
         let is_empty = master_password_owned.is_empty();
@@ -85,6 +100,7 @@ pub fn view(
             .id(text_input::Id::new("master_password"))
             .padding(14)
             .size(16)
+            .font(fonts::FONT_REGULAR)
             .secure(true)
             .on_input(Message::MasterPasswordChanged)
             .on_submit(Message::UnlockVault)
@@ -96,7 +112,8 @@ pub fn view(
         let unlock_btn = button(
             container(
                 text("Unlock Vault")
-                    .size(15),
+                    .size(15)
+                    .font(fonts::FONT_SEMIBOLD),
             )
             .width(Length::Fill)
             .align_x(Horizontal::Center),
@@ -139,6 +156,7 @@ pub fn view(
         if let Some(error) = error_message_owned {
             let error_text = text(error)
                 .size(13)
+                .font(fonts::FONT_REGULAR)
                 .color(palette.danger);
 
             form = form.push(Space::with_height(16));
@@ -154,6 +172,7 @@ pub fn view(
                 if attempts_remaining == 1 { "" } else { "s" }
             ))
             .size(12)
+            .font(fonts::FONT_REGULAR)
             .color(palette.warning);
 
             form = form.push(Space::with_height(8));
@@ -167,11 +186,13 @@ pub fn view(
     let footer = row![
         text("New here?")
             .size(13)
+            .font(fonts::FONT_REGULAR)
             .color(palette.text_muted),
         Space::with_width(4),
         button(
             text("Create a vault")
                 .size(13)
+                .font(fonts::FONT_MEDIUM)
                 .color(palette.primary),
         )
         .padding(0)
@@ -196,6 +217,8 @@ pub fn view(
     container(full_content)
         .width(Length::Fill)
         .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill)
         .style(move |_| theme::app_container(theme))
         .into()
 }

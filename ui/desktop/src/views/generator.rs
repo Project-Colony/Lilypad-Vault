@@ -154,17 +154,44 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     .count();
 
     let strength_score = calculate_strength(generator_length, options_count);
-    let (strength_label, strength_color) = match strength_score {
-        0..=20 => ("Very Weak", palette.danger),
-        21..=40 => ("Weak", iced::Color::from_rgb8(249, 115, 22)),
-        41..=60 => ("Medium", palette.warning),
-        61..=80 => ("Strong", iced::Color::from_rgb8(132, 204, 22)),
-        _ => ("Very Strong", palette.success),
+    // Map score to category with label, color, and visual fill percentage
+    // The bar fill is tied to the category, not the raw score, for consistent visual feedback
+    let (strength_label, strength_color, fill_percent) = match strength_score {
+        0..=20 => ("Very Weak", palette.danger, 20u16),
+        21..=40 => ("Weak", iced::Color::from_rgb8(249, 115, 22), 40u16),
+        41..=60 => ("Medium", palette.warning, 60u16),
+        61..=80 => ("Strong", iced::Color::from_rgb8(132, 204, 22), 80u16),
+        _ => ("Very Strong", palette.success, 100u16),
     };
 
-    // Use a simple row with colored portions for the strength bar
-    let fill_portion = (strength_score as u16).max(1);
-    let empty_portion = (100u16.saturating_sub(strength_score as u16)).max(1);
+    // Use category-based fill for consistent visual feedback
+    let fill_portion = fill_percent;
+    let empty_portion = 100u16.saturating_sub(fill_percent);
+
+    // Build the bar - only include empty portion if there's any empty space
+    let bar_content: Element<'static, Message> = if empty_portion == 0 {
+        // Full bar - no empty portion needed
+        container(Space::new(Length::Fill, Length::Fixed(8.0)))
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(strength_color)),
+                ..Default::default()
+            })
+            .into()
+    } else {
+        row![
+            container(Space::new(Length::FillPortion(fill_portion), Length::Fixed(8.0)))
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(strength_color)),
+                    ..Default::default()
+                }),
+            container(Space::new(Length::FillPortion(empty_portion), Length::Fixed(8.0)))
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(palette.surface_variant)),
+                    ..Default::default()
+                }),
+        ]
+        .into()
+    };
 
     let strength_section: Element<'static, Message> = column![
         row![
@@ -173,28 +200,15 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
             text(strength_label).size(14).color(strength_color),
         ],
         Space::with_height(8),
-        container(
-            row![
-                container(Space::new(Length::FillPortion(fill_portion), Length::Fixed(8.0)))
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(strength_color)),
-                        ..Default::default()
-                    }),
-                container(Space::new(Length::FillPortion(empty_portion), Length::Fixed(8.0)))
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(palette.surface_variant)),
-                        ..Default::default()
-                    }),
-            ]
-        )
-        .width(Length::Fill)
-        .style(move |_| container::Style {
-            border: iced::Border {
-                radius: 4.0.into(),
+        container(bar_content)
+            .width(Length::Fill)
+            .style(move |_| container::Style {
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
-        }),
+            }),
     ]
     .into();
 
