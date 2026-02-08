@@ -56,12 +56,12 @@ This modular structure keeps cryptography and storage concerns isolated from UI 
 
 Run these commands locally and in CI to keep changes safe and consistent. Update the workflow as new tooling or checks are introduced.
 
-## Desktop GUI (initial version)
-- **Framework**: The first desktop interface uses the `egui` immediate-mode toolkit via the `eframe` native shell. This keeps the codebase pure Rust, simplifies cross-platform builds (Linux, macOS, Windows), and matches Lilypad's preference for lightweight, auditable dependencies.
+## Desktop GUI
+- **Framework**: The desktop interface uses the `iced` retained-mode toolkit. This keeps the codebase pure Rust, simplifies cross-platform builds (Linux, macOS, Windows), and matches Lilypad's preference for lightweight, auditable dependencies.
 - **Modal onboarding**: On launch, a welcome modal introduces Lilypad as part of the Colony project, explains that it is free and in active development, and invites feedback via the Colony GitHub repository before the main window appears.
-- **Layout**: The initial GUI mirrors modern password managers with a header for search and actions, a sidebar for categories, and a central panel for credential previews. It is intentionally skeletal so panels and widgets can be swapped or expanded without disrupting core logic.
-- **Source location**: Desktop GUI sources live in `ui/desktop/src/`. Supporting folder documentation sits in `ui/ui.md`, `ui/desktop/desktop.md`, and `ui/desktop/src/src.md`.
-- **Dependencies**: Use the latest stable versions of the GUI stack (`eframe`, `egui`, and supporting crates such as `webbrowser`). When updating, prefer `cargo update -p <crate>` for targeted bumps or `cargo install cargo-edit` followed by `cargo upgrade` to refresh all dependencies. Always review changelogs for breaking changes and re-run `cargo fmt`, `cargo clippy --all-targets --all-features`, and `cargo test` after upgrading.
+- **Layout**: The GUI mirrors modern password managers with a header for search and actions, a bottom navigation bar for categories (Credentials, Health, Generator, Sync, Account, Security), and a central panel for content. It includes multi-vault support, theme switching (Classic Green, Night Bloom, Pond Light), password generator, health dashboard, and GitHub OAuth sync.
+- **Source location**: Desktop GUI sources live in `ui/desktop/src/` with modules for `app`, `fonts`, `message`, `state`, `theme`, and `views/`.
+- **Dependencies**: Uses `iced 0.13`, `arboard` for clipboard, `rfd` for file dialogs, `webbrowser` for link opening, and `tokio` for async operations. When updating, prefer `cargo update -p <crate>` for targeted bumps. Always review changelogs for breaking changes and re-run `cargo fmt`, `cargo clippy --all-targets --all-features`, and `cargo test` after upgrading.
 - **Running the GUI**: From the repository root, run `cargo run -p lilypad-desktop` to launch the interface during development. For release builds, prefer `cargo run -p lilypad-desktop --release` to match production settings.
 
 ## Extending This Document

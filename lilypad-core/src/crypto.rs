@@ -231,6 +231,20 @@ impl KeyDerivationParams {
     }
 }
 
+/// Derives a 256-bit encryption key from a password using Argon2id.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_core::{derive_key, KeyDerivationParams};
+///
+/// let params = KeyDerivationParams::generate();
+/// let key = derive_key("my strong passphrase", &params).unwrap();
+/// assert_eq!(key.as_bytes().len(), 32);
+///
+/// // Empty passwords are rejected
+/// assert!(derive_key("", &params).is_err());
+/// ```
 pub fn derive_key(password: &str, params: &KeyDerivationParams) -> Result<KeyMaterial> {
     if password.trim().is_empty() {
         return Err(CoreError::InvalidInput(
@@ -245,6 +259,18 @@ pub fn derive_key(password: &str, params: &KeyDerivationParams) -> Result<KeyMat
     Ok(KeyMaterial { key })
 }
 
+/// Encrypts data using XChaCha20-Poly1305.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_core::{encrypt, decrypt, KeyMaterial};
+///
+/// let key = KeyMaterial::generate();
+/// let ciphertext = encrypt(&key, b"secret data").unwrap();
+/// let decrypted = decrypt(&key, &ciphertext).unwrap();
+/// assert_eq!(decrypted, b"secret data");
+/// ```
 pub fn encrypt(key: &KeyMaterial, plaintext: &[u8]) -> Result<Ciphertext> {
     let cipher = XChaCha20Poly1305::new(Key::from_slice(key.as_bytes()));
     let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
@@ -257,6 +283,23 @@ pub fn encrypt(key: &KeyMaterial, plaintext: &[u8]) -> Result<Ciphertext> {
     })
 }
 
+/// Decrypts data previously encrypted with [`encrypt`].
+///
+/// Returns an error if the key is wrong or the ciphertext is corrupted.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_core::{encrypt, decrypt, KeyMaterial};
+///
+/// let key = KeyMaterial::generate();
+/// let ct = encrypt(&key, b"hello").unwrap();
+/// assert_eq!(decrypt(&key, &ct).unwrap(), b"hello");
+///
+/// // Wrong key fails
+/// let other = KeyMaterial::generate();
+/// assert!(decrypt(&other, &ct).is_err());
+/// ```
 pub fn decrypt(key: &KeyMaterial, ciphertext: &Ciphertext) -> Result<Vec<u8>> {
     let cipher = XChaCha20Poly1305::new(Key::from_slice(key.as_bytes()));
     let nonce = XNonce::from_slice(&ciphertext.nonce);

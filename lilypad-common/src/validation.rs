@@ -278,6 +278,15 @@ fn contains_keyboard_pattern(password: &str) -> bool {
 ///
 /// # Returns
 /// The password strength assessment.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::validation::{validate_password_strength, PasswordStrength};
+///
+/// assert_eq!(validate_password_strength("short"), PasswordStrength::VeryWeak);
+/// assert!(validate_password_strength("Tr0pic@lFish9Blu3Sky!").is_acceptable());
+/// ```
 pub fn validate_password_strength(password: &str) -> PasswordStrength {
     let len = password.len();
     let has_lower = password.chars().any(|c| c.is_ascii_lowercase());

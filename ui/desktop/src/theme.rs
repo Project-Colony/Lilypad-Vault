@@ -152,7 +152,7 @@ impl LilypadTheme {
     }
 }
 
-/// Health grade colors
+/// Health grade colors (used when health view renders grade badges)
 #[allow(dead_code)]
 pub fn health_grade_color(grade: &str, palette: &LilypadPalette) -> Color {
     match grade {
@@ -165,7 +165,7 @@ pub fn health_grade_color(grade: &str, palette: &LilypadPalette) -> Color {
     }
 }
 
-/// Password strength colors
+/// Password strength colors (for entry health indicators)
 #[allow(dead_code)]
 pub fn strength_color(strength: u8, palette: &LilypadPalette) -> Color {
     match strength {
@@ -273,7 +273,7 @@ pub fn nav_container(theme: LilypadTheme) -> container::Style {
     }
 }
 
-/// Style for sidebar container
+/// Style for sidebar container (reserved for future sidebar layout)
 #[allow(dead_code)]
 pub fn sidebar_container(theme: LilypadTheme) -> container::Style {
     let palette = theme.palette();
@@ -506,7 +506,7 @@ pub fn text_input_focused(theme: LilypadTheme) -> text_input::Style {
     style
 }
 
-/// Error text input style
+/// Error text input style (for form validation feedback)
 #[allow(dead_code)]
 pub fn text_input_error(theme: LilypadTheme) -> text_input::Style {
     let palette = theme.palette();
@@ -567,7 +567,7 @@ fn lighten_color(color: Color, factor: f32) -> Color {
     }
 }
 
-/// Darken a color by a factor (0.0 to 1.0)
+/// Darken a color by a factor (0.0 to 1.0) - counterpart to lighten_color
 #[allow(dead_code)]
 fn darken_color(color: Color, factor: f32) -> Color {
     Color {

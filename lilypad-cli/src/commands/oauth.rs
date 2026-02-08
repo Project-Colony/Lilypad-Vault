@@ -178,6 +178,7 @@ pub fn sync_push(
     store: &lilypad_storage::LocalStore,
     config: &lilypad_core::AppConfig,
     vault_name: &str,
+    force: bool,
     master_password: Option<&str>,
     output_format: OutputFormat,
 ) -> Result<()> {
@@ -198,6 +199,20 @@ pub fn sync_push(
     // Create sync backend and push
     let mut backend = GitHubSyncBackend::from_stored_token()?;
     backend.ensure_repo()?;
+
+    // Check for conflicts unless --force is used
+    if !force {
+        let local_checksum = calculate_checksum(&payload);
+        let status = backend.get_status(&local_checksum)?;
+        if status == SyncStatus::Conflict {
+            return Err(anyhow!(
+                "Conflict detected: both local and remote have changed.\n\
+                 Use 'lilypad sync push {} --force' to overwrite remote changes.",
+                vault_name
+            ));
+        }
+    }
+
     backend.push(vault_name, &payload)?;
 
     if output_format == OutputFormat::Json {
@@ -225,6 +240,7 @@ pub fn sync_pull(
     store: &lilypad_storage::LocalStore,
     config: &lilypad_core::AppConfig,
     vault_name: &str,
+    force: bool,
     master_password: Option<&str>,
     output_format: OutputFormat,
 ) -> Result<()> {
@@ -236,6 +252,22 @@ pub fn sync_pull(
     }
 
     let mut backend = GitHubSyncBackend::from_stored_token()?;
+
+    // Check for conflicts unless --force is used
+    if !force {
+        let local_payload = store.sync_payload(vault_name);
+        if let Ok(local_data) = local_payload {
+            let local_checksum = calculate_checksum(&local_data);
+            let status = backend.get_status(&local_checksum)?;
+            if status == SyncStatus::Conflict {
+                return Err(anyhow!(
+                    "Conflict detected: both local and remote have changed.\n\
+                     Use 'lilypad sync pull {} --force' to overwrite local changes.",
+                    vault_name
+                ));
+            }
+        }
+    }
 
     // Pull data from GitHub
     let payload = backend.pull(vault_name)?;

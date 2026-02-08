@@ -416,12 +416,18 @@ enum SyncCommands {
         /// Vault name to push
         #[arg(value_parser = non_empty_value)]
         vault: String,
+        /// Force push, overwriting remote changes (resolves conflicts)
+        #[arg(long)]
+        force: bool,
     },
     /// Pull a vault from GitHub.
     Pull {
         /// Vault name to pull
         #[arg(value_parser = non_empty_value)]
         vault: String,
+        /// Force pull, overwriting local changes (resolves conflicts)
+        #[arg(long)]
+        force: bool,
     },
     /// Show sync status for a vault.
     Status {
@@ -442,8 +448,9 @@ fn main() -> Result<()> {
 
     // Security warning for environment variable usage
     if std::env::var("LILYPAD_MASTER_PASSWORD").is_ok() {
-        eprintln!("Note: Using master password from LILYPAD_MASTER_PASSWORD environment variable.");
-        eprintln!("      This may be visible in process listings. Consider using --master-password instead.");
+        eprintln!("WARNING: Using master password from LILYPAD_MASTER_PASSWORD environment variable.");
+        eprintln!("         This may be visible in process listings and shell history.");
+        eprintln!("         Consider unsetting it after use: unset LILYPAD_MASTER_PASSWORD");
     }
 
     let output_format = cli.output_format;
@@ -543,11 +550,11 @@ fn main() -> Result<()> {
         Commands::Logout => oauth::logout(output_format),
         Commands::AuthStatus => oauth::status(output_format),
         Commands::Sync(sync_cmd) => match sync_cmd {
-            SyncCommands::Push { vault } => {
-                oauth::sync_push(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()), output_format)
+            SyncCommands::Push { vault, force } => {
+                oauth::sync_push(&store, &config, &vault, force, master_password.as_ref().map(|s| s.as_str()), output_format)
             }
-            SyncCommands::Pull { vault } => {
-                oauth::sync_pull(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()), output_format)
+            SyncCommands::Pull { vault, force } => {
+                oauth::sync_pull(&store, &config, &vault, force, master_password.as_ref().map(|s| s.as_str()), output_format)
             }
             SyncCommands::Status { vault } => {
                 oauth::sync_status(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()), output_format)

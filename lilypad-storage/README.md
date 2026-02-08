@@ -33,11 +33,13 @@ nouveaux coffres sont écrits en `.lily`.
 Le payload chiffré contient le vault complet (nom, entrées, etc.), donc aucune
 entrée n'est stockée en clair.
 
-## Synchronisation (prévue)
+## Synchronisation
 
-L'interface de synchronisation est exposée via le trait `SyncBackend`. Elle
-permettra d'envoyer/récupérer les blobs de coffre chiffrés, mais aucun backend
-distant n'est encore implémenté.
+L'interface de synchronisation est exposée via le trait `SyncBackend`. Le
+backend GitHub est implémenté dans la crate `lilypad-oauth` et permet
+d'envoyer/récupérer les blobs de coffre chiffrés vers un dépôt privé GitHub.
+Voir `lilypad-oauth` pour les détails d'authentification OAuth et la gestion
+des conflits.
 
 ## Usage
 

@@ -40,6 +40,9 @@ pub const FONT_LIGHT: Font = Font {
 // ============================================================================
 // Reference: https://www.nerdfonts.com/cheat-sheet
 
+// Icons are declared up front so they are available as the UI grows.
+// Not all icons are used yet; suppress dead-code warnings for the module.
+#[allow(dead_code)]
 pub mod icons {
     // Navigation & UI
     pub const VAULT: &str = "\u{f023}"; //
