@@ -182,3 +182,150 @@ impl From<url::ParseError> for OAuthError {
         OAuthError::ConfigError(format!("invalid URL: {}", err))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_error_display() {
+        // Verify every OAuthError variant produces a meaningful, non-empty Display string
+        let variants: Vec<OAuthError> = vec![
+            OAuthError::AuthenticationFailed("bad credentials".to_string()),
+            OAuthError::AuthorizationDenied,
+            OAuthError::TokenExpired,
+            OAuthError::InvalidToken,
+            OAuthError::AuthorizationTimeout,
+            OAuthError::GitHubApiError {
+                status: Some(403),
+                message: "forbidden".to_string(),
+            },
+            OAuthError::GitHubApiError {
+                status: None,
+                message: "unknown".to_string(),
+            },
+            OAuthError::RateLimitExceeded {
+                reset_at: Some(1700000000),
+            },
+            OAuthError::RateLimitExceeded { reset_at: None },
+            OAuthError::RepoNotFound("my-repo".to_string()),
+            OAuthError::RepoAlreadyExists("my-repo".to_string()),
+            OAuthError::FileNotFound {
+                repo: "my-repo".to_string(),
+                path: "vault.encrypted".to_string(),
+            },
+            OAuthError::SyncConflict {
+                local_sha: "aaa".to_string(),
+                remote_sha: "bbb".to_string(),
+            },
+            OAuthError::NetworkError("connection refused".to_string()),
+            OAuthError::ParseError("unexpected token".to_string()),
+            OAuthError::TokenStoreError("permission denied".to_string()),
+            OAuthError::ConfigError("missing field".to_string()),
+            OAuthError::LocalServerError("port in use".to_string()),
+            OAuthError::IoError(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "file not found",
+            )),
+        ];
+
+        for variant in &variants {
+            let display = format!("{}", variant);
+            assert!(
+                !display.is_empty(),
+                "Display for {:?} should not be empty",
+                variant
+            );
+        }
+
+        // Spot-check specific messages
+        assert!(format!("{}", OAuthError::TokenExpired).contains("expired"));
+        assert!(format!("{}", OAuthError::InvalidToken).contains("invalid"));
+        assert!(format!("{}", OAuthError::AuthorizationDenied).contains("denied"));
+        assert!(
+            format!(
+                "{}",
+                OAuthError::GitHubApiError {
+                    status: Some(404),
+                    message: "not found".to_string()
+                }
+            )
+            .contains("404")
+        );
+        assert!(
+            format!(
+                "{}",
+                OAuthError::SyncConflict {
+                    local_sha: "abc".to_string(),
+                    remote_sha: "xyz".to_string()
+                }
+            )
+            .contains("abc")
+        );
+    }
+
+    #[test]
+    fn test_error_from_io() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "access denied");
+        let oauth_err: OAuthError = io_err.into();
+
+        match &oauth_err {
+            OAuthError::IoError(inner) => {
+                assert_eq!(inner.kind(), std::io::ErrorKind::PermissionDenied);
+                assert!(inner.to_string().contains("access denied"));
+            }
+            other => panic!("Expected IoError variant, got {:?}", other),
+        }
+
+        // Verify Display includes the inner error message
+        let display = format!("{}", oauth_err);
+        assert!(display.contains("access denied"));
+
+        // Verify Error::source returns the inner io::Error
+        use std::error::Error;
+        assert!(oauth_err.source().is_some());
+    }
+
+    #[test]
+    fn test_error_from_reqwest_timeout() {
+        // A reqwest::Error for a timeout cannot be easily constructed without
+        // performing an actual network request. Instead, we verify that the
+        // NetworkError variant with the expected timeout message formats correctly,
+        // matching the behavior of the From<reqwest::Error> impl for timeouts.
+        let err = OAuthError::NetworkError("request timed out".to_string());
+        let display = format!("{}", err);
+        assert!(
+            display.contains("request timed out"),
+            "NetworkError display should contain 'request timed out', got: {}",
+            display
+        );
+
+        // Also verify the connection variant mapping
+        let err_connect = OAuthError::NetworkError("failed to connect".to_string());
+        let display_connect = format!("{}", err_connect);
+        assert!(display_connect.contains("failed to connect"));
+    }
+
+    #[test]
+    fn test_error_from_serde_json() {
+        // Create a serde_json::Error by parsing invalid JSON
+        let json_err = serde_json::from_str::<serde_json::Value>("{{invalid json}}")
+            .expect_err("should fail to parse invalid JSON");
+
+        let oauth_err: OAuthError = json_err.into();
+
+        match &oauth_err {
+            OAuthError::ParseError(msg) => {
+                assert!(
+                    !msg.is_empty(),
+                    "ParseError message should not be empty"
+                );
+            }
+            other => panic!("Expected ParseError variant, got {:?}", other),
+        }
+
+        // Verify Display includes parse error details
+        let display = format!("{}", oauth_err);
+        assert!(display.contains("parse"));
+    }
+}

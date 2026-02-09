@@ -55,6 +55,16 @@ pub struct TokenInfo {
 
 impl TokenInfo {
     /// Creates a new TokenInfo.
+    ///
+    /// ```
+    /// let token = lilypad_oauth::TokenInfo::new(
+    ///     "ghp_abc123".to_string(),
+    ///     "bearer".to_string(),
+    ///     "repo read:user".to_string(),
+    /// );
+    /// assert_eq!(token.token_type, "bearer");
+    /// assert!(!token.is_expired());
+    /// ```
     pub fn new(access_token: String, token_type: String, scope: String) -> Self {
         Self {
             access_token,
@@ -334,5 +344,159 @@ mod tests {
         // Remove token
         store.remove_token(OAuthProvider::GitHub).unwrap();
         assert!(store.load_token(OAuthProvider::GitHub).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_token_seconds_until_expiry() {
+        let token = TokenInfo::new(
+            "tok_abc".to_string(),
+            "bearer".to_string(),
+            "repo".to_string(),
+        )
+        .with_expires_in(Some(3600)); // expires in 1 hour
+
+        let remaining = token.seconds_until_expiry();
+        assert!(remaining.is_some());
+
+        let secs = remaining.unwrap();
+        // The token was just created, so remaining should be close to 3600
+        // Allow a small margin for test execution time
+        assert!(
+            secs > 3500 && secs <= 3600,
+            "Expected ~3600 seconds remaining, got {}",
+            secs
+        );
+    }
+
+    #[test]
+    fn test_token_no_expiry_seconds() {
+        let token = TokenInfo::new(
+            "tok_no_exp".to_string(),
+            "bearer".to_string(),
+            "repo read:user".to_string(),
+        );
+
+        // No expires_in set, so seconds_until_expiry should return None
+        assert!(
+            token.seconds_until_expiry().is_none(),
+            "Token without expiry should return None for seconds_until_expiry"
+        );
+
+        // Also verify it is not considered expired
+        assert!(!token.is_expired());
+    }
+
+    #[test]
+    fn test_token_with_username() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("tokens_username.json");
+        let store = TokenStoreManager::with_path(path);
+
+        let token = TokenInfo::new(
+            "tok_user".to_string(),
+            "bearer".to_string(),
+            "repo".to_string(),
+        )
+        .with_username("octocat".to_string());
+
+        assert_eq!(token.username, Some("octocat".to_string()));
+
+        // Save and reload to verify persistence
+        store.save_token(OAuthProvider::GitHub, token).unwrap();
+        let loaded = store.load_token(OAuthProvider::GitHub).unwrap().unwrap();
+        assert_eq!(
+            loaded.username,
+            Some("octocat".to_string()),
+            "Username should persist through save/load"
+        );
+    }
+
+    #[test]
+    fn test_token_store_list_providers() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("tokens_list.json");
+        let store = TokenStoreManager::with_path(path);
+
+        // Initially no providers
+        let providers = store.list_providers().unwrap();
+        assert!(providers.is_empty(), "No providers initially");
+
+        // Save a GitHub token
+        let token = TokenInfo::new(
+            "tok_gh".to_string(),
+            "bearer".to_string(),
+            "repo".to_string(),
+        );
+        store.save_token(OAuthProvider::GitHub, token).unwrap();
+
+        let providers = store.list_providers().unwrap();
+        assert_eq!(providers.len(), 1);
+        assert!(
+            providers.contains(&"github".to_string()),
+            "Should list 'github' as a stored provider"
+        );
+    }
+
+    #[test]
+    fn test_token_store_destroy() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("tokens_destroy.json");
+        let store = TokenStoreManager::with_path(path.clone());
+
+        // Save a token so the file exists
+        let token = TokenInfo::new(
+            "tok_destroy".to_string(),
+            "bearer".to_string(),
+            "repo".to_string(),
+        );
+        store.save_token(OAuthProvider::GitHub, token).unwrap();
+        assert!(path.exists(), "Token file should exist after save");
+
+        // Destroy the store
+        store.destroy().unwrap();
+        assert!(
+            !path.exists(),
+            "Token file should be deleted after destroy"
+        );
+    }
+
+    #[test]
+    fn test_token_store_overwrite() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("tokens_overwrite.json");
+        let store = TokenStoreManager::with_path(path);
+
+        // Save initial token
+        let token1 = TokenInfo::new(
+            "first_token".to_string(),
+            "bearer".to_string(),
+            "repo".to_string(),
+        )
+        .with_username("user_one".to_string());
+        store.save_token(OAuthProvider::GitHub, token1).unwrap();
+
+        // Verify first token
+        let loaded1 = store.load_token(OAuthProvider::GitHub).unwrap().unwrap();
+        assert_eq!(loaded1.access_token(), "first_token");
+        assert_eq!(loaded1.username, Some("user_one".to_string()));
+
+        // Overwrite with a different token for the same provider
+        let token2 = TokenInfo::new(
+            "second_token".to_string(),
+            "bearer".to_string(),
+            "repo read:user".to_string(),
+        )
+        .with_username("user_two".to_string());
+        store.save_token(OAuthProvider::GitHub, token2).unwrap();
+
+        // Verify the new token replaced the old one
+        let loaded2 = store.load_token(OAuthProvider::GitHub).unwrap().unwrap();
+        assert_eq!(loaded2.access_token(), "second_token");
+        assert_eq!(loaded2.username, Some("user_two".to_string()));
+        assert_eq!(loaded2.scope, "repo read:user");
+
+        // There should still be only one provider
+        let providers = store.list_providers().unwrap();
+        assert_eq!(providers.len(), 1);
     }
 }

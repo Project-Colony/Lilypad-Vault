@@ -146,4 +146,70 @@ mod tests {
         assert_eq!(format_duration(3600), "1 hour");
         assert_eq!(format_duration(7200), "2 hours");
     }
+
+    #[test]
+    fn test_format_timestamp_relative_days() {
+        let now = current_timestamp();
+        // 3 days ago = 3 * 86400 seconds
+        let three_days_ago = now - 3 * 86400;
+        assert_eq!(format_timestamp_relative(three_days_ago), "3 days ago");
+
+        // 5 days ago
+        let five_days_ago = now - 5 * 86400;
+        assert_eq!(format_timestamp_relative(five_days_ago), "5 days ago");
+
+        // 2 days ago (just past the "Yesterday" boundary at 172800)
+        let two_days_ago = now - 2 * 86400;
+        assert_eq!(format_timestamp_relative(two_days_ago), "2 days ago");
+
+        // 6 days ago (still within the "X days ago" range < 604800)
+        let six_days_ago = now - 6 * 86400;
+        assert_eq!(format_timestamp_relative(six_days_ago), "6 days ago");
+    }
+
+    #[test]
+    fn test_format_timestamp_relative_months() {
+        let now = current_timestamp();
+        // 30 days ago should fall into the format_timestamp fallback (beyond 7 days)
+        let thirty_days_ago = now - 30 * 86400;
+        let result = format_timestamp_relative(thirty_days_ago);
+        // Should NOT be "X days ago" since it's beyond 7 days
+        assert!(!result.contains("days ago"), "30 days ago should use date format, got: {}", result);
+        // Should be a formatted date (contains year)
+        assert!(result.contains("2026") || result.contains("2025"),
+            "should contain a year in formatted date, got: {}", result);
+
+        // 90 days ago
+        let ninety_days_ago = now - 90 * 86400;
+        let result = format_timestamp_relative(ninety_days_ago);
+        assert!(!result.contains("days ago"), "90 days ago should use date format, got: {}", result);
+
+        // Zero timestamp
+        assert_eq!(format_timestamp_relative(0), "Never");
+
+        // Future timestamp
+        let future = now + 1000;
+        assert_eq!(format_timestamp_relative(future), "In the future");
+    }
+
+    #[test]
+    fn test_format_duration_seconds() {
+        // Test various short durations
+        assert_eq!(format_duration(2), "2 seconds");
+        assert_eq!(format_duration(10), "10 seconds");
+        assert_eq!(format_duration(59), "59 seconds");
+
+        // Boundary: 1 second singular
+        assert_eq!(format_duration(1), "1 second");
+
+        // Boundary: instant
+        assert_eq!(format_duration(0), "instant");
+
+        // Just past seconds into minutes
+        assert_eq!(format_duration(61), "1 minutes");
+        assert_eq!(format_duration(120), "2 minutes");
+
+        // Large hour values
+        assert_eq!(format_duration(36000), "10 hours");
+    }
 }

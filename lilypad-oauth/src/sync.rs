@@ -49,6 +49,17 @@ pub struct SyncMetadata {
 
 impl SyncMetadata {
     /// Creates new sync metadata.
+    ///
+    /// ```
+    /// let meta = lilypad_oauth::SyncMetadata::new(
+    ///     "octocat".to_string(),
+    ///     "abc123".to_string(),
+    ///     "def456".to_string(),
+    /// );
+    /// assert_eq!(meta.github_username, "octocat");
+    /// assert_eq!(meta.version, 1);
+    /// assert!(meta.last_sync_at > 0);
+    /// ```
     pub fn new(github_username: String, sha: String, local_checksum: String) -> Self {
         Self {
             last_sync_at: current_timestamp(),
@@ -81,8 +92,7 @@ impl SyncMetadata {
 pub struct GitHubSyncBackend {
     client: GitHubClient,
     username: String,
-    /// Token store retained for future token refresh support.
-    #[allow(dead_code)]
+    /// Token store used for token persistence and refresh.
     token_store: TokenStoreManager,
     /// Cached sync metadata.
     metadata: Option<SyncMetadata>,
@@ -221,6 +231,18 @@ impl GitHubSyncBackend {
     /// Returns the device identifier.
     pub fn device_id(&self) -> &str {
         &self.device_id
+    }
+
+    /// Ensures the stored token is still valid, refreshing if necessary.
+    ///
+    /// Call this before long-running operations to avoid mid-operation token expiry.
+    pub fn ensure_token_valid(&self) -> Result<()> {
+        if let Some(token) = self.token_store.load_token(OAuthProvider::GitHub)? {
+            if token.is_expired() {
+                Self::try_refresh_token(&self.token_store, &token)?;
+            }
+        }
+        Ok(())
     }
 
     /// Checks if there is a stored valid token.
@@ -422,5 +444,124 @@ mod tests {
         assert_eq!(meta.last_sync_sha, "xyz789");
         assert_eq!(meta.local_checksum, "ghi012");
         assert!(meta.last_sync_at >= original_timestamp);
+    }
+
+    #[test]
+    fn test_sync_status_display() {
+        // Verify all SyncStatus variants can be formatted via Debug
+        let variants: Vec<SyncStatus> = vec![
+            SyncStatus::NotAuthenticated,
+            SyncStatus::NoRemoteVault,
+            SyncStatus::InSync,
+            SyncStatus::LocalAhead,
+            SyncStatus::RemoteAhead,
+            SyncStatus::Conflict,
+            SyncStatus::Unknown("test error".to_string()),
+        ];
+
+        for variant in &variants {
+            let formatted = format!("{:?}", variant);
+            assert!(!formatted.is_empty(), "SyncStatus variant should have non-empty Debug output");
+        }
+
+        // Verify specific Debug representations
+        assert_eq!(format!("{:?}", SyncStatus::InSync), "InSync");
+        assert_eq!(format!("{:?}", SyncStatus::Conflict), "Conflict");
+        assert!(format!("{:?}", SyncStatus::Unknown("net fail".to_string())).contains("net fail"));
+    }
+
+    #[test]
+    fn test_sync_metadata_with_device_id() {
+        let custom_device_id = "custom-device-abc123".to_string();
+        let meta = SyncMetadata::new(
+            "alice".to_string(),
+            "sha_aaa".to_string(),
+            "checksum_bbb".to_string(),
+        )
+        .with_device_id(custom_device_id.clone());
+
+        assert_eq!(meta.device_id, custom_device_id);
+        assert_eq!(meta.github_username, "alice");
+        assert_eq!(meta.last_sync_sha, "sha_aaa");
+        assert_eq!(meta.local_checksum, "checksum_bbb");
+        assert_eq!(meta.version, 1);
+    }
+
+    #[test]
+    fn test_sync_metadata_last_synced_updates() {
+        let mut meta = SyncMetadata::new(
+            "bob".to_string(),
+            "sha_orig".to_string(),
+            "cs_orig".to_string(),
+        );
+
+        let first_sync_at = meta.last_sync_at;
+        assert!(first_sync_at > 0);
+
+        // Sleep briefly to ensure timestamp advances
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+
+        meta.update("sha_new".to_string(), "cs_new".to_string());
+
+        // After update, last_sync_at should be >= the original
+        assert!(
+            meta.last_sync_at >= first_sync_at,
+            "last_sync_at should not decrease after update"
+        );
+        assert_eq!(meta.last_sync_sha, "sha_new");
+        assert_eq!(meta.local_checksum, "cs_new");
+        // Username and device_id should be unchanged
+        assert_eq!(meta.github_username, "bob");
+    }
+
+    #[test]
+    fn test_checksum_different_data() {
+        let checksum_a = calculate_checksum(b"hello world");
+        let checksum_b = calculate_checksum(b"hello worl!");
+
+        assert_ne!(
+            checksum_a, checksum_b,
+            "Different data must produce different checksums"
+        );
+
+        // Also test with empty vs non-empty
+        let checksum_empty = calculate_checksum(b"");
+        assert_ne!(checksum_empty, checksum_a);
+    }
+
+    #[test]
+    fn test_checksum_same_data() {
+        let data = b"identical payload bytes";
+        let checksum1 = calculate_checksum(data);
+        let checksum2 = calculate_checksum(data);
+
+        assert_eq!(
+            checksum1, checksum2,
+            "Same data must produce the same checksum"
+        );
+
+        // Verify it's a valid SHA-256 hex string (64 hex chars)
+        assert_eq!(checksum1.len(), 64);
+        assert!(checksum1.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_device_id_format() {
+        let id = generate_device_id();
+
+        // generate_device_id produces 8 random bytes hex-encoded => 16 hex characters
+        assert_eq!(
+            id.len(),
+            16,
+            "Device ID should be 16 hex characters (8 bytes)"
+        );
+        assert!(
+            id.chars().all(|c| c.is_ascii_hexdigit()),
+            "Device ID should consist only of valid hex characters"
+        );
+
+        // Two generated IDs should (almost certainly) be different
+        let id2 = generate_device_id();
+        assert_ne!(id, id2, "Two generated device IDs should differ");
     }
 }

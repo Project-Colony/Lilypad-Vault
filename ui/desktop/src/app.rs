@@ -180,8 +180,13 @@ impl LilypadApp {
             Err(e) => {
                 eprintln!("Failed to initialize store: {e}");
                 // Create a minimal store with fallback data dir so the app can still display an error
-                LocalStore::new(&default_config())
-                    .expect("fallback store init with default config must succeed")
+                match LocalStore::new(&default_config()) {
+                    Ok(s) => s,
+                    Err(e2) => {
+                        eprintln!("Fatal: fallback store also failed: {e2}");
+                        std::process::exit(1);
+                    }
+                }
             }
         };
         let now = Instant::now();

@@ -4,7 +4,7 @@ This document outlines how to develop Lilypad, a Rust-based password manager. It
 
 ## Development Steps
 1. **Set up tooling**
-   - Install Rust (stable) 1.78 or newer with `cargo` via [`rustup`](https://rustup.rs/).
+   - Install Rust (stable) 1.89.0 or newer with `cargo` via [`rustup`](https://rustup.rs/).
    - Add the `rustfmt` and `clippy` components: `rustup component add rustfmt clippy`.
    - Install optional helpers such as `cargo-edit` for managing dependencies.
 2. **Create the workspace layout**
@@ -21,7 +21,7 @@ This document outlines how to develop Lilypad, a Rust-based password manager. It
    - Choose frameworks that match deployment needs:
      - CLI: `clap` or `lexopt` for argument parsing; pair with `indicatif` for progress UI where helpful.
      - TUI: `ratatui` with `crossterm` offers portable terminal widgets and keyboard handling.
-     - Desktop GUI: `Tauri` provides a lightweight shell with strong sandboxing; `egui` is a solid choice for a pure-Rust immediate mode UI.
+     - Desktop GUI: `iced` provides a pure-Rust retained-mode toolkit with strong cross-platform support.
 5. **Quality and distribution**
    - Add automated tests for core logic and CLI behavior.
    - Wire up continuous integration for formatting, linting, testing, and security scanning.

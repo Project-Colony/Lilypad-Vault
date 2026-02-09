@@ -265,4 +265,69 @@ mod tests {
             .with_flow(AuthFlow::AuthorizationCode);
         assert!(invalid_auth_code.validate().is_err());
     }
+
+    #[test]
+    fn test_config_scopes_string() {
+        let config = OAuthConfig::github("id123")
+            .with_scopes(vec![
+                "repo".to_string(),
+                "read:user".to_string(),
+                "gist".to_string(),
+            ]);
+
+        assert_eq!(config.scopes_string(), "repo read:user gist");
+
+        // Single scope
+        let single = OAuthConfig::github("id123")
+            .with_scopes(vec!["repo".to_string()]);
+        assert_eq!(single.scopes_string(), "repo");
+
+        // Default scopes
+        let default_cfg = OAuthConfig::github("id123");
+        assert_eq!(default_cfg.scopes_string(), "repo read:user");
+    }
+
+    #[test]
+    fn test_config_callback_url() {
+        let config = OAuthConfig::github("id123");
+        assert_eq!(
+            config.callback_url(),
+            "http://127.0.0.1:8585/callback",
+            "Default callback URL should use port 8585"
+        );
+
+        let custom = OAuthConfig::github("id123").with_callback_port(9999);
+        assert_eq!(
+            custom.callback_url(),
+            "http://127.0.0.1:9999/callback",
+            "Custom port should be reflected in callback URL"
+        );
+    }
+
+    #[test]
+    fn test_config_validation_missing_client_id() {
+        // Empty client_id should fail validation
+        let config = OAuthConfig::default();
+        assert!(config.client_id.is_empty());
+
+        let result = config.validate();
+        assert!(result.is_err());
+
+        let err = result.unwrap_err();
+        let msg = format!("{}", err);
+        assert!(
+            msg.contains("client_id"),
+            "Error message should mention client_id, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn test_provider_display() {
+        let provider = OAuthProvider::GitHub;
+        assert_eq!(format!("{}", provider), "GitHub");
+
+        // Verify it also works via to_string (which uses Display)
+        assert_eq!(provider.to_string(), "GitHub");
+    }
 }

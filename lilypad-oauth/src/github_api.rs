@@ -489,4 +489,44 @@ mod tests {
         let expected = format!("{}-{}", VAULT_REPO_PREFIX, username);
         assert_eq!(expected, "lilypad-vault-testuser");
     }
+
+    #[test]
+    fn test_vault_repo_name_format() {
+        // Verify the naming convention for various usernames
+        let cases = vec![
+            ("alice", "lilypad-vault-alice"),
+            ("bob-dev", "lilypad-vault-bob-dev"),
+            ("user123", "lilypad-vault-user123"),
+        ];
+
+        for (username, expected) in cases {
+            let repo_name = format!("{}-{}", VAULT_REPO_PREFIX, username);
+            assert_eq!(repo_name, expected);
+            // Verify the prefix is always "lilypad-vault"
+            assert!(repo_name.starts_with("lilypad-vault-"));
+            // Verify the username appears at the end
+            assert!(repo_name.ends_with(username));
+        }
+    }
+
+    #[test]
+    fn test_github_client_creation() {
+        // Verify that GitHubClient::new succeeds with a valid token string
+        // (no network call is made during construction)
+        let client = GitHubClient::new("ghp_test_token_abc123");
+        assert!(
+            client.is_ok(),
+            "GitHubClient::new should succeed with a valid token string"
+        );
+
+        // Also verify with_api_url works
+        let client_custom = GitHubClient::with_api_url(
+            "ghp_another_token",
+            "https://api.github.example.com",
+        );
+        assert!(
+            client_custom.is_ok(),
+            "GitHubClient::with_api_url should succeed with valid arguments"
+        );
+    }
 }

@@ -692,4 +692,216 @@ mod tests {
         assert_eq!(duplicates.len(), 1);
         assert_eq!(duplicates.get("same_password").unwrap().len(), 2);
     }
+
+    /// Helper to create an entry with strong defaults for health testing.
+    fn make_healthy_entry(label: &str, password: &str) -> EntryHealthData {
+        EntryHealthData {
+            label: label.to_string(),
+            password: password.to_string(),
+            has_username: true,
+            has_url: true,
+            has_totp: true,
+            password_age_days: 10,
+            days_until_expiry: None,
+            is_expired: false,
+            is_compromised: false,
+        }
+    }
+
+    #[test]
+    fn test_health_score_calculation() {
+        // Vault with a mix of issues: one weak password, one missing 2FA, one expired
+        let entries = vec![
+            EntryHealthData {
+                label: "weak_entry".to_string(),
+                password: "abc".to_string(), // VeryWeak
+                has_username: true,
+                has_url: true,
+                has_totp: true,
+                password_age_days: 10,
+                days_until_expiry: None,
+                is_expired: false,
+                is_compromised: false,
+            },
+            EntryHealthData {
+                label: "expired_entry".to_string(),
+                password: "Str0ng!P@ssw0rd#2024".to_string(),
+                has_username: true,
+                has_url: true,
+                has_totp: true,
+                password_age_days: 200,
+                days_until_expiry: Some(-10),
+                is_expired: true,
+                is_compromised: false,
+            },
+            make_healthy_entry("good_entry", "X9$kLm#pQ2wZ!nR7"),
+        ];
+        let report = analyze_vault_health(&entries);
+        // Score should be less than 100 due to issues
+        assert!(report.score.score < 100);
+        // Score should be above 0 since some entries are healthy
+        assert!(report.score.score > 0);
+        // Breakdown components should all be <= 25
+        assert!(report.score.breakdown.password_strength <= 25);
+        assert!(report.score.breakdown.uniqueness <= 25);
+        assert!(report.score.breakdown.freshness <= 25);
+        assert!(report.score.breakdown.two_factor <= 25);
+    }
+
+    #[test]
+    fn test_expired_password_detection() {
+        let entries = vec![
+            EntryHealthData {
+                label: "expired_account".to_string(),
+                password: "Str0ng!P@ssw0rd#2024".to_string(),
+                has_username: true,
+                has_url: true,
+                has_totp: true,
+                password_age_days: 100,
+                days_until_expiry: Some(-5),
+                is_expired: true,
+                is_compromised: false,
+            },
+        ];
+        let report = analyze_vault_health(&entries);
+        assert!(report.issues.iter().any(|i| i.category == IssueCategory::ExpiredPassword
+            && i.severity == IssueSeverity::Critical));
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == IssueCategory::ExpiredPassword && i.severity == IssueSeverity::Critical)
+            .expect("should have expired password issue");
+        assert!(issue.affected_entries.contains(&"expired_account".to_string()));
+        assert_eq!(report.stats.expired_passwords, 1);
+    }
+
+    #[test]
+    fn test_missing_2fa_detection() {
+        let entries = vec![
+            EntryHealthData {
+                label: "no_2fa_site".to_string(),
+                password: "Str0ng!P@ssw0rd#2024".to_string(),
+                has_username: true,
+                has_url: true,  // has URL, so Missing2FA should trigger
+                has_totp: false,
+                password_age_days: 10,
+                days_until_expiry: None,
+                is_expired: false,
+                is_compromised: false,
+            },
+        ];
+        let report = analyze_vault_health(&entries);
+        assert!(report.issues.iter().any(|i| i.category == IssueCategory::Missing2FA));
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == IssueCategory::Missing2FA)
+            .expect("should have missing 2FA issue");
+        assert!(issue.affected_entries.contains(&"no_2fa_site".to_string()));
+        assert_eq!(report.stats.without_2fa, 1);
+        assert_eq!(report.stats.with_2fa, 0);
+    }
+
+    #[test]
+    fn test_health_grade_boundaries() {
+        // Test exact boundary values
+        assert_eq!(HealthGrade::from_score(100), HealthGrade::A);
+        assert_eq!(HealthGrade::from_score(90), HealthGrade::A);
+        assert_eq!(HealthGrade::from_score(89), HealthGrade::B);
+        assert_eq!(HealthGrade::from_score(80), HealthGrade::B);
+        assert_eq!(HealthGrade::from_score(79), HealthGrade::C);
+        assert_eq!(HealthGrade::from_score(70), HealthGrade::C);
+        assert_eq!(HealthGrade::from_score(69), HealthGrade::D);
+        assert_eq!(HealthGrade::from_score(60), HealthGrade::D);
+        assert_eq!(HealthGrade::from_score(59), HealthGrade::F);
+        assert_eq!(HealthGrade::from_score(0), HealthGrade::F);
+
+        // Verify descriptions are non-empty for all grades
+        assert!(!HealthGrade::A.description().is_empty());
+        assert!(!HealthGrade::B.description().is_empty());
+        assert!(!HealthGrade::C.description().is_empty());
+        assert!(!HealthGrade::D.description().is_empty());
+        assert!(!HealthGrade::F.description().is_empty());
+
+        // Verify colors are non-empty for all grades
+        assert!(!HealthGrade::A.color().is_empty());
+        assert!(!HealthGrade::B.color().is_empty());
+        assert!(!HealthGrade::C.color().is_empty());
+        assert!(!HealthGrade::D.color().is_empty());
+        assert!(!HealthGrade::F.color().is_empty());
+    }
+
+    #[test]
+    fn test_multiple_issues_same_entry() {
+        // Entry with a very weak password AND no 2FA (and has URL so 2FA check applies)
+        let entries = vec![
+            EntryHealthData {
+                label: "problematic_entry".to_string(),
+                password: "bad".to_string(), // VeryWeak
+                has_username: true,
+                has_url: true,
+                has_totp: false,
+                password_age_days: 10,
+                days_until_expiry: None,
+                is_expired: false,
+                is_compromised: false,
+            },
+        ];
+        let report = analyze_vault_health(&entries);
+
+        // Should have at least a WeakPassword issue and a Missing2FA issue
+        let has_weak = report
+            .issues
+            .iter()
+            .any(|i| i.category == IssueCategory::WeakPassword);
+        let has_no_2fa = report
+            .issues
+            .iter()
+            .any(|i| i.category == IssueCategory::Missing2FA);
+        assert!(has_weak, "should detect weak password");
+        assert!(has_no_2fa, "should detect missing 2FA");
+
+        // Both issues should reference the same entry
+        let weak_issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == IssueCategory::WeakPassword)
+            .expect("weak issue");
+        let no_2fa_issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == IssueCategory::Missing2FA)
+            .expect("missing 2FA issue");
+        assert!(weak_issue.affected_entries.contains(&"problematic_entry".to_string()));
+        assert!(no_2fa_issue.affected_entries.contains(&"problematic_entry".to_string()));
+    }
+
+    #[test]
+    fn test_health_with_all_strong() {
+        // All entries have strong unique passwords, 2FA enabled, fresh passwords
+        let entries = vec![
+            make_healthy_entry("entry1", "X9$kLm#pQ2wZ!nR7"),
+            make_healthy_entry("entry2", "Ht5@bN&vY8jF!cD3"),
+            make_healthy_entry("entry3", "Qw7*eR#tY1uI!oP9"),
+        ];
+        let report = analyze_vault_health(&entries);
+
+        // Score should be high (near or at 100)
+        assert!(
+            report.score.score >= 85,
+            "score should be high for all-strong vault, got {}",
+            report.score.score
+        );
+
+        // Should have no critical or warning issues
+        assert_eq!(report.score.critical_issues, 0, "should have no critical issues");
+        assert_eq!(report.score.warning_issues, 0, "should have no warning issues");
+
+        // Stats should reflect all strong
+        assert_eq!(report.stats.strong_passwords, 3);
+        assert_eq!(report.stats.weak_passwords, 0);
+        assert_eq!(report.stats.expired_passwords, 0);
+        assert_eq!(report.stats.with_2fa, 3);
+        assert_eq!(report.stats.unique_passwords, 3);
+    }
 }

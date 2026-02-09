@@ -655,4 +655,485 @@ mod tests {
         // Verify file is gone
         assert!(!file_path.exists());
     }
+
+    // ===================== HELPER FUNCTIONS =====================
+
+    fn make_test_store(dir: &std::path::Path) -> LocalStore {
+        let config = lilypad_core::AppConfig {
+            environment: "test".to_string(),
+            data_dir: dir.to_string_lossy().to_string(),
+        };
+        LocalStore::new(&config).expect("create store")
+    }
+
+    fn make_test_vault(
+        name: &str,
+        key: &lilypad_core::KeyMaterial,
+    ) -> lilypad_core::Vault {
+        let metadata = lilypad_core::KeyMetadata::new(
+            key,
+            lilypad_core::CryptoAlgorithm::XChaCha20Poly1305,
+        );
+        lilypad_core::Vault::new(name, metadata)
+    }
+
+    fn make_test_entry(
+        label: &str,
+        key: &lilypad_core::KeyMaterial,
+    ) -> lilypad_core::Entry {
+        let secret = lilypad_core::EntrySecret::new("test-password");
+        let plaintext = serde_json::to_vec(&secret).expect("serialize secret");
+        let ciphertext =
+            lilypad_core::encrypt(key, &plaintext).expect("encrypt secret");
+        lilypad_core::Entry::new_with_metadata(
+            label,
+            lilypad_core::EntryMetadata::default(),
+            ciphertext,
+        )
+    }
+
+    // ===================== SAVE / LOAD VAULT TESTS =====================
+
+    #[test]
+    fn test_save_and_load_vault() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        let mut vault = make_test_vault("test-vault", &key);
+        vault
+            .add_entry(make_test_entry("Entry1", &key))
+            .expect("add entry 1");
+        vault
+            .add_entry(make_test_entry("Entry2", &key))
+            .expect("add entry 2");
+
+        store.save_vault(&vault, &key).expect("save vault");
+        let loaded = store.load_vault("test-vault", &key).expect("load vault");
+
+        assert_eq!(loaded.name, "test-vault");
+        assert_eq!(loaded.entries.len(), 2);
+        assert!(loaded.find_entry("Entry1").is_some());
+        assert!(loaded.find_entry("Entry2").is_some());
+    }
+
+    #[test]
+    fn test_load_nonexistent_vault() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        let result = store.load_vault("no-such-vault", &key);
+        assert!(result.is_err(), "loading a nonexistent vault should fail");
+    }
+
+    #[test]
+    fn test_save_overwrites_existing() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        // Save a vault with one entry
+        let mut vault = make_test_vault("overwrite-vault", &key);
+        vault
+            .add_entry(make_test_entry("OriginalEntry", &key))
+            .expect("add original");
+        store.save_vault(&vault, &key).expect("first save");
+
+        // Modify and save again
+        vault
+            .add_entry(make_test_entry("NewEntry", &key))
+            .expect("add new");
+        store.save_vault(&vault, &key).expect("second save");
+
+        // Load and verify the updated state
+        let loaded = store
+            .load_vault("overwrite-vault", &key)
+            .expect("load after overwrite");
+        assert_eq!(loaded.entries.len(), 2);
+        assert!(loaded.find_entry("OriginalEntry").is_some());
+        assert!(loaded.find_entry("NewEntry").is_some());
+    }
+
+    // ===================== MULTI-VAULT TESTS =====================
+
+    #[test]
+    fn test_list_vaults_empty() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+
+        let vaults = store.list_vaults().expect("list vaults");
+        assert!(vaults.is_empty(), "fresh store should have no vaults");
+    }
+
+    #[test]
+    fn test_list_vaults_multiple() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        for name in &["alpha", "bravo", "charlie"] {
+            let vault = make_test_vault(name, &key);
+            store.save_vault(&vault, &key).expect("save vault");
+        }
+
+        let mut vaults = store.list_vaults().expect("list vaults");
+        vaults.sort();
+        assert_eq!(vaults, vec!["alpha", "bravo", "charlie"]);
+    }
+
+    #[test]
+    fn test_vault_isolation() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        // Create vault A with entry "SecretA"
+        let mut vault_a = make_test_vault("vault-a", &key);
+        vault_a
+            .add_entry(make_test_entry("SecretA", &key))
+            .expect("add SecretA");
+        store.save_vault(&vault_a, &key).expect("save vault-a");
+
+        // Create vault B with entry "SecretB"
+        let mut vault_b = make_test_vault("vault-b", &key);
+        vault_b
+            .add_entry(make_test_entry("SecretB", &key))
+            .expect("add SecretB");
+        store.save_vault(&vault_b, &key).expect("save vault-b");
+
+        // Load each vault and verify isolation
+        let loaded_a = store.load_vault("vault-a", &key).expect("load vault-a");
+        let loaded_b = store.load_vault("vault-b", &key).expect("load vault-b");
+
+        assert_eq!(loaded_a.entries.len(), 1);
+        assert!(loaded_a.find_entry("SecretA").is_some());
+        assert!(loaded_a.find_entry("SecretB").is_none());
+
+        assert_eq!(loaded_b.entries.len(), 1);
+        assert!(loaded_b.find_entry("SecretB").is_some());
+        assert!(loaded_b.find_entry("SecretA").is_none());
+    }
+
+    // ===================== BACKUP TESTS =====================
+
+    #[test]
+    fn test_create_backup() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        let vault = make_test_vault("backup-test", &key);
+        store.save_vault(&vault, &key).expect("save vault");
+
+        let backup_name = store
+            .create_backup("backup-test")
+            .expect("create backup");
+
+        // Verify backup file exists on disk
+        let backup_path = store.backup_dir().join(&backup_name);
+        assert!(
+            backup_path.exists(),
+            "backup file should exist at {}",
+            backup_path.display()
+        );
+        assert!(
+            backup_name.starts_with("backup-test_"),
+            "backup name should start with vault name"
+        );
+        assert!(
+            backup_name.ends_with(".backup"),
+            "backup name should end with .backup"
+        );
+    }
+
+    #[test]
+    fn test_list_backups() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        let vault = make_test_vault("list-bk", &key);
+        store.save_vault(&vault, &key).expect("save vault");
+
+        // Create 3 backups with short delays to get distinct timestamps
+        for _ in 0..3 {
+            store.create_backup("list-bk").expect("create backup");
+            // Small sleep to ensure distinct timestamps in filenames
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+        }
+
+        let backups = store.list_backups("list-bk").expect("list backups");
+        assert_eq!(backups.len(), 3, "should have 3 backups");
+        for info in &backups {
+            assert_eq!(info.vault_name, "list-bk");
+            assert!(info.size_bytes > 0, "backup should have non-zero size");
+        }
+    }
+
+    #[test]
+    fn test_restore_backup() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        // Save original vault with one entry
+        let mut vault = make_test_vault("restore-test", &key);
+        vault
+            .add_entry(make_test_entry("OriginalOnly", &key))
+            .expect("add original entry");
+        store.save_vault(&vault, &key).expect("save original");
+
+        // Create a backup of the original state
+        let backup_name = store
+            .create_backup("restore-test")
+            .expect("create backup");
+
+        // Modify the vault (add another entry, remove original)
+        vault
+            .add_entry(make_test_entry("AddedLater", &key))
+            .expect("add new entry");
+        vault.remove_entry("OriginalOnly").expect("remove original");
+        store.save_vault(&vault, &key).expect("save modified");
+
+        // Verify the modified state
+        let loaded_modified = store
+            .load_vault("restore-test", &key)
+            .expect("load modified");
+        assert!(loaded_modified.find_entry("OriginalOnly").is_none());
+        assert!(loaded_modified.find_entry("AddedLater").is_some());
+
+        // Sleep to ensure the pre-restore backup created inside restore_backup
+        // gets a distinct timestamp from the original backup (second-level precision)
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+
+        // Restore from backup
+        store.restore_backup(&backup_name).expect("restore backup");
+
+        // Verify original state is restored
+        let loaded_restored = store
+            .load_vault("restore-test", &key)
+            .expect("load restored");
+        assert!(
+            loaded_restored.find_entry("OriginalOnly").is_some(),
+            "original entry should be restored"
+        );
+        assert!(
+            loaded_restored.find_entry("AddedLater").is_none(),
+            "later addition should not be present after restore"
+        );
+    }
+
+    #[test]
+    fn test_prune_backups() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        let vault = make_test_vault("prune-test", &key);
+        store.save_vault(&vault, &key).expect("save vault");
+
+        // Create 5 backups
+        for _ in 0..5 {
+            store.create_backup("prune-test").expect("create backup");
+            std::thread::sleep(std::time::Duration::from_millis(1100));
+        }
+
+        let before = store.list_backups("prune-test").expect("list before");
+        assert_eq!(before.len(), 5);
+
+        // Prune to keep only 2
+        let deleted = store
+            .prune_backups("prune-test", 2)
+            .expect("prune backups");
+        assert_eq!(deleted, 3, "should have pruned 3 backups");
+
+        let after = store.list_backups("prune-test").expect("list after");
+        assert_eq!(after.len(), 2, "should have 2 backups remaining");
+    }
+
+    // ===================== SYNC PAYLOAD TESTS =====================
+
+    #[test]
+    fn test_sync_payload_roundtrip() {
+        let dir_src = tempdir().expect("create source dir");
+        let dir_dst = tempdir().expect("create destination dir");
+        let store_src = make_test_store(dir_src.path());
+        let store_dst = make_test_store(dir_dst.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        // Save a vault in the source store
+        let mut vault = make_test_vault("sync-vault", &key);
+        vault
+            .add_entry(make_test_entry("SyncEntry", &key))
+            .expect("add entry");
+        store_src.save_vault(&vault, &key).expect("save in source");
+
+        // Get sync payload from source
+        let payload = store_src
+            .sync_payload("sync-vault")
+            .expect("get sync payload");
+
+        // Apply sync payload to destination
+        store_dst
+            .apply_sync_payload("sync-vault", &payload)
+            .expect("apply sync payload");
+
+        // Load from destination and verify
+        let loaded = store_dst
+            .load_vault("sync-vault", &key)
+            .expect("load from destination");
+        assert_eq!(loaded.name, "sync-vault");
+        assert_eq!(loaded.entries.len(), 1);
+        assert!(loaded.find_entry("SyncEntry").is_some());
+    }
+
+    #[test]
+    fn test_apply_sync_payload_overwrites() {
+        let dir_src = tempdir().expect("create source dir");
+        let dir_dst = tempdir().expect("create destination dir");
+        let store_src = make_test_store(dir_src.path());
+        let store_dst = make_test_store(dir_dst.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        // Save an initial vault in destination
+        let mut initial_vault = make_test_vault("sync-overwrite", &key);
+        initial_vault
+            .add_entry(make_test_entry("OldEntry", &key))
+            .expect("add old entry");
+        store_dst
+            .save_vault(&initial_vault, &key)
+            .expect("save initial in dst");
+
+        // Prepare a different vault in source
+        let mut new_vault = make_test_vault("sync-overwrite", &key);
+        new_vault
+            .add_entry(make_test_entry("NewEntry", &key))
+            .expect("add new entry");
+        store_src
+            .save_vault(&new_vault, &key)
+            .expect("save in source");
+
+        // Get payload from source and apply to destination
+        let payload = store_src
+            .sync_payload("sync-overwrite")
+            .expect("get payload");
+        store_dst
+            .apply_sync_payload("sync-overwrite", &payload)
+            .expect("apply payload");
+
+        // Verify destination now has the source's data
+        let loaded = store_dst
+            .load_vault("sync-overwrite", &key)
+            .expect("load overwritten");
+        assert_eq!(loaded.entries.len(), 1);
+        assert!(
+            loaded.find_entry("NewEntry").is_some(),
+            "should have the new entry from sync"
+        );
+        assert!(
+            loaded.find_entry("OldEntry").is_none(),
+            "old entry should be replaced"
+        );
+    }
+
+    // ===================== EDGE CASE TESTS =====================
+
+    #[test]
+    fn test_vault_name_validation() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        // Empty name
+        let empty_vault = make_test_vault("", &key);
+        assert!(
+            store.save_vault(&empty_vault, &key).is_err(),
+            "empty vault name should be rejected"
+        );
+
+        // Path traversal
+        let traversal_vault = make_test_vault("../etc/passwd", &key);
+        assert!(
+            store.save_vault(&traversal_vault, &key).is_err(),
+            "path traversal vault name should be rejected"
+        );
+
+        // Special characters
+        let special_vault = make_test_vault("vault@home!", &key);
+        assert!(
+            store.save_vault(&special_vault, &key).is_err(),
+            "special chars in vault name should be rejected"
+        );
+
+        // Hidden file prefix
+        let hidden_vault = make_test_vault(".hidden", &key);
+        assert!(
+            store.save_vault(&hidden_vault, &key).is_err(),
+            "dot-prefixed vault name should be rejected"
+        );
+
+        // Name with spaces
+        let space_vault = make_test_vault("my vault", &key);
+        assert!(
+            store.save_vault(&space_vault, &key).is_err(),
+            "vault name with spaces should be rejected"
+        );
+
+        // Name with forward slash
+        let slash_vault = make_test_vault("foo/bar", &key);
+        assert!(
+            store.save_vault(&slash_vault, &key).is_err(),
+            "vault name with slash should be rejected"
+        );
+
+        // Valid names should succeed
+        let valid_vault = make_test_vault("my-vault_01", &key);
+        assert!(
+            store.save_vault(&valid_vault, &key).is_ok(),
+            "valid vault name should be accepted"
+        );
+    }
+
+    #[test]
+    fn test_concurrent_access_safety() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        // Save initial vault
+        let mut vault = make_test_vault("concurrent-vault", &key);
+        vault
+            .add_entry(make_test_entry("Entry1", &key))
+            .expect("add entry 1");
+        store.save_vault(&vault, &key).expect("save initial");
+
+        // Simulate two sequential saves (file locking prevents corruption)
+        vault
+            .add_entry(make_test_entry("Entry2", &key))
+            .expect("add entry 2");
+        store.save_vault(&vault, &key).expect("save update 1");
+
+        vault
+            .add_entry(make_test_entry("Entry3", &key))
+            .expect("add entry 3");
+        store.save_vault(&vault, &key).expect("save update 2");
+
+        // Verify the final state is consistent
+        let loaded = store
+            .load_vault("concurrent-vault", &key)
+            .expect("load final state");
+        assert_eq!(loaded.entries.len(), 3);
+        assert!(loaded.find_entry("Entry1").is_some());
+        assert!(loaded.find_entry("Entry2").is_some());
+        assert!(loaded.find_entry("Entry3").is_some());
+
+        // Verify that a second store instance pointing at the same directory
+        // can also read the vault (shared lock)
+        let store2 = make_test_store(dir.path());
+        let loaded2 = store2
+            .load_vault("concurrent-vault", &key)
+            .expect("load from second store");
+        assert_eq!(loaded2.entries.len(), 3);
+    }
 }
