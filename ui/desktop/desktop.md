@@ -1,11 +1,12 @@
 # Desktop GUI
 
-The desktop GUI is implemented with the `egui` ecosystem using `eframe` for native windowing. The initial layout mirrors modern password managers with a sidebar for vault navigation, a top header for global actions, and a central area for credential previews.
+The desktop GUI is built with the `iced` retained-mode toolkit (v0.13), providing a pure-Rust, cross-platform interface. The layout mirrors modern password managers with a bottom navigation bar for categories (Credentials, Health, Generator, Sync, Account, Security), a top header for search and vault selection, and a central panel for content.
 
 Key notes:
-- Keep the UI modular so panels and dialogs can evolve without reshaping core logic.
-- Favor immediate-mode patterns from `egui` for predictable rendering and input handling.
+- Uses Iced's message-based architecture for predictable state management.
+- Supports multiple themes (Classic Green, Night Bloom, Pond Light) with configurable settings.
+- Features include multi-vault support, password generator, health dashboard, GitHub OAuth sync, CSV/JSON import/export, HIBP breach checking, key rotation, entry history, and backup/restore.
 - Maintain cross-platform compatibility (Linux, macOS, Windows) by avoiding platform-specific APIs unless gated.
-- Use the welcome modal as the first interaction to introduce Lilypad's relationship to the Colony project and to gather goodwill for feedback.
+- Dependencies: `iced 0.13`, `arboard` (clipboard), `rfd` (file dialogs), `tokio` (async), `chrono` (time), `csv`/`sha1` (import/breach check).
 
 See `src/src.md` for source organization details.

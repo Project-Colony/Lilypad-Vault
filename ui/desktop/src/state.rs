@@ -64,6 +64,19 @@ pub struct AppSettings {
     pub require_master_on_copy: bool,
     #[serde(default)]
     pub exclude_ambiguous_chars: bool,
+    // Account settings (persisted)
+    #[serde(default)]
+    pub account_display_name: String,
+    #[serde(default)]
+    pub account_email: String,
+    #[serde(default)]
+    pub account_timezone: String,
+    #[serde(default)]
+    pub account_two_factor_enabled: bool,
+    #[serde(default)]
+    pub account_marketing_opt_in: bool,
+    #[serde(default)]
+    pub security_recovery_email: String,
 }
 
 impl Default for AppSettings {
@@ -76,6 +89,12 @@ impl Default for AppSettings {
             send_security_alerts: true,
             require_master_on_copy: false,
             exclude_ambiguous_chars: false,
+            account_display_name: String::new(),
+            account_email: String::new(),
+            account_timezone: String::new(),
+            account_two_factor_enabled: false,
+            account_marketing_opt_in: false,
+            security_recovery_email: String::new(),
         }
     }
 }

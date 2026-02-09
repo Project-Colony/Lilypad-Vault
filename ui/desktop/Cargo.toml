@@ -17,13 +17,13 @@ tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "time"] }
 directories = "6.0.0"
 webbrowser = "1.0.6"
 rfd = "0.17.2"
-arboard = "3.6.1"
+arboard.workspace = true
 
 # Data handling
-rand = "0.8.5"
-anyhow = "1.0.100"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.149"
+rand.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 # Security
 zeroize.workspace = true
@@ -35,12 +35,15 @@ lilypad-core = { path = "../../lilypad-core" }
 lilypad-storage = { path = "../../lilypad-storage" }
 lilypad-oauth = { path = "../../lilypad-oauth" }
 
-# Cryptographic hashing for sync checksums
-sha2 = "0.10"
+# Cryptographic hashing
+sha2.workspace = true
+sha1.workspace = true
+csv.workspace = true
+reqwest = { workspace = true, features = ["blocking"] }
 
 # Time handling
-chrono = { version = "0.4", features = ["serde"] }
+chrono.workspace = true
 
-# Logging (optional, useful for debugging)
+# Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

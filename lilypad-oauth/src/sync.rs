@@ -7,7 +7,7 @@ use crate::config::{OAuthConfig, OAuthProvider};
 use crate::error::{OAuthError, Result};
 use crate::github_api::GitHubClient;
 use crate::oauth::OAuthFlow;
-use crate::token_store::TokenStoreManager;
+use crate::token_store::{TokenInfo, TokenStoreManager};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -49,6 +49,17 @@ pub struct SyncMetadata {
 
 impl SyncMetadata {
     /// Creates new sync metadata.
+    ///
+    /// ```
+    /// let meta = lilypad_oauth::SyncMetadata::new(
+    ///     "octocat".to_string(),
+    ///     "abc123".to_string(),
+    ///     "def456".to_string(),
+    /// );
+    /// assert_eq!(meta.github_username, "octocat");
+    /// assert_eq!(meta.version, 1);
+    /// assert!(meta.last_sync_at > 0);
+    /// ```
     pub fn new(github_username: String, sha: String, local_checksum: String) -> Self {
         Self {
             last_sync_at: current_timestamp(),
@@ -58,6 +69,12 @@ impl SyncMetadata {
             device_id: generate_device_id(),
             version: 1,
         }
+    }
+
+    /// Creates metadata reusing an existing device ID.
+    pub fn with_device_id(mut self, device_id: String) -> Self {
+        self.device_id = device_id;
+        self
     }
 
     /// Updates the metadata after a sync.
@@ -75,25 +92,27 @@ impl SyncMetadata {
 pub struct GitHubSyncBackend {
     client: GitHubClient,
     username: String,
-    /// Token store retained for future token refresh support.
-    #[allow(dead_code)]
+    /// Token store used for token persistence and refresh.
     token_store: TokenStoreManager,
     /// Cached sync metadata.
     metadata: Option<SyncMetadata>,
     /// Cached file SHA for updates.
     cached_sha: Option<String>,
+    /// Persistent device identifier.
+    device_id: String,
 }
 
 impl GitHubSyncBackend {
     /// Creates a new GitHub sync backend from stored credentials.
     pub fn from_stored_token() -> Result<Self> {
         let token_store = TokenStoreManager::new()?;
-        let token = token_store
+        let mut token = token_store
             .load_token(OAuthProvider::GitHub)?
             .ok_or(OAuthError::InvalidToken)?;
 
         if token.is_expired() {
-            return Err(OAuthError::TokenExpired);
+            // Attempt token refresh before failing
+            token = Self::try_refresh_token(&token_store, &token)?;
         }
 
         let client = GitHubClient::new(token.access_token())?;
@@ -105,7 +124,79 @@ impl GitHubSyncBackend {
             token_store,
             metadata: None,
             cached_sha: None,
+            device_id: generate_device_id(),
         })
+    }
+
+    /// Attempts to refresh an expired token using the refresh_token grant.
+    fn try_refresh_token(token_store: &TokenStoreManager, token: &TokenInfo) -> Result<TokenInfo> {
+        let refresh_token = token.refresh_token().ok_or(OAuthError::TokenExpired)?;
+
+        let config = OAuthConfig::from_env().unwrap_or_default();
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .user_agent("Lilypad-OAuth/1.0")
+            .build()
+            .map_err(|e| OAuthError::NetworkError(e.to_string()))?;
+
+        #[derive(serde::Serialize)]
+        struct RefreshRequest<'a> {
+            client_id: &'a str,
+            grant_type: &'a str,
+            refresh_token: &'a str,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct RefreshResponse {
+            access_token: Option<String>,
+            token_type: Option<String>,
+            scope: Option<String>,
+            refresh_token: Option<String>,
+            expires_in: Option<u64>,
+            error: Option<String>,
+            error_description: Option<String>,
+        }
+
+        let request = RefreshRequest {
+            client_id: &config.client_id,
+            grant_type: "refresh_token",
+            refresh_token,
+        };
+
+        let response = client
+            .post(&config.token_url)
+            .header("Accept", "application/json")
+            .form(&request)
+            .send()?;
+
+        let resp: RefreshResponse = response.json()?;
+
+        if let Some(error) = resp.error {
+            let msg = resp.error_description.unwrap_or(error);
+            return Err(OAuthError::AuthenticationFailed(format!(
+                "Token refresh failed: {}",
+                msg
+            )));
+        }
+
+        let access_token = resp.access_token.ok_or_else(|| {
+            OAuthError::AuthenticationFailed("no access_token in refresh response".to_string())
+        })?;
+
+        let new_token = TokenInfo::new(
+            access_token,
+            resp.token_type.unwrap_or_else(|| "bearer".to_string()),
+            resp.scope.unwrap_or_else(|| token.scope.clone()),
+        )
+        .with_refresh_token(resp.refresh_token.or_else(|| token.refresh_token().map(String::from)))
+        .with_expires_in(resp.expires_in)
+        .with_username(token.username.clone().unwrap_or_default());
+
+        // Save the refreshed token
+        token_store.save_token(OAuthProvider::GitHub, new_token.clone())?;
+
+        Ok(new_token)
     }
 
     /// Creates a new GitHub sync backend with a fresh OAuth flow.
@@ -128,12 +219,30 @@ impl GitHubSyncBackend {
             token_store,
             metadata: None,
             cached_sha: None,
+            device_id: generate_device_id(),
         })
     }
 
     /// Returns the authenticated GitHub username.
     pub fn username(&self) -> &str {
         &self.username
+    }
+
+    /// Returns the device identifier.
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+
+    /// Ensures the stored token is still valid, refreshing if necessary.
+    ///
+    /// Call this before long-running operations to avoid mid-operation token expiry.
+    pub fn ensure_token_valid(&self) -> Result<()> {
+        if let Some(token) = self.token_store.load_token(OAuthProvider::GitHub)? {
+            if token.is_expired() {
+                Self::try_refresh_token(&self.token_store, &token)?;
+            }
+        }
+        Ok(())
     }
 
     /// Checks if there is a stored valid token.
@@ -198,7 +307,8 @@ impl GitHubSyncBackend {
         let checksum = calculate_checksum(payload);
 
         // Update sync metadata
-        let meta = SyncMetadata::new(self.username.clone(), new_sha.clone(), checksum.clone());
+        let meta = SyncMetadata::new(self.username.clone(), new_sha.clone(), checksum.clone())
+            .with_device_id(self.device_id.clone());
         let meta_json = serde_json::to_string_pretty(&meta)?;
 
         // Get metadata SHA if exists
@@ -305,5 +415,153 @@ mod tests {
         let checksum = calculate_checksum(data);
         assert!(!checksum.is_empty());
         assert_eq!(checksum.len(), 64); // SHA-256 produces 64 hex chars
+    }
+
+    #[test]
+    fn test_device_id_persistence() {
+        let meta = SyncMetadata::new(
+            "testuser".to_string(),
+            "abc123".to_string(),
+            "def456".to_string(),
+        ).with_device_id("my-device-001".to_string());
+
+        assert_eq!(meta.device_id, "my-device-001");
+        assert_eq!(meta.github_username, "testuser");
+    }
+
+    #[test]
+    fn test_sync_metadata_update() {
+        let mut meta = SyncMetadata::new(
+            "testuser".to_string(),
+            "abc123".to_string(),
+            "def456".to_string(),
+        );
+
+        let original_timestamp = meta.last_sync_at;
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        meta.update("xyz789".to_string(), "ghi012".to_string());
+
+        assert_eq!(meta.last_sync_sha, "xyz789");
+        assert_eq!(meta.local_checksum, "ghi012");
+        assert!(meta.last_sync_at >= original_timestamp);
+    }
+
+    #[test]
+    fn test_sync_status_display() {
+        // Verify all SyncStatus variants can be formatted via Debug
+        let variants: Vec<SyncStatus> = vec![
+            SyncStatus::NotAuthenticated,
+            SyncStatus::NoRemoteVault,
+            SyncStatus::InSync,
+            SyncStatus::LocalAhead,
+            SyncStatus::RemoteAhead,
+            SyncStatus::Conflict,
+            SyncStatus::Unknown("test error".to_string()),
+        ];
+
+        for variant in &variants {
+            let formatted = format!("{:?}", variant);
+            assert!(!formatted.is_empty(), "SyncStatus variant should have non-empty Debug output");
+        }
+
+        // Verify specific Debug representations
+        assert_eq!(format!("{:?}", SyncStatus::InSync), "InSync");
+        assert_eq!(format!("{:?}", SyncStatus::Conflict), "Conflict");
+        assert!(format!("{:?}", SyncStatus::Unknown("net fail".to_string())).contains("net fail"));
+    }
+
+    #[test]
+    fn test_sync_metadata_with_device_id() {
+        let custom_device_id = "custom-device-abc123".to_string();
+        let meta = SyncMetadata::new(
+            "alice".to_string(),
+            "sha_aaa".to_string(),
+            "checksum_bbb".to_string(),
+        )
+        .with_device_id(custom_device_id.clone());
+
+        assert_eq!(meta.device_id, custom_device_id);
+        assert_eq!(meta.github_username, "alice");
+        assert_eq!(meta.last_sync_sha, "sha_aaa");
+        assert_eq!(meta.local_checksum, "checksum_bbb");
+        assert_eq!(meta.version, 1);
+    }
+
+    #[test]
+    fn test_sync_metadata_last_synced_updates() {
+        let mut meta = SyncMetadata::new(
+            "bob".to_string(),
+            "sha_orig".to_string(),
+            "cs_orig".to_string(),
+        );
+
+        let first_sync_at = meta.last_sync_at;
+        assert!(first_sync_at > 0);
+
+        // Sleep briefly to ensure timestamp advances
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+
+        meta.update("sha_new".to_string(), "cs_new".to_string());
+
+        // After update, last_sync_at should be >= the original
+        assert!(
+            meta.last_sync_at >= first_sync_at,
+            "last_sync_at should not decrease after update"
+        );
+        assert_eq!(meta.last_sync_sha, "sha_new");
+        assert_eq!(meta.local_checksum, "cs_new");
+        // Username and device_id should be unchanged
+        assert_eq!(meta.github_username, "bob");
+    }
+
+    #[test]
+    fn test_checksum_different_data() {
+        let checksum_a = calculate_checksum(b"hello world");
+        let checksum_b = calculate_checksum(b"hello worl!");
+
+        assert_ne!(
+            checksum_a, checksum_b,
+            "Different data must produce different checksums"
+        );
+
+        // Also test with empty vs non-empty
+        let checksum_empty = calculate_checksum(b"");
+        assert_ne!(checksum_empty, checksum_a);
+    }
+
+    #[test]
+    fn test_checksum_same_data() {
+        let data = b"identical payload bytes";
+        let checksum1 = calculate_checksum(data);
+        let checksum2 = calculate_checksum(data);
+
+        assert_eq!(
+            checksum1, checksum2,
+            "Same data must produce the same checksum"
+        );
+
+        // Verify it's a valid SHA-256 hex string (64 hex chars)
+        assert_eq!(checksum1.len(), 64);
+        assert!(checksum1.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn test_device_id_format() {
+        let id = generate_device_id();
+
+        // generate_device_id produces 8 random bytes hex-encoded => 16 hex characters
+        assert_eq!(
+            id.len(),
+            16,
+            "Device ID should be 16 hex characters (8 bytes)"
+        );
+        assert!(
+            id.chars().all(|c| c.is_ascii_hexdigit()),
+            "Device ID should consist only of valid hex characters"
+        );
+
+        // Two generated IDs should (almost certainly) be different
+        let id2 = generate_device_id();
+        assert_ne!(id, id2, "Two generated device IDs should differ");
     }
 }

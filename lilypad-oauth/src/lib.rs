@@ -46,6 +46,10 @@ pub use token_store::{TokenInfo, TokenStoreManager};
 
 /// Default OAuth client ID for Lilypad GitHub App.
 /// Users can override this with their own OAuth app credentials.
+///
+/// ```
+/// assert_eq!(lilypad_oauth::DEFAULT_GITHUB_CLIENT_ID, "LILYPAD_GITHUB_CLIENT_ID");
+/// ```
 pub const DEFAULT_GITHUB_CLIENT_ID: &str = "LILYPAD_GITHUB_CLIENT_ID";
 
 /// Default OAuth scopes required for vault sync.

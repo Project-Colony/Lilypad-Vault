@@ -139,6 +139,17 @@ pub struct LilypadApp {
     pub sync_in_progress: bool,
     pub device_flow_code: Option<String>,
     pub device_flow_uri: Option<String>,
+
+    // Key rotation
+    pub show_change_password: bool,
+    pub new_master_password: String,
+
+    // Entry history view
+    pub show_entry_history: bool,
+    pub history_entries: Vec<(u64, String)>,
+
+    // Breach check
+    pub breached_entries: Vec<String>,
 }
 
 impl Drop for LilypadApp {
@@ -147,6 +158,7 @@ impl Drop for LilypadApp {
         self.generated_password.zeroize();
         self.entry_password.zeroize();
         self.reauth_password.zeroize();
+        self.new_master_password.zeroize();
         if let Some(ref mut value) = self.clipboard_value {
             value.zeroize();
         }
@@ -168,8 +180,13 @@ impl LilypadApp {
             Err(e) => {
                 eprintln!("Failed to initialize store: {e}");
                 // Create a minimal store with fallback data dir so the app can still display an error
-                LocalStore::new(&default_config())
-                    .expect("fallback store init with default config must succeed")
+                match LocalStore::new(&default_config()) {
+                    Ok(s) => s,
+                    Err(e2) => {
+                        eprintln!("Fatal: fallback store also failed: {e2}");
+                        std::process::exit(1);
+                    }
+                }
             }
         };
         let now = Instant::now();
@@ -228,16 +245,13 @@ impl LilypadApp {
             show_vault_selector: false,
             show_new_vault_modal: false,
             new_vault_name: String::new(),
-            account_display_name: "Avery Quinn".to_string(),
-            account_email: "avery@lilypad.app".to_string(),
-            account_timezone: "Europe/Paris".to_string(),
-            account_two_factor_enabled: true,
+            account_display_name: String::new(),
+            account_email: String::new(),
+            account_timezone: String::new(),
+            account_two_factor_enabled: false,
             account_marketing_opt_in: false,
-            security_recovery_email: "recovery@lilypad.app".to_string(),
-            security_trusted_devices: vec![
-                "MacBook Pro - Paris".to_string(),
-                "iPhone 15 - Bordeaux".to_string(),
-            ],
+            security_recovery_email: String::new(),
+            security_trusted_devices: Vec::new(),
             health_report: None,
             github_username: None,
             github_authenticated: false,
@@ -245,6 +259,11 @@ impl LilypadApp {
             sync_in_progress: false,
             device_flow_code: None,
             device_flow_uri: None,
+            show_change_password: false,
+            new_master_password: String::new(),
+            show_entry_history: false,
+            history_entries: Vec::new(),
+            breached_entries: Vec::new(),
         };
 
         // Check GitHub OAuth status on startup
@@ -285,6 +304,13 @@ impl LilypadApp {
                         settings.version = SETTINGS_VERSION;
                     }
                     app.theme = LilypadTheme::from_index(settings.theme_index);
+                    // Restore account settings from persisted state
+                    app.account_display_name = settings.account_display_name.clone();
+                    app.account_email = settings.account_email.clone();
+                    app.account_timezone = settings.account_timezone.clone();
+                    app.account_two_factor_enabled = settings.account_two_factor_enabled;
+                    app.account_marketing_opt_in = settings.account_marketing_opt_in;
+                    app.security_recovery_email = settings.security_recovery_email.clone();
                     app.settings = settings;
                 }
             }
@@ -573,22 +599,34 @@ impl LilypadApp {
 
             // Account Settings
             Message::DisplayNameChanged(name) => {
-                self.account_display_name = name;
+                self.account_display_name = name.clone();
+                self.settings.account_display_name = name;
+                self.save_settings();
             }
             Message::EmailChanged(email) => {
-                self.account_email = email;
+                self.account_email = email.clone();
+                self.settings.account_email = email;
+                self.save_settings();
             }
             Message::TimezoneChanged(tz) => {
-                self.account_timezone = tz;
+                self.account_timezone = tz.clone();
+                self.settings.account_timezone = tz;
+                self.save_settings();
             }
             Message::ToggleTwoFactor(v) => {
                 self.account_two_factor_enabled = v;
+                self.settings.account_two_factor_enabled = v;
+                self.save_settings();
             }
             Message::ToggleMarketingOptIn(v) => {
                 self.account_marketing_opt_in = v;
+                self.settings.account_marketing_opt_in = v;
+                self.save_settings();
             }
             Message::RecoveryEmailChanged(email) => {
-                self.security_recovery_email = email;
+                self.security_recovery_email = email.clone();
+                self.settings.security_recovery_email = email;
+                self.save_settings();
             }
             Message::RemoveTrustedDevice(index) => {
                 if index < self.security_trusted_devices.len() {
@@ -685,6 +723,72 @@ impl LilypadApp {
                     Err(e) => {
                         self.set_status(format!("Sync error: {}", e));
                     }
+                }
+            }
+
+            // CSV Export
+            Message::ExportVaultCsv => {
+                return self.export_vault_csv();
+            }
+
+            // Browser CSV Import
+            Message::ImportBrowserCsv => {
+                return self.import_browser_csv_dialog();
+            }
+            Message::BrowserCsvSelected(path) => {
+                if let Some(path) = path {
+                    return self.import_browser_csv_file(path);
+                }
+            }
+
+            // Breach Check
+            Message::CheckBreaches => {
+                return self.check_breaches();
+            }
+            Message::BreachCheckCompleted(breached) => {
+                self.breached_entries = breached.clone();
+                if breached.is_empty() {
+                    self.set_status("No breached passwords found!");
+                } else {
+                    self.set_status(format!("{} potentially breached passwords found", breached.len()));
+                }
+            }
+
+            // Key Rotation
+            Message::ChangeMasterPassword => {
+                self.show_change_password = true;
+                self.new_master_password = String::new();
+            }
+            Message::NewMasterPasswordChanged(p) => {
+                self.new_master_password = p;
+            }
+            Message::ConfirmChangeMasterPassword => {
+                return self.change_master_password();
+            }
+            Message::CancelChangeMasterPassword => {
+                self.show_change_password = false;
+                self.new_master_password.zeroize();
+            }
+
+            // Entry History
+            Message::ViewEntryHistory(idx) => {
+                self.view_entry_history(idx);
+            }
+            Message::CloseEntryHistory => {
+                self.show_entry_history = false;
+                self.history_entries.clear();
+            }
+
+            // Backup
+            Message::BackupVault => {
+                return self.backup_vault();
+            }
+            Message::RestoreVault => {
+                return self.restore_vault_dialog();
+            }
+            Message::BackupFileSelected(path) => {
+                if let Some(path) = path {
+                    return self.restore_vault_file(path);
                 }
             }
 
@@ -1388,12 +1492,11 @@ impl LilypadApp {
                     password: e.password.clone(),
                     has_username: !e.username.is_empty(),
                     has_url: !e.url.is_empty(),
-                    // TOTP status is stored in encrypted EntrySecret (CLI only);
-                    // desktop does not yet manage TOTP secrets
-                    has_totp: false,
+                    has_totp: e.totp_secret.is_some(),
                     password_age_days,
                     days_until_expiry,
                     is_expired: is_expired_from_entry,
+                    is_compromised: false,
                 }
             })
             .collect();
@@ -1898,6 +2001,425 @@ impl LilypadApp {
             },
             Message::SyncCompleted,
         )
+    }
+    // ========================================================================
+    // CSV Export
+    // ========================================================================
+
+    fn export_vault_csv(&mut self) -> Task<Message> {
+        let Some(ref key) = self.vault_key else {
+            self.set_status("Vault must be unlocked to export CSV");
+            return Task::none();
+        };
+        let Some(ref vault) = self.vault else {
+            return Task::none();
+        };
+
+        let mut csv_data = String::from("name,url,username,password,notes,folder,tags\n");
+        let mut exported = 0u32;
+
+        for entry in &vault.entries {
+            if let Ok(decrypted) = decrypt(key, &entry.ciphertext) {
+                if let Ok(secret) = serde_json::from_slice::<EntrySecret>(&decrypted) {
+                    let escape_csv = |s: &str| -> String {
+                        if s.contains(',') || s.contains('"') || s.contains('\n') {
+                            format!("\"{}\"", s.replace('"', "\"\""))
+                        } else {
+                            s.to_string()
+                        }
+                    };
+
+                    csv_data.push_str(&format!(
+                        "{},{},{},{},{},{},{}\n",
+                        escape_csv(&entry.label),
+                        escape_csv(entry.metadata.url.as_deref().unwrap_or("")),
+                        escape_csv(entry.metadata.username.as_deref().unwrap_or("")),
+                        escape_csv(&secret.password),
+                        escape_csv(secret.notes.as_deref().unwrap_or("")),
+                        escape_csv(entry.metadata.folder.as_deref().unwrap_or("")),
+                        escape_csv(&entry.metadata.tags.join(";")),
+                    ));
+                    exported += 1;
+                }
+            }
+        }
+
+        let default_filename = format!("{}.csv", vault.name);
+        let file = rfd::FileDialog::new()
+            .set_title("Export Vault as CSV (PLAINTEXT)")
+            .set_file_name(&default_filename)
+            .add_filter("CSV", &["csv"])
+            .save_file();
+
+        if let Some(path) = file {
+            match std::fs::write(&path, csv_data.as_bytes()) {
+                Ok(()) => self.set_status(format!("{} entries exported to {}", exported, path.display())),
+                Err(e) => self.set_status(format!("CSV export failed: {}", e)),
+            }
+        }
+
+        Task::none()
+    }
+
+    // ========================================================================
+    // Browser CSV Import
+    // ========================================================================
+
+    fn import_browser_csv_dialog(&mut self) -> Task<Message> {
+        let file = rfd::FileDialog::new()
+            .set_title("Import from Browser CSV")
+            .add_filter("CSV Files", &["csv"])
+            .pick_file();
+
+        if let Some(path) = file {
+            return Task::done(Message::BrowserCsvSelected(Some(path)));
+        }
+        Task::none()
+    }
+
+    fn import_browser_csv_file(&mut self, path: std::path::PathBuf) -> Task<Message> {
+        let Some(ref key) = self.vault_key else {
+            self.set_status("Vault must be unlocked to import");
+            return Task::none();
+        };
+        let Some(ref mut vault) = self.vault else {
+            return Task::none();
+        };
+
+        let contents = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(e) => {
+                self.set_status(format!("Failed to read CSV: {}", e));
+                return Task::none();
+            }
+        };
+
+        let mut reader = csv::ReaderBuilder::new()
+            .flexible(true)
+            .has_headers(true)
+            .from_reader(contents.as_bytes());
+
+        let headers: Vec<String> = match reader.headers() {
+            Ok(h) => h.iter().map(|s| s.to_lowercase().trim().to_string()).collect(),
+            Err(e) => {
+                self.set_status(format!("Invalid CSV headers: {}", e));
+                return Task::none();
+            }
+        };
+
+        // Detect format based on headers
+        let name_col = headers.iter().position(|h| matches!(h.as_str(), "name" | "title" | "login_name" | "login_label"));
+        let url_col = headers.iter().position(|h| matches!(h.as_str(), "url" | "login_uri" | "web site" | "website"));
+        let user_col = headers.iter().position(|h| matches!(h.as_str(), "username" | "login_username" | "user name" | "login"));
+        let pass_col = headers.iter().position(|h| matches!(h.as_str(), "password" | "login_password"));
+        let notes_col = headers.iter().position(|h| matches!(h.as_str(), "notes" | "extra" | "comments"));
+        let folder_col = headers.iter().position(|h| matches!(h.as_str(), "folder" | "group" | "grouping" | "collection_ids"));
+
+        let mut imported = 0u32;
+
+        for result in reader.records() {
+            let record = match result {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+
+            let get_field = |col: Option<usize>| -> String {
+                col.and_then(|i| record.get(i))
+                    .unwrap_or("")
+                    .to_string()
+            };
+
+            let name = get_field(name_col);
+            let url = get_field(url_col);
+            let username = get_field(user_col);
+            let password = get_field(pass_col);
+            let notes = get_field(notes_col);
+            let folder = get_field(folder_col);
+
+            // Skip empty entries
+            let label = if name.is_empty() {
+                if url.is_empty() { continue; }
+                url.clone()
+            } else {
+                name
+            };
+
+            let mut secret = EntrySecret::new(&password);
+            if !notes.is_empty() {
+                secret.notes = Some(notes);
+            }
+
+            let secret_bytes = serde_json::to_vec(&secret).unwrap_or_default();
+            if let Ok(ciphertext) = encrypt(key, &secret_bytes) {
+                let metadata = EntryMetadata {
+                    username: if username.is_empty() { None } else { Some(username) },
+                    url: if url.is_empty() { None } else { Some(url) },
+                    folder: if folder.is_empty() { None } else { Some(folder) },
+                    ..Default::default()
+                };
+                let entry = Entry::new_with_metadata(&label, metadata, ciphertext);
+                let _ = vault.add_entry(entry);
+                imported += 1;
+            }
+        }
+
+        if imported > 0 {
+            let _ = self.store.save_vault(vault, key);
+            let _ = self.unlock_vault_internal();
+        }
+        self.set_status(format!("{} entries imported from browser CSV", imported));
+
+        Task::none()
+    }
+
+    // ========================================================================
+    // Breach Check (HIBP k-anonymity)
+    // ========================================================================
+
+    fn check_breaches(&mut self) -> Task<Message> {
+        let Some(ref key) = self.vault_key else {
+            self.set_status("Vault must be unlocked to check breaches");
+            return Task::none();
+        };
+        let Some(ref vault) = self.vault else {
+            return Task::none();
+        };
+
+        // Collect passwords and labels for checking
+        let mut entries_to_check: Vec<(String, String)> = Vec::new();
+        for entry in &vault.entries {
+            if let Ok(decrypted) = decrypt(key, &entry.ciphertext) {
+                if let Ok(secret) = serde_json::from_slice::<EntrySecret>(&decrypted) {
+                    if !secret.password.is_empty() {
+                        entries_to_check.push((entry.label.clone(), secret.password.clone()));
+                    }
+                }
+            }
+        }
+
+        self.sync_in_progress = true;
+        self.set_status("Checking passwords against breach database...");
+
+        Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    use sha1::{Sha1, Digest};
+                    let client = reqwest::blocking::Client::builder()
+                        .timeout(std::time::Duration::from_secs(10))
+                        .user_agent("Lilypad-BreachCheck/1.0")
+                        .build()
+                        .map_err(|e| format!("{}", e))?;
+
+                    let mut breached = Vec::new();
+
+                    for (label, password) in &entries_to_check {
+                        let mut hasher = Sha1::new();
+                        hasher.update(password.as_bytes());
+                        let hash = format!("{:X}", hasher.finalize());
+                        let prefix = &hash[..5];
+                        let suffix = &hash[5..];
+
+                        let url = format!("https://api.pwnedpasswords.com/range/{}", prefix);
+                        if let Ok(response) = client.get(&url).send() {
+                            if let Ok(body) = response.text() {
+                                for line in body.lines() {
+                                    if let Some((hash_suffix, _count)) = line.split_once(':') {
+                                        if hash_suffix.eq_ignore_ascii_case(suffix) {
+                                            breached.push(label.clone());
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Rate limiting courtesy
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+
+                    Ok(breached)
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("{}", e)))
+            },
+            |result: std::result::Result<Vec<String>, String>| match result {
+                Ok(breached) => Message::BreachCheckCompleted(breached),
+                Err(e) => Message::SetStatus(format!("Breach check failed: {}", e)),
+            },
+        )
+    }
+
+    // ========================================================================
+    // Key Rotation (Change Master Password)
+    // ========================================================================
+
+    fn change_master_password(&mut self) -> Task<Message> {
+        let Some(ref old_key) = self.vault_key else {
+            self.set_status("Vault must be unlocked to change password");
+            return Task::none();
+        };
+
+        if self.new_master_password.is_empty() {
+            self.set_status("New password cannot be empty");
+            return Task::none();
+        }
+
+        let kdf_params = KeyDerivationParams::generate();
+        let new_key = match derive_key(&self.new_master_password, &kdf_params) {
+            Ok(k) => k,
+            Err(e) => {
+                self.set_status(format!("Key derivation failed: {}", e));
+                return Task::none();
+            }
+        };
+
+        // Re-encrypt all entries in all vaults
+        let vault_names = match self.store.list_vaults() {
+            Ok(v) => v,
+            Err(e) => {
+                self.set_status(format!("Failed to list vaults: {}", e));
+                return Task::none();
+            }
+        };
+
+        let mut total_re_encrypted = 0u32;
+        for vault_name in &vault_names {
+            let mut vault = match self.store.load_vault(vault_name, old_key) {
+                Ok(v) => v,
+                Err(e) => {
+                    self.set_status(format!("Failed to load vault '{}': {}", vault_name, e));
+                    return Task::none();
+                }
+            };
+
+            // Re-encrypt each entry
+            for entry in &mut vault.entries {
+                if let Ok(plaintext) = decrypt(old_key, &entry.ciphertext) {
+                    if let Ok(new_ciphertext) = encrypt(&new_key, &plaintext) {
+                        entry.ciphertext = new_ciphertext;
+                        total_re_encrypted += 1;
+                    }
+                }
+            }
+
+            if let Err(e) = self.store.save_vault(&vault, &new_key) {
+                self.set_status(format!("Failed to save vault '{}': {}", vault_name, e));
+                return Task::none();
+            }
+        }
+
+        // Update key file with new KDF params
+        let key_file = KeyFile::from_kdf(kdf_params);
+        let config_dir = directories::ProjectDirs::from("com", "lilypad", "lilypad")
+            .map(|d| d.config_dir().to_path_buf());
+        if let Some(config_dir) = config_dir {
+            let key_path = config_dir.join("key.json");
+            let _ = save_key(&key_path, &key_file);
+        }
+
+        // Update the active key
+        self.vault_key = Some(new_key);
+        self.master_password = self.new_master_password.clone();
+        self.new_master_password.zeroize();
+        self.show_change_password = false;
+
+        // Reload vault
+        let _ = self.unlock_vault_internal();
+
+        self.set_status(format!(
+            "Master password changed. {} entries re-encrypted across {} vaults.",
+            total_re_encrypted,
+            vault_names.len()
+        ));
+
+        Task::none()
+    }
+
+    // ========================================================================
+    // Entry History
+    // ========================================================================
+
+    fn view_entry_history(&mut self, idx: usize) {
+        let Some(ref vault) = self.vault else { return };
+        if let Some(entry) = vault.entries.get(idx) {
+            self.history_entries = entry
+                .get_history()
+                .map(|h| {
+                    let desc = h.description.clone().unwrap_or_else(|| {
+                        format!("{:?}", h.change_type)
+                    });
+                    (h.timestamp, desc)
+                })
+                .collect();
+            self.show_entry_history = true;
+        }
+    }
+
+    // ========================================================================
+    // Backup / Restore
+    // ========================================================================
+
+    fn backup_vault(&mut self) -> Task<Message> {
+        let vault_name = self.active_vault.clone();
+
+        let payload = match self.store.sync_payload(&vault_name) {
+            Ok(p) => p,
+            Err(e) => {
+                self.set_status(format!("Backup failed: {}", e));
+                return Task::none();
+            }
+        };
+
+        let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+        let default_filename = format!("{}_backup_{}.lily", vault_name, timestamp);
+        let file = rfd::FileDialog::new()
+            .set_title("Backup Vault")
+            .set_file_name(&default_filename)
+            .add_filter("Lilypad Vault Backup", &["lily"])
+            .save_file();
+
+        if let Some(path) = file {
+            match std::fs::write(&path, &payload) {
+                Ok(()) => self.set_status(format!("Vault backed up to {}", path.display())),
+                Err(e) => self.set_status(format!("Backup failed: {}", e)),
+            }
+        }
+
+        Task::none()
+    }
+
+    fn restore_vault_dialog(&mut self) -> Task<Message> {
+        let file = rfd::FileDialog::new()
+            .set_title("Restore Vault from Backup")
+            .add_filter("Lilypad Vault Backup", &["lily"])
+            .pick_file();
+
+        if let Some(path) = file {
+            return Task::done(Message::BackupFileSelected(Some(path)));
+        }
+        Task::none()
+    }
+
+    fn restore_vault_file(&mut self, path: std::path::PathBuf) -> Task<Message> {
+        match std::fs::read(&path) {
+            Ok(data) => {
+                let vault_name = &self.active_vault;
+                match self.store.apply_sync_payload(vault_name, &data) {
+                    Ok(()) => {
+                        let _ = self.unlock_vault_internal();
+                        self.set_status(format!("Vault restored from {}", path.display()));
+                    }
+                    Err(e) => {
+                        self.set_status(format!("Restore failed: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                self.set_status(format!("Failed to read backup file: {}", e));
+            }
+        }
+
+        Task::none()
     }
 }
 

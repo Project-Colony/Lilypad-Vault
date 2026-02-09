@@ -1,1 +1,32 @@
+# Build artifacts
 /target
+
+# Environment variables / secrets
+.env
+.env.*
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+\#*\#
+.project
+.classpath
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local test vaults (never commit real vault data)
+.lilypad/
+
+# Backup files
+*.bak
+*.orig
+
+# Coverage reports
+tarpaulin-report.*
+lcov.info

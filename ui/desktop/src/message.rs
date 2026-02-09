@@ -86,6 +86,10 @@ pub enum Message {
     CopyPassword(usize),
     /// Open URL in browser
     OpenUrl(usize),
+    /// View entry history
+    ViewEntryHistory(usize),
+    /// Close entry history view
+    CloseEntryHistory,
 
     // ========================================================================
     // Re-authentication Modal
@@ -156,6 +160,14 @@ pub enum Message {
     ToggleSecurityAlerts(bool),
     /// Toggle require master password on copy
     ToggleRequireMasterOnCopy(bool),
+    /// Change master password (key rotation)
+    ChangeMasterPassword,
+    /// New master password input
+    NewMasterPasswordChanged(String),
+    /// Confirm master password change
+    ConfirmChangeMasterPassword,
+    /// Cancel master password change
+    CancelChangeMasterPassword,
 
     // ========================================================================
     // Account Settings (Demo)
@@ -180,6 +192,10 @@ pub enum Message {
     // ========================================================================
     /// Refresh health report
     RefreshHealthReport,
+    /// Check passwords against HIBP breach database
+    CheckBreaches,
+    /// Breach check completed
+    BreachCheckCompleted(Vec<String>),
 
     // ========================================================================
     // System
@@ -202,8 +218,20 @@ pub enum Message {
     ExportVault,
     /// Export vault as plaintext JSON
     ExportVaultJson,
+    /// Export vault as CSV
+    ExportVaultCsv,
+    /// Import from browser CSV (Chrome, Firefox, Bitwarden, LastPass, 1Password, KeePass)
+    ImportBrowserCsv,
+    /// Browser CSV file selected
+    BrowserCsvSelected(Option<std::path::PathBuf>),
     /// File selected for import
     FileSelected(Option<std::path::PathBuf>),
+    /// Create vault backup
+    BackupVault,
+    /// Restore vault from backup
+    RestoreVault,
+    /// Backup file selected for restore
+    BackupFileSelected(Option<std::path::PathBuf>),
 
     // ========================================================================
     // GitHub OAuth & Sync

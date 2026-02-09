@@ -572,4 +572,258 @@ mod tests {
         assert_eq!(result.entries.len(), 1);
         assert!(!result.has_more);
     }
+
+    #[test]
+    fn test_search_by_tag() {
+        let mut entries = vec![
+            create_test_entry("Gmail"),
+            create_test_entry("GitHub"),
+            create_test_entry("Facebook"),
+        ];
+        entries[0].tags = vec!["email".to_string(), "google".to_string()];
+        entries[1].tags = vec!["dev".to_string(), "code".to_string()];
+        entries[2].tags = vec!["social".to_string()];
+
+        let filter = SearchFilter::new().with_tag("email");
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "Gmail");
+
+        // Multiple tags: entries matching ANY of the tags
+        let filter = SearchFilter::new().with_tag("email").with_tag("dev");
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 2);
+        assert!(result.entries.contains(&"Gmail".to_string()));
+        assert!(result.entries.contains(&"GitHub".to_string()));
+    }
+
+    #[test]
+    fn test_search_case_insensitive() {
+        let entries = vec![
+            create_test_entry("Gmail Account"),
+            create_test_entry("GitHub"),
+        ];
+
+        // Query with different case should still match
+        let filter = SearchFilter::new().with_query("GMAIL");
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "Gmail Account");
+
+        let filter = SearchFilter::new().with_query("github");
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "GitHub");
+
+        // Mixed case
+        let filter = SearchFilter::new().with_query("gMaIl");
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "Gmail Account");
+    }
+
+    #[test]
+    fn test_search_by_url() {
+        let mut entries = vec![
+            create_test_entry("Gmail"),
+            create_test_entry("GitHub"),
+            create_test_entry("Facebook"),
+        ];
+        entries[0].url = Some("https://mail.google.com".to_string());
+        entries[1].url = Some("https://github.com".to_string());
+        entries[2].url = Some("https://facebook.com".to_string());
+
+        let filter = SearchFilter::new().with_query("github.com");
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "GitHub");
+
+        // Partial URL match
+        let filter = SearchFilter::new().with_query("google");
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "Gmail");
+    }
+
+    #[test]
+    fn test_search_empty_query() {
+        let entries = vec![
+            create_test_entry("Gmail"),
+            create_test_entry("GitHub"),
+            create_test_entry("Facebook"),
+        ];
+
+        // No query set (None) should return all entries
+        let filter = SearchFilter::new();
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 3);
+        assert_eq!(result.entries.len(), 3);
+
+        // Empty string query should also return all (contains "" is always true)
+        let filter = SearchFilter::new().with_query("");
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 3);
+        assert_eq!(result.entries.len(), 3);
+    }
+
+    #[test]
+    fn test_search_no_results() {
+        let entries = vec![
+            create_test_entry("Gmail"),
+            create_test_entry("GitHub"),
+            create_test_entry("Facebook"),
+        ];
+
+        let filter = SearchFilter::new().with_query("nonexistent_xyz_123");
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 0);
+        assert!(result.entries.is_empty());
+        assert!(!result.has_more);
+    }
+
+    #[test]
+    fn test_sort_by_name() {
+        let entries = vec![
+            create_test_entry("Zebra"),
+            create_test_entry("Apple"),
+            create_test_entry("Mango"),
+            create_test_entry("banana"), // lowercase to test case-insensitive sort
+        ];
+
+        let filter = SearchFilter::new().sorted_by(SortField::Label, SortOrder::Ascending);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.entries, vec!["Apple", "banana", "Mango", "Zebra"]);
+
+        let filter = SearchFilter::new().sorted_by(SortField::Label, SortOrder::Descending);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.entries, vec!["Zebra", "Mango", "banana", "Apple"]);
+    }
+
+    #[test]
+    fn test_sort_by_date() {
+        let mut entries = vec![
+            create_test_entry("Oldest"),
+            create_test_entry("Middle"),
+            create_test_entry("Newest"),
+        ];
+        entries[0].created_at = 1000;
+        entries[1].created_at = 2000;
+        entries[2].created_at = 3000;
+
+        let filter = SearchFilter::new().sorted_by(SortField::CreatedAt, SortOrder::Ascending);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.entries, vec!["Oldest", "Middle", "Newest"]);
+
+        let filter = SearchFilter::new().sorted_by(SortField::CreatedAt, SortOrder::Descending);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.entries, vec!["Newest", "Middle", "Oldest"]);
+
+        // Also test UpdatedAt sorting
+        entries[0].updated_at = 5000;
+        entries[1].updated_at = 3000;
+        entries[2].updated_at = 4000;
+
+        let filter = SearchFilter::new().sorted_by(SortField::UpdatedAt, SortOrder::Ascending);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.entries, vec!["Middle", "Newest", "Oldest"]);
+    }
+
+    #[test]
+    fn test_filter_favorites_only() {
+        let mut entries = vec![
+            create_test_entry("Favorite1"),
+            create_test_entry("Normal1"),
+            create_test_entry("Favorite2"),
+            create_test_entry("Normal2"),
+        ];
+        entries[0].is_favorite = true;
+        entries[2].is_favorite = true;
+
+        let filter = SearchFilter::new().favorites_only();
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 2);
+        assert!(result.entries.contains(&"Favorite1".to_string()));
+        assert!(result.entries.contains(&"Favorite2".to_string()));
+        assert!(!result.entries.contains(&"Normal1".to_string()));
+        assert!(!result.entries.contains(&"Normal2".to_string()));
+    }
+
+    #[test]
+    fn test_filter_by_folder() {
+        let mut entries = vec![
+            create_test_entry("Entry1"),
+            create_test_entry("Entry2"),
+            create_test_entry("Entry3"),
+            create_test_entry("Entry4"),
+        ];
+        entries[0].folder = Some("Personal".to_string());
+        entries[1].folder = Some("Work".to_string());
+        entries[2].folder = Some("Personal/Banking".to_string());
+        entries[3].folder = None;
+
+        // Exact folder match
+        let filter = SearchFilter::new().with_folder("Personal", false);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "Entry1");
+
+        // With subfolders
+        let filter = SearchFilter::new().with_folder("Personal", true);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 2);
+        assert!(result.entries.contains(&"Entry1".to_string()));
+        assert!(result.entries.contains(&"Entry3".to_string()));
+
+        // Folder that doesn't exist
+        let filter = SearchFilter::new().with_folder("Nonexistent", false);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 0);
+
+        // Entry with no folder should not match any folder filter
+        let filter = SearchFilter::new().with_folder("Work", false);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "Entry2");
+    }
+
+    #[test]
+    fn test_pagination_bounds() {
+        let entries: Vec<SearchableEntry> = (0..5)
+            .map(|i| create_test_entry(&format!("Entry{}", i)))
+            .collect();
+
+        // Offset beyond available entries
+        let filter = SearchFilter::new().paginate(10, 100);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 5);
+        assert!(result.entries.is_empty());
+        assert!(!result.has_more);
+
+        // Limit of 0 means no limit
+        let filter = SearchFilter::new().paginate(0, 0);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 5);
+        assert_eq!(result.entries.len(), 5);
+        assert!(!result.has_more);
+
+        // Offset at exact boundary
+        let filter = SearchFilter::new().paginate(3, 5);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 5);
+        assert!(result.entries.is_empty());
+
+        // Limit larger than remaining entries
+        let filter = SearchFilter::new().paginate(10, 3);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 5);
+        assert_eq!(result.entries.len(), 2);
+        assert!(!result.has_more);
+
+        // Single page exactly matching count
+        let filter = SearchFilter::new().paginate(5, 0);
+        let result = AdvancedSearch::search(&entries, &filter);
+        assert_eq!(result.total_count, 5);
+        assert_eq!(result.entries.len(), 5);
+        assert!(!result.has_more);
+    }
 }
