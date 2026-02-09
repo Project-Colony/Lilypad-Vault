@@ -7,7 +7,7 @@ use crate::config::{OAuthConfig, OAuthProvider};
 use crate::error::{OAuthError, Result};
 use crate::github_api::GitHubClient;
 use crate::oauth::OAuthFlow;
-use crate::token_store::TokenStoreManager;
+use crate::token_store::{TokenInfo, TokenStoreManager};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -60,6 +60,12 @@ impl SyncMetadata {
         }
     }
 
+    /// Creates metadata reusing an existing device ID.
+    pub fn with_device_id(mut self, device_id: String) -> Self {
+        self.device_id = device_id;
+        self
+    }
+
     /// Updates the metadata after a sync.
     pub fn update(&mut self, sha: String, local_checksum: String) {
         self.last_sync_at = current_timestamp();
@@ -82,18 +88,21 @@ pub struct GitHubSyncBackend {
     metadata: Option<SyncMetadata>,
     /// Cached file SHA for updates.
     cached_sha: Option<String>,
+    /// Persistent device identifier.
+    device_id: String,
 }
 
 impl GitHubSyncBackend {
     /// Creates a new GitHub sync backend from stored credentials.
     pub fn from_stored_token() -> Result<Self> {
         let token_store = TokenStoreManager::new()?;
-        let token = token_store
+        let mut token = token_store
             .load_token(OAuthProvider::GitHub)?
             .ok_or(OAuthError::InvalidToken)?;
 
         if token.is_expired() {
-            return Err(OAuthError::TokenExpired);
+            // Attempt token refresh before failing
+            token = Self::try_refresh_token(&token_store, &token)?;
         }
 
         let client = GitHubClient::new(token.access_token())?;
@@ -105,7 +114,79 @@ impl GitHubSyncBackend {
             token_store,
             metadata: None,
             cached_sha: None,
+            device_id: generate_device_id(),
         })
+    }
+
+    /// Attempts to refresh an expired token using the refresh_token grant.
+    fn try_refresh_token(token_store: &TokenStoreManager, token: &TokenInfo) -> Result<TokenInfo> {
+        let refresh_token = token.refresh_token().ok_or(OAuthError::TokenExpired)?;
+
+        let config = OAuthConfig::from_env().unwrap_or_default();
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .user_agent("Lilypad-OAuth/1.0")
+            .build()
+            .map_err(|e| OAuthError::NetworkError(e.to_string()))?;
+
+        #[derive(serde::Serialize)]
+        struct RefreshRequest<'a> {
+            client_id: &'a str,
+            grant_type: &'a str,
+            refresh_token: &'a str,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct RefreshResponse {
+            access_token: Option<String>,
+            token_type: Option<String>,
+            scope: Option<String>,
+            refresh_token: Option<String>,
+            expires_in: Option<u64>,
+            error: Option<String>,
+            error_description: Option<String>,
+        }
+
+        let request = RefreshRequest {
+            client_id: &config.client_id,
+            grant_type: "refresh_token",
+            refresh_token,
+        };
+
+        let response = client
+            .post(&config.token_url)
+            .header("Accept", "application/json")
+            .form(&request)
+            .send()?;
+
+        let resp: RefreshResponse = response.json()?;
+
+        if let Some(error) = resp.error {
+            let msg = resp.error_description.unwrap_or(error);
+            return Err(OAuthError::AuthenticationFailed(format!(
+                "Token refresh failed: {}",
+                msg
+            )));
+        }
+
+        let access_token = resp.access_token.ok_or_else(|| {
+            OAuthError::AuthenticationFailed("no access_token in refresh response".to_string())
+        })?;
+
+        let new_token = TokenInfo::new(
+            access_token,
+            resp.token_type.unwrap_or_else(|| "bearer".to_string()),
+            resp.scope.unwrap_or_else(|| token.scope.clone()),
+        )
+        .with_refresh_token(resp.refresh_token.or_else(|| token.refresh_token().map(String::from)))
+        .with_expires_in(resp.expires_in)
+        .with_username(token.username.clone().unwrap_or_default());
+
+        // Save the refreshed token
+        token_store.save_token(OAuthProvider::GitHub, new_token.clone())?;
+
+        Ok(new_token)
     }
 
     /// Creates a new GitHub sync backend with a fresh OAuth flow.
@@ -128,12 +209,18 @@ impl GitHubSyncBackend {
             token_store,
             metadata: None,
             cached_sha: None,
+            device_id: generate_device_id(),
         })
     }
 
     /// Returns the authenticated GitHub username.
     pub fn username(&self) -> &str {
         &self.username
+    }
+
+    /// Returns the device identifier.
+    pub fn device_id(&self) -> &str {
+        &self.device_id
     }
 
     /// Checks if there is a stored valid token.
@@ -198,7 +285,8 @@ impl GitHubSyncBackend {
         let checksum = calculate_checksum(payload);
 
         // Update sync metadata
-        let meta = SyncMetadata::new(self.username.clone(), new_sha.clone(), checksum.clone());
+        let meta = SyncMetadata::new(self.username.clone(), new_sha.clone(), checksum.clone())
+            .with_device_id(self.device_id.clone());
         let meta_json = serde_json::to_string_pretty(&meta)?;
 
         // Get metadata SHA if exists
@@ -305,5 +393,34 @@ mod tests {
         let checksum = calculate_checksum(data);
         assert!(!checksum.is_empty());
         assert_eq!(checksum.len(), 64); // SHA-256 produces 64 hex chars
+    }
+
+    #[test]
+    fn test_device_id_persistence() {
+        let meta = SyncMetadata::new(
+            "testuser".to_string(),
+            "abc123".to_string(),
+            "def456".to_string(),
+        ).with_device_id("my-device-001".to_string());
+
+        assert_eq!(meta.device_id, "my-device-001");
+        assert_eq!(meta.github_username, "testuser");
+    }
+
+    #[test]
+    fn test_sync_metadata_update() {
+        let mut meta = SyncMetadata::new(
+            "testuser".to_string(),
+            "abc123".to_string(),
+            "def456".to_string(),
+        );
+
+        let original_timestamp = meta.last_sync_at;
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        meta.update("xyz789".to_string(), "ghi012".to_string());
+
+        assert_eq!(meta.last_sync_sha, "xyz789");
+        assert_eq!(meta.local_checksum, "ghi012");
+        assert!(meta.last_sync_at >= original_timestamp);
     }
 }

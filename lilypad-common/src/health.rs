@@ -186,6 +186,8 @@ pub struct EntryHealthData {
     pub days_until_expiry: Option<i64>,
     /// Whether password is expired.
     pub is_expired: bool,
+    /// Whether the password has been found in a known data breach.
+    pub is_compromised: bool,
 }
 
 /// Complete health report for a vault.
@@ -275,6 +277,7 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
     let mut old_password_entries = Vec::new();
     let mut no_2fa_entries = Vec::new();
     let mut incomplete_entries = Vec::new();
+    let mut compromised_entries = Vec::new();
 
     for entry in entries {
         // Password strength analysis
@@ -333,6 +336,11 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
         // Incomplete entries
         if !entry.has_username && entry.has_url {
             incomplete_entries.push(entry.label.clone());
+        }
+
+        // Compromised passwords
+        if entry.is_compromised {
+            compromised_entries.push(entry.label.clone());
         }
     }
 
@@ -441,6 +449,21 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
         });
     }
 
+    // Critical: Compromised passwords
+    if !compromised_entries.is_empty() {
+        issues.push(HealthIssue {
+            severity: IssueSeverity::Critical,
+            category: IssueCategory::Compromised,
+            title: "Compromised passwords detected".to_string(),
+            description: format!(
+                "{} entries have passwords found in known data breaches. These should be changed immediately.",
+                compromised_entries.len()
+            ),
+            affected_entries: compromised_entries,
+            recommendation: "Change these passwords immediately. Use the password generator to create strong, unique replacements.".to_string(),
+        });
+    }
+
     // Info: Missing 2FA
     if !no_2fa_entries.is_empty() && no_2fa_entries.len() <= 20 {
         issues.push(HealthIssue {
@@ -453,6 +476,21 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
             ),
             affected_entries: no_2fa_entries,
             recommendation: "Enable two-factor authentication on these services if available, and store the TOTP secret in Lilypad.".to_string(),
+        });
+    }
+
+    // Info: Incomplete entries
+    if !incomplete_entries.is_empty() {
+        issues.push(HealthIssue {
+            severity: IssueSeverity::Info,
+            category: IssueCategory::IncompleteEntry,
+            title: "Incomplete entries".to_string(),
+            description: format!(
+                "{} entries have a URL but are missing a username.",
+                incomplete_entries.len()
+            ),
+            affected_entries: incomplete_entries,
+            recommendation: "Add usernames to these entries for better organization and autofill support.".to_string(),
         });
     }
 
@@ -576,10 +614,52 @@ mod tests {
                 password_age_days: 10,
                 days_until_expiry: None,
                 is_expired: false,
+                is_compromised: false,
             },
         ];
         let report = analyze_vault_health(&entries);
         assert!(report.issues.iter().any(|i| i.category == IssueCategory::WeakPassword));
+    }
+
+    #[test]
+    fn test_compromised_detection() {
+        let entries = vec![
+            EntryHealthData {
+                label: "breached_site".to_string(),
+                password: "Str0ng!P@ssw0rd#2024".to_string(),
+                has_username: true,
+                has_url: true,
+                has_totp: false,
+                password_age_days: 10,
+                days_until_expiry: None,
+                is_expired: false,
+                is_compromised: true,
+            },
+        ];
+        let report = analyze_vault_health(&entries);
+        assert!(report.issues.iter().any(|i| i.category == IssueCategory::Compromised));
+        let issue = report.issues.iter().find(|i| i.category == IssueCategory::Compromised).unwrap();
+        assert_eq!(issue.severity, IssueSeverity::Critical);
+        assert_eq!(issue.affected_entries, vec!["breached_site"]);
+    }
+
+    #[test]
+    fn test_incomplete_entry_detection() {
+        let entries = vec![
+            EntryHealthData {
+                label: "no_username".to_string(),
+                password: "Str0ng!P@ssw0rd#2024".to_string(),
+                has_username: false,
+                has_url: true,
+                has_totp: false,
+                password_age_days: 10,
+                days_until_expiry: None,
+                is_expired: false,
+                is_compromised: false,
+            },
+        ];
+        let report = analyze_vault_health(&entries);
+        assert!(report.issues.iter().any(|i| i.category == IssueCategory::IncompleteEntry));
     }
 
     #[test]
@@ -594,6 +674,7 @@ mod tests {
                 password_age_days: 10,
                 days_until_expiry: None,
                 is_expired: false,
+                is_compromised: false,
             },
             EntryHealthData {
                 label: "entry2".to_string(),
@@ -604,6 +685,7 @@ mod tests {
                 password_age_days: 10,
                 days_until_expiry: None,
                 is_expired: false,
+                is_compromised: false,
             },
         ];
         let duplicates = detect_duplicates(&entries);

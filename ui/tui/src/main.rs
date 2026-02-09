@@ -1,6 +1,7 @@
 //! Lilypad TUI - Terminal User Interface for the Lilypad password manager.
 //!
 //! A keyboard-driven interface for managing your vault in the terminal.
+//! Supports multi-vault, search, password generation, editing, TOTP, and health dashboard.
 
 use anyhow::{anyhow, Result};
 use arboard::Clipboard;
@@ -10,53 +11,54 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use lilypad_common::{
+    analyze_vault_health,
     keyfile::{load_key, save_key, KeyFile},
     time::format_timestamp_relative,
+    validation::validate_password_strength,
+    EntryHealthData, HealthReport, PasswordStrength,
 };
 use lilypad_core::{
-    decrypt, default_config, derive_key, encrypt, AppConfig, CryptoAlgorithm, KeyDerivationParams,
-    KeyMaterial, KeyMetadata, Vault,
+    decrypt, default_config, derive_key, encrypt, AppConfig, CryptoAlgorithm, Entry,
+    EntryMetadata, EntrySecret, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
 };
 use lilypad_storage::LocalStore;
+use rand::Rng;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
-use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use zeroize::Zeroize;
 
-/// Entry payload structure for the TUI
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct EntryPayload {
-    password: String,
-    #[serde(default)]
-    username: String,
-    #[serde(default)]
-    url: String,
-    #[serde(default)]
-    notes: String,
-}
-
 /// Decrypted vault entry for display
-struct VaultEntry {
+struct TuiEntry {
     label: String,
     username: String,
     password: String,
     url: String,
     notes: String,
+    email: String,
+    phone: String,
+    totp_secret: Option<String>,
+    tags: Vec<String>,
+    folder: Option<String>,
     updated_at: u64,
+    is_favorite: bool,
+    password_strength: PasswordStrength,
 }
 
-impl Drop for VaultEntry {
+impl Drop for TuiEntry {
     fn drop(&mut self) {
         self.password.zeroize();
+        if let Some(ref mut totp) = self.totp_secret {
+            totp.zeroize();
+        }
     }
 }
 
@@ -65,10 +67,17 @@ enum AppState {
     Locked,
     Unlocked,
     AddEntry,
+    EditEntry,
     ViewEntry,
+    ConfirmDelete,
+    Help,
+    Search,
+    GeneratePassword,
+    SelectVault,
+    HealthDashboard,
 }
 
-/// Input field focus
+/// Input field focus for add/edit forms
 #[derive(Clone, Copy, PartialEq)]
 enum InputField {
     Password,
@@ -77,6 +86,8 @@ enum InputField {
     EntryPassword,
     Url,
     Notes,
+    Email,
+    Tags,
 }
 
 /// Main application structure
@@ -86,9 +97,12 @@ struct App {
     store: LocalStore,
 
     // Vault data
+    active_vault: String,
+    available_vaults: Vec<String>,
     vault: Option<Vault>,
     vault_key: Option<KeyMaterial>,
-    entries: Vec<VaultEntry>,
+    entries: Vec<TuiEntry>,
+    filtered_indices: Vec<usize>,
     entry_list_state: ListState,
 
     // Input fields
@@ -98,7 +112,24 @@ struct App {
     input_password: String,
     input_url: String,
     input_notes: String,
+    input_email: String,
+    input_tags: String,
     current_field: InputField,
+
+    // Edit mode
+    edit_index: Option<usize>,
+
+    // Search
+    search_query: String,
+    search_active: bool,
+
+    // Password generator
+    gen_length: usize,
+    gen_lowercase: bool,
+    gen_uppercase: bool,
+    gen_digits: bool,
+    gen_symbols: bool,
+    gen_result: String,
 
     // Status
     status_message: Option<String>,
@@ -108,15 +139,20 @@ struct App {
     clipboard_timeout: Option<Instant>,
     clipboard_value: Option<String>,
 
+    // Health
+    health_report: Option<HealthReport>,
+
     // UI state
     show_password: bool,
     should_quit: bool,
+    vault_list_state: ListState,
 }
 
 impl Drop for App {
     fn drop(&mut self) {
         self.master_password.zeroize();
         self.input_password.zeroize();
+        self.gen_result.zeroize();
         if let Some(ref mut v) = self.clipboard_value {
             v.zeroize();
         }
@@ -127,14 +163,22 @@ impl App {
     fn new() -> Result<Self> {
         let config = default_config();
         let store = LocalStore::new(&config)?;
+        let available_vaults = store.list_vaults().unwrap_or_default();
+        let active_vault = available_vaults
+            .first()
+            .cloned()
+            .unwrap_or_else(|| "primary".to_string());
 
         Ok(Self {
             state: AppState::Locked,
             config,
             store,
+            active_vault,
+            available_vaults,
             vault: None,
             vault_key: None,
             entries: Vec::new(),
+            filtered_indices: Vec::new(),
             entry_list_state: ListState::default(),
             master_password: String::new(),
             input_label: String::new(),
@@ -142,13 +186,26 @@ impl App {
             input_password: String::new(),
             input_url: String::new(),
             input_notes: String::new(),
+            input_email: String::new(),
+            input_tags: String::new(),
             current_field: InputField::Password,
+            edit_index: None,
+            search_query: String::new(),
+            search_active: false,
+            gen_length: 16,
+            gen_lowercase: true,
+            gen_uppercase: true,
+            gen_digits: true,
+            gen_symbols: true,
+            gen_result: String::new(),
             status_message: None,
             status_time: None,
             clipboard_timeout: None,
             clipboard_value: None,
+            health_report: None,
             show_password: false,
             should_quit: false,
+            vault_list_state: ListState::default(),
         })
     }
 
@@ -185,7 +242,7 @@ impl App {
             if clipboard.set_text(value.to_string()).is_ok() {
                 self.clipboard_value = Some(value.to_string());
                 self.clipboard_timeout = Some(Instant::now() + Duration::from_secs(30));
-                self.set_status("Password copied to clipboard (clears in 30s)");
+                self.set_status("Copied to clipboard (clears in 30s)");
             }
         }
     }
@@ -204,7 +261,6 @@ impl App {
         let (key, key_file) = if path.exists() {
             load_key(&path, Some(password))?
         } else {
-            // Create new key from password
             let params = KeyDerivationParams::generate();
             let key = derive_key(password, &params)?;
             let key_file = KeyFile::from_kdf(params);
@@ -212,8 +268,7 @@ impl App {
             (key, key_file)
         };
 
-        // Load or create vault
-        let vault = if let Ok(v) = self.store.load_vault("primary", &key) {
+        let vault = if let Ok(v) = self.store.load_vault(&self.active_vault, &key) {
             v
         } else {
             let metadata = match &key_file {
@@ -222,45 +277,59 @@ impl App {
                 }
                 KeyFile::Raw { .. } => KeyMetadata::new(&key, CryptoAlgorithm::XChaCha20Poly1305),
             };
-            let v = Vault::new("primary", metadata);
+            let v = Vault::new(&self.active_vault, metadata);
             self.store.save_vault(&v, &key)?;
             v
         };
 
-        self.entries = self.load_entries(&vault, &key)?;
+        self.entries = Self::load_entries(&vault, &key)?;
         self.vault = Some(vault);
         self.vault_key = Some(key);
         self.state = AppState::Unlocked;
-        self.entry_list_state.select(if self.entries.is_empty() {
+        self.update_filtered_indices();
+        self.refresh_health();
+        self.entry_list_state.select(if self.filtered_indices.is_empty() {
             None
         } else {
             Some(0)
         });
 
+        // Refresh vault list
+        self.available_vaults = self.store.list_vaults().unwrap_or_default();
+        if self.available_vaults.is_empty() {
+            self.available_vaults.push(self.active_vault.clone());
+        }
+
         Ok(())
     }
 
-    fn load_entries(&self, vault: &Vault, key: &KeyMaterial) -> Result<Vec<VaultEntry>> {
+    fn load_entries(vault: &Vault, key: &KeyMaterial) -> Result<Vec<TuiEntry>> {
         let mut entries = Vec::with_capacity(vault.entries.len());
 
         for entry in &vault.entries {
             let plaintext = decrypt(key, &entry.ciphertext)?;
-            let payload: EntryPayload = serde_json::from_slice(&plaintext).unwrap_or_else(|_| {
-                EntryPayload {
-                    password: String::from_utf8_lossy(&plaintext).to_string(),
-                    username: String::new(),
-                    url: String::new(),
-                    notes: String::new(),
-                }
+            let secret: EntrySecret = serde_json::from_slice(&plaintext).unwrap_or_else(|_| {
+                EntrySecret::new(String::from_utf8_lossy(&plaintext).into_owned())
             });
 
-            entries.push(VaultEntry {
+            let username = entry.metadata.username.clone().unwrap_or_default();
+            let url = entry.metadata.url.clone().unwrap_or_default();
+            let strength = validate_password_strength(&secret.password);
+
+            entries.push(TuiEntry {
                 label: entry.label.clone(),
-                username: payload.username,
-                password: payload.password,
-                url: payload.url,
-                notes: payload.notes,
+                username,
+                password: secret.password,
+                url,
+                notes: secret.notes.unwrap_or_default(),
+                email: secret.email.unwrap_or_default(),
+                phone: secret.phone.unwrap_or_default(),
+                totp_secret: secret.totp_secret,
+                tags: entry.metadata.tags.clone(),
+                folder: entry.metadata.folder.clone(),
                 updated_at: entry.updated_at,
+                is_favorite: entry.is_favorite,
+                password_strength: strength,
             });
         }
 
@@ -268,7 +337,32 @@ impl App {
         Ok(entries)
     }
 
-    fn add_entry(&mut self) -> Result<()> {
+    fn update_filtered_indices(&mut self) {
+        if self.search_query.is_empty() {
+            self.filtered_indices = (0..self.entries.len()).collect();
+        } else {
+            let query = self.search_query.to_lowercase();
+            self.filtered_indices = self
+                .entries
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| {
+                    e.label.to_lowercase().contains(&query)
+                        || e.username.to_lowercase().contains(&query)
+                        || e.url.to_lowercase().contains(&query)
+                        || e.tags.iter().any(|t| t.to_lowercase().contains(&query))
+                })
+                .map(|(i, _)| i)
+                .collect();
+        }
+    }
+
+    fn selected_entry_index(&self) -> Option<usize> {
+        let list_idx = self.entry_list_state.selected()?;
+        self.filtered_indices.get(list_idx).copied()
+    }
+
+    fn save_entry(&mut self) -> Result<()> {
         let label = self.input_label.trim();
         if label.is_empty() {
             return Err(anyhow!("label is required"));
@@ -284,15 +378,54 @@ impl App {
             .ok_or_else(|| anyhow!("vault not unlocked"))?
             .clone();
 
-        let payload = EntryPayload {
-            password: password.to_string(),
-            username: self.input_username.trim().to_string(),
-            url: self.input_url.trim().to_string(),
-            notes: self.input_notes.trim().to_string(),
+        let mut secret = if let Some(edit_idx) = self.edit_index {
+            // When editing, preserve fields not exposed in the form
+            self.vault
+                .as_ref()
+                .and_then(|v| v.entries.get(edit_idx))
+                .and_then(|entry| decrypt(&key, &entry.ciphertext).ok())
+                .and_then(|bytes| serde_json::from_slice::<EntrySecret>(&bytes).ok())
+                .unwrap_or_else(|| EntrySecret::new(password))
+        } else {
+            EntrySecret::new(password)
         };
 
-        let serialized = serde_json::to_vec(&payload)?;
+        secret.password = password.to_string();
+        secret.notes = if self.input_notes.trim().is_empty() {
+            None
+        } else {
+            Some(self.input_notes.trim().to_string())
+        };
+        secret.email = if self.input_email.trim().is_empty() {
+            None
+        } else {
+            Some(self.input_email.trim().to_string())
+        };
+
+        let serialized = serde_json::to_vec(&secret)?;
         let ciphertext = encrypt(&key, &serialized)?;
+
+        let tags: Vec<String> = self
+            .input_tags
+            .split(',')
+            .map(|t| t.trim().to_string())
+            .filter(|t| !t.is_empty())
+            .collect();
+
+        let metadata = EntryMetadata {
+            username: if self.input_username.trim().is_empty() {
+                None
+            } else {
+                Some(self.input_username.trim().to_string())
+            },
+            url: if self.input_url.trim().is_empty() {
+                None
+            } else {
+                Some(self.input_url.trim().to_string())
+            },
+            tags,
+            ..Default::default()
+        };
 
         {
             let vault = self
@@ -300,36 +433,46 @@ impl App {
                 .as_mut()
                 .ok_or_else(|| anyhow!("vault not loaded"))?;
 
-            if vault.find_entry(label).is_some() {
+            if let Some(edit_idx) = self.edit_index {
+                // Update existing entry
+                if let Some(entry) = vault.entries.get(edit_idx) {
+                    let old_label = entry.label.clone();
+                    vault.update_entry(&old_label, ciphertext)?;
+                    let _ = vault.update_entry_metadata(&old_label, metadata);
+                }
+            } else if vault.find_entry(label).is_some() {
                 vault.update_entry(label, ciphertext)?;
+                let _ = vault.update_entry_metadata(label, metadata);
             } else {
-                vault.add_entry(lilypad_core::Entry::new(label, ciphertext))?;
+                vault.add_entry(Entry::new_with_metadata(label, metadata, ciphertext))?;
             }
 
             self.store.save_vault(vault, &key)?;
         }
 
-        // Reload entries after the mutable borrow is released
+        // Reload entries
         let vault = self
             .vault
             .as_ref()
             .ok_or_else(|| anyhow!("vault not loaded"))?;
-        self.entries = self.load_entries(vault, &key)?;
+        self.entries = Self::load_entries(vault, &key)?;
+        self.update_filtered_indices();
 
-        // Clear input fields
-        self.input_label.clear();
-        self.input_username.clear();
-        self.input_password.clear();
-        self.input_url.clear();
-        self.input_notes.clear();
-
+        self.clear_form();
+        let msg = if self.edit_index.is_some() {
+            "Entry updated"
+        } else {
+            "Entry saved"
+        };
+        self.edit_index = None;
         self.state = AppState::Unlocked;
-        self.set_status("Entry saved");
+        self.set_status(msg);
+        self.refresh_health();
         Ok(())
     }
 
     fn delete_selected_entry(&mut self) -> Result<()> {
-        let index = match self.entry_list_state.selected() {
+        let index = match self.selected_entry_index() {
             Some(i) => i,
             None => return Ok(()),
         };
@@ -352,32 +495,141 @@ impl App {
                 self.store.save_vault(vault, &key)?;
             }
 
-            // Reload entries after the mutable borrow is released
             let vault = self
                 .vault
                 .as_ref()
                 .ok_or_else(|| anyhow!("vault not loaded"))?;
-            self.entries = self.load_entries(vault, &key)?;
+            self.entries = Self::load_entries(vault, &key)?;
+            self.update_filtered_indices();
 
-            // Update selection
-            if self.entries.is_empty() {
+            if self.filtered_indices.is_empty() {
                 self.entry_list_state.select(None);
-            } else if index >= self.entries.len() {
-                self.entry_list_state.select(Some(self.entries.len() - 1));
+            } else {
+                let sel = self.entry_list_state.selected().unwrap_or(0);
+                if sel >= self.filtered_indices.len() {
+                    self.entry_list_state
+                        .select(Some(self.filtered_indices.len() - 1));
+                }
             }
 
             self.set_status(format!("Deleted '{}'", label));
+            self.refresh_health();
         }
 
         Ok(())
     }
 
+    fn clear_form(&mut self) {
+        self.input_label.clear();
+        self.input_username.clear();
+        self.input_password.clear();
+        self.input_url.clear();
+        self.input_notes.clear();
+        self.input_email.clear();
+        self.input_tags.clear();
+    }
+
+    fn start_edit(&mut self) {
+        if let Some(idx) = self.selected_entry_index() {
+            if let Some(entry) = self.entries.get(idx) {
+                self.input_label = entry.label.clone();
+                self.input_username = entry.username.clone();
+                self.input_password = entry.password.clone();
+                self.input_url = entry.url.clone();
+                self.input_notes = entry.notes.clone();
+                self.input_email = entry.email.clone();
+                self.input_tags = entry.tags.join(", ");
+                self.edit_index = Some(idx);
+                self.current_field = InputField::Label;
+                self.state = AppState::EditEntry;
+            }
+        }
+    }
+
+    fn generate_password(&mut self) {
+        let mut charset = String::new();
+        if self.gen_lowercase {
+            charset.push_str("abcdefghijklmnopqrstuvwxyz");
+        }
+        if self.gen_uppercase {
+            charset.push_str("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+        }
+        if self.gen_digits {
+            charset.push_str("0123456789");
+        }
+        if self.gen_symbols {
+            charset.push_str("!@#$%^&*()_+-=[]{}|;:,.<>?");
+        }
+        if charset.is_empty() {
+            charset.push_str("abcdefghijklmnopqrstuvwxyz");
+        }
+
+        let chars: Vec<char> = charset.chars().collect();
+        let mut rng = rand::thread_rng();
+        self.gen_result = (0..self.gen_length)
+            .map(|_| chars[rng.gen_range(0..chars.len())])
+            .collect();
+    }
+
+    fn refresh_health(&mut self) {
+        let health_data: Vec<EntryHealthData> = self
+            .entries
+            .iter()
+            .map(|e| {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let password_age_days = (now.saturating_sub(e.updated_at)) / (24 * 60 * 60);
+
+                EntryHealthData {
+                    label: e.label.clone(),
+                    password: e.password.clone(),
+                    has_username: !e.username.is_empty(),
+                    has_url: !e.url.is_empty(),
+                    has_totp: e.totp_secret.is_some(),
+                    password_age_days,
+                    days_until_expiry: None,
+                    is_expired: false,
+                    is_compromised: false,
+                }
+            })
+            .collect();
+
+        self.health_report = Some(analyze_vault_health(&health_data));
+    }
+
+    fn switch_vault(&mut self, name: &str) {
+        self.active_vault = name.to_string();
+        self.vault = None;
+        self.vault_key = None;
+        self.entries.clear();
+        self.filtered_indices.clear();
+        self.health_report = None;
+        self.search_query.clear();
+        // Re-unlock with same password
+        if let Err(e) = self.unlock_vault() {
+            self.set_status(format!("Failed to switch vault: {}", e));
+            self.state = AppState::Locked;
+        }
+    }
+
+    // ========================================================================
+    // Input Handling
+    // ========================================================================
+
     fn handle_key_event(&mut self, key: event::KeyEvent) {
         match self.state {
             AppState::Locked => self.handle_locked_input(key),
             AppState::Unlocked => self.handle_unlocked_input(key),
-            AppState::AddEntry => self.handle_add_entry_input(key),
+            AppState::AddEntry | AppState::EditEntry => self.handle_form_input(key),
             AppState::ViewEntry => self.handle_view_entry_input(key),
+            AppState::ConfirmDelete => self.handle_confirm_delete_input(key),
+            AppState::Help => self.handle_help_input(key),
+            AppState::Search => self.handle_search_input(key),
+            AppState::GeneratePassword => self.handle_generator_input(key),
+            AppState::SelectVault => self.handle_vault_select_input(key),
+            AppState::HealthDashboard => self.handle_health_input(key),
         }
     }
 
@@ -404,27 +656,82 @@ impl App {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
             KeyCode::Char('a') => {
+                self.clear_form();
+                self.edit_index = None;
                 self.state = AppState::AddEntry;
                 self.current_field = InputField::Label;
             }
+            KeyCode::Char('e') => {
+                self.start_edit();
+            }
             KeyCode::Char('d') => {
-                if let Err(e) = self.delete_selected_entry() {
-                    self.set_status(format!("Delete failed: {}", e));
+                if self.selected_entry_index().is_some() {
+                    self.state = AppState::ConfirmDelete;
                 }
             }
             KeyCode::Char('c') => {
-                if let Some(index) = self.entry_list_state.selected() {
-                    let password = self.entries.get(index).map(|e| e.password.clone());
+                if let Some(idx) = self.selected_entry_index() {
+                    let password = self.entries.get(idx).map(|e| e.password.clone());
                     if let Some(password) = password {
                         self.copy_to_clipboard(&password);
                     }
                 }
             }
+            KeyCode::Char('u') => {
+                if let Some(idx) = self.selected_entry_index() {
+                    let username = self.entries.get(idx).map(|e| e.username.clone());
+                    if let Some(username) = username {
+                        if !username.is_empty() {
+                            self.copy_to_clipboard(&username);
+                        } else {
+                            self.set_status("No username to copy");
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('f') => {
+                if let Some(idx) = self.selected_entry_index() {
+                    let key = self.vault_key.clone();
+                    let label = self.entries.get(idx).map(|e| e.label.clone());
+                    if let (Some(key), Some(label)) = (key, label) {
+                        if let Some(vault) = self.vault.as_mut() {
+                            let new_fav = !self.entries[idx].is_favorite;
+                            let _ = vault.set_entry_favorite(&label, new_fav);
+                            let _ = self.store.save_vault(vault, &key);
+                        }
+                        if let Some(vault) = self.vault.as_ref() {
+                            if let Ok(entries) = Self::load_entries(vault, &key) {
+                                self.entries = entries;
+                                self.update_filtered_indices();
+                            }
+                        }
+                    }
+                }
+            }
             KeyCode::Enter => {
-                if self.entry_list_state.selected().is_some() {
+                if self.selected_entry_index().is_some() {
                     self.state = AppState::ViewEntry;
                     self.show_password = false;
                 }
+            }
+            KeyCode::Char('/') => {
+                self.state = AppState::Search;
+                self.search_active = true;
+            }
+            KeyCode::Char('g') => {
+                self.generate_password();
+                self.state = AppState::GeneratePassword;
+            }
+            KeyCode::Char('?') => {
+                self.state = AppState::Help;
+            }
+            KeyCode::Char('v') => {
+                self.vault_list_state.select(Some(0));
+                self.state = AppState::SelectVault;
+            }
+            KeyCode::Char('h') => {
+                self.refresh_health();
+                self.state = AppState::HealthDashboard;
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.select_previous();
@@ -445,10 +752,156 @@ impl App {
                 self.show_password = !self.show_password;
             }
             KeyCode::Char('c') => {
-                if let Some(index) = self.entry_list_state.selected() {
-                    let password = self.entries.get(index).map(|e| e.password.clone());
+                if let Some(idx) = self.selected_entry_index() {
+                    let password = self.entries.get(idx).map(|e| e.password.clone());
                     if let Some(password) = password {
                         self.copy_to_clipboard(&password);
+                    }
+                }
+            }
+            KeyCode::Char('u') => {
+                if let Some(idx) = self.selected_entry_index() {
+                    let username = self.entries.get(idx).map(|e| e.username.clone());
+                    if let Some(username) = username {
+                        if !username.is_empty() {
+                            self.copy_to_clipboard(&username);
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('e') => {
+                self.state = AppState::Unlocked;
+                self.start_edit();
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_confirm_delete_input(&mut self, key: event::KeyEvent) {
+        match key.code {
+            KeyCode::Char('y') | KeyCode::Char('Y') => {
+                if let Err(e) = self.delete_selected_entry() {
+                    self.set_status(format!("Delete failed: {}", e));
+                }
+                self.state = AppState::Unlocked;
+            }
+            KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                self.state = AppState::Unlocked;
+                self.set_status("Delete cancelled");
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_help_input(&mut self, key: event::KeyEvent) {
+        if matches!(key.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')) {
+            self.state = AppState::Unlocked;
+        }
+    }
+
+    fn handle_search_input(&mut self, key: event::KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.search_query.clear();
+                self.update_filtered_indices();
+                self.search_active = false;
+                self.state = AppState::Unlocked;
+                self.entry_list_state.select(if self.filtered_indices.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                });
+            }
+            KeyCode::Enter => {
+                self.search_active = false;
+                self.state = AppState::Unlocked;
+                self.entry_list_state.select(if self.filtered_indices.is_empty() {
+                    None
+                } else {
+                    Some(0)
+                });
+            }
+            KeyCode::Char(c) => {
+                self.search_query.push(c);
+                self.update_filtered_indices();
+            }
+            KeyCode::Backspace => {
+                self.search_query.pop();
+                self.update_filtered_indices();
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_generator_input(&mut self, key: event::KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.state = AppState::Unlocked;
+            }
+            KeyCode::Char('r') | KeyCode::Enter => {
+                self.generate_password();
+            }
+            KeyCode::Char('c') => {
+                if !self.gen_result.is_empty() {
+                    self.copy_to_clipboard(&self.gen_result.clone());
+                }
+            }
+            KeyCode::Char('+') => {
+                if self.gen_length < 128 {
+                    self.gen_length += 1;
+                    self.generate_password();
+                }
+            }
+            KeyCode::Char('-') => {
+                if self.gen_length > 4 {
+                    self.gen_length -= 1;
+                    self.generate_password();
+                }
+            }
+            KeyCode::Char('l') => {
+                self.gen_lowercase = !self.gen_lowercase;
+                self.generate_password();
+            }
+            KeyCode::Char('U') => {
+                self.gen_uppercase = !self.gen_uppercase;
+                self.generate_password();
+            }
+            KeyCode::Char('d') => {
+                self.gen_digits = !self.gen_digits;
+                self.generate_password();
+            }
+            KeyCode::Char('s') => {
+                self.gen_symbols = !self.gen_symbols;
+                self.generate_password();
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_vault_select_input(&mut self, key: event::KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.state = AppState::Unlocked;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let i = self.vault_list_state.selected().unwrap_or(0);
+                if i > 0 {
+                    self.vault_list_state.select(Some(i - 1));
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let i = self.vault_list_state.selected().unwrap_or(0);
+                if i < self.available_vaults.len().saturating_sub(1) {
+                    self.vault_list_state.select(Some(i + 1));
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(i) = self.vault_list_state.selected() {
+                    if let Some(name) = self.available_vaults.get(i).cloned() {
+                        if name != self.active_vault {
+                            self.switch_vault(&name);
+                        }
+                        self.state = AppState::Unlocked;
                     }
                 }
             }
@@ -456,14 +909,17 @@ impl App {
         }
     }
 
-    fn handle_add_entry_input(&mut self, key: event::KeyEvent) {
+    fn handle_health_input(&mut self, key: event::KeyEvent) {
+        if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+            self.state = AppState::Unlocked;
+        }
+    }
+
+    fn handle_form_input(&mut self, key: event::KeyEvent) {
         match key.code {
             KeyCode::Esc => {
-                self.input_label.clear();
-                self.input_username.clear();
-                self.input_password.clear();
-                self.input_url.clear();
-                self.input_notes.clear();
+                self.clear_form();
+                self.edit_index = None;
                 self.state = AppState::Unlocked;
             }
             KeyCode::Tab => {
@@ -471,46 +927,61 @@ impl App {
                     InputField::Label => InputField::Username,
                     InputField::Username => InputField::EntryPassword,
                     InputField::EntryPassword => InputField::Url,
-                    InputField::Url => InputField::Notes,
-                    InputField::Notes => InputField::Label,
+                    InputField::Url => InputField::Email,
+                    InputField::Email => InputField::Notes,
+                    InputField::Notes => InputField::Tags,
+                    InputField::Tags => InputField::Label,
+                    _ => InputField::Label,
+                };
+            }
+            KeyCode::BackTab => {
+                self.current_field = match self.current_field {
+                    InputField::Label => InputField::Tags,
+                    InputField::Username => InputField::Label,
+                    InputField::EntryPassword => InputField::Username,
+                    InputField::Url => InputField::EntryPassword,
+                    InputField::Email => InputField::Url,
+                    InputField::Notes => InputField::Email,
+                    InputField::Tags => InputField::Notes,
                     _ => InputField::Label,
                 };
             }
             KeyCode::Enter if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                if let Err(e) = self.add_entry() {
+                if let Err(e) = self.save_entry() {
                     self.set_status(format!("Save failed: {}", e));
                 }
             }
             KeyCode::Char(c) => {
-                let field = match self.current_field {
-                    InputField::Label => &mut self.input_label,
-                    InputField::Username => &mut self.input_username,
-                    InputField::EntryPassword => &mut self.input_password,
-                    InputField::Url => &mut self.input_url,
-                    InputField::Notes => &mut self.input_notes,
-                    _ => return,
-                };
+                let field = self.current_field_mut();
                 field.push(c);
             }
             KeyCode::Backspace => {
-                let field = match self.current_field {
-                    InputField::Label => &mut self.input_label,
-                    InputField::Username => &mut self.input_username,
-                    InputField::EntryPassword => &mut self.input_password,
-                    InputField::Url => &mut self.input_url,
-                    InputField::Notes => &mut self.input_notes,
-                    _ => return,
-                };
+                let field = self.current_field_mut();
                 field.pop();
             }
             _ => {}
         }
     }
 
+    fn current_field_mut(&mut self) -> &mut String {
+        match self.current_field {
+            InputField::Label => &mut self.input_label,
+            InputField::Username => &mut self.input_username,
+            InputField::EntryPassword | InputField::Password => &mut self.input_password,
+            InputField::Url => &mut self.input_url,
+            InputField::Notes => &mut self.input_notes,
+            InputField::Email => &mut self.input_email,
+            InputField::Tags => &mut self.input_tags,
+        }
+    }
+
     fn select_next(&mut self) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
         let i = match self.entry_list_state.selected() {
             Some(i) => {
-                if i >= self.entries.len() - 1 {
+                if i >= self.filtered_indices.len() - 1 {
                     0
                 } else {
                     i + 1
@@ -518,33 +989,49 @@ impl App {
             }
             None => 0,
         };
-        if !self.entries.is_empty() {
-            self.entry_list_state.select(Some(i));
-        }
+        self.entry_list_state.select(Some(i));
     }
 
     fn select_previous(&mut self) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
         let i = match self.entry_list_state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.entries.len() - 1
+                    self.filtered_indices.len() - 1
                 } else {
                     i - 1
                 }
             }
             None => 0,
         };
-        if !self.entries.is_empty() {
-            self.entry_list_state.select(Some(i));
-        }
+        self.entry_list_state.select(Some(i));
     }
+
+    // ========================================================================
+    // Drawing
+    // ========================================================================
 
     fn draw(&mut self, frame: &mut Frame) {
         match self.state {
             AppState::Locked => self.draw_locked_screen(frame),
             AppState::Unlocked => self.draw_unlocked_screen(frame),
-            AppState::AddEntry => self.draw_add_entry_screen(frame),
+            AppState::AddEntry => self.draw_form_screen(frame, "Add New Entry"),
+            AppState::EditEntry => self.draw_form_screen(frame, "Edit Entry"),
             AppState::ViewEntry => self.draw_view_entry_screen(frame),
+            AppState::ConfirmDelete => {
+                self.draw_unlocked_screen(frame);
+                self.draw_confirm_delete_popup(frame);
+            }
+            AppState::Help => self.draw_help_screen(frame),
+            AppState::Search => self.draw_search_screen(frame),
+            AppState::GeneratePassword => self.draw_generator_screen(frame),
+            AppState::SelectVault => {
+                self.draw_unlocked_screen(frame);
+                self.draw_vault_select_popup(frame);
+            }
+            AppState::HealthDashboard => self.draw_health_screen(frame),
         }
     }
 
@@ -561,7 +1048,7 @@ impl App {
             ])
             .split(area);
 
-        let title = Paragraph::new("Lilypad Password Manager")
+        let title = Paragraph::new(format!("Lilypad Password Manager - Vault: {}", self.active_vault))
             .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
             .block(Block::default());
         frame.render_widget(title, chunks[0]);
@@ -598,29 +1085,78 @@ impl App {
             ])
             .split(area);
 
-        let title = Paragraph::new("Lilypad Vault")
+        // Header with vault name and search indicator
+        let header_text = if self.search_query.is_empty() {
+            format!(
+                "Lilypad - {} ({} entries)",
+                self.active_vault,
+                self.entries.len()
+            )
+        } else {
+            format!(
+                "Lilypad - {} (search: '{}', {} results)",
+                self.active_vault,
+                self.search_query,
+                self.filtered_indices.len()
+            )
+        };
+        let title = Paragraph::new(header_text)
             .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
             .block(Block::default().borders(Borders::BOTTOM));
         frame.render_widget(title, chunks[0]);
 
+        // Entry list
         let items: Vec<ListItem> = self
-            .entries
+            .filtered_indices
             .iter()
+            .filter_map(|&idx| self.entries.get(idx))
             .map(|entry| {
                 let username = if entry.username.is_empty() {
-                    "(no username)"
+                    "(no username)".to_string()
                 } else {
-                    &entry.username
+                    entry.username.clone()
                 };
                 let updated = format_timestamp_relative(entry.updated_at);
-                ListItem::new(Line::from(vec![
-                    Span::styled(&entry.label, Style::default().add_modifier(Modifier::BOLD)),
+
+                let mut spans = vec![
+                    if entry.is_favorite {
+                        Span::styled("* ", Style::default().fg(Color::Yellow))
+                    } else {
+                        Span::raw("  ")
+                    },
+                    Span::styled(
+                        &entry.label,
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
                     Span::raw(" - "),
                     Span::styled(username, Style::default().fg(Color::Gray)),
-                    Span::raw(" ("),
-                    Span::styled(updated, Style::default().fg(Color::DarkGray)),
-                    Span::raw(")"),
-                ]))
+                ];
+
+                // Strength indicator
+                let strength_color = match entry.password_strength {
+                    PasswordStrength::VeryWeak => Color::Red,
+                    PasswordStrength::Weak => Color::LightRed,
+                    PasswordStrength::Fair => Color::Yellow,
+                    PasswordStrength::Strong => Color::Green,
+                    PasswordStrength::VeryStrong => Color::Cyan,
+                };
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled("●", Style::default().fg(strength_color)));
+
+                if !entry.tags.is_empty() {
+                    spans.push(Span::raw(" ["));
+                    spans.push(Span::styled(
+                        entry.tags.join(", "),
+                        Style::default().fg(Color::Magenta),
+                    ));
+                    spans.push(Span::raw("]"));
+                }
+
+                spans.push(Span::raw(" ("));
+                spans.push(Span::styled(updated, Style::default().fg(Color::DarkGray)));
+                spans.push(Span::raw(")"));
+
+                ListItem::new(Line::from(spans))
             })
             .collect();
 
@@ -634,7 +1170,9 @@ impl App {
             .highlight_symbol("> ");
         frame.render_stateful_widget(list, chunks[1], &mut self.entry_list_state);
 
-        let help_text = "a: Add | d: Delete | c: Copy Password | Enter: View | q: Quit";
+        // Footer
+        let help_text =
+            "a:Add e:Edit d:Del c:Copy u:User f:Fav /:Search g:PwGen v:Vault h:Health ?:Help q:Quit";
         let status_text = self.status_message.as_deref().unwrap_or(help_text);
         let help = Paragraph::new(status_text)
             .style(Style::default().fg(Color::DarkGray))
@@ -642,7 +1180,7 @@ impl App {
         frame.render_widget(help, chunks[2]);
     }
 
-    fn draw_add_entry_screen(&self, frame: &mut Frame) {
+    fn draw_form_screen(&self, frame: &mut Frame, title: &str) {
         let area = frame.area();
         let chunks = Layout::default()
             .direction(Direction::Vertical)
@@ -654,20 +1192,24 @@ impl App {
                 Constraint::Length(3),
                 Constraint::Length(3),
                 Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
                 Constraint::Min(0),
             ])
             .split(area);
 
-        let title = Paragraph::new("Add New Entry")
+        let header = Paragraph::new(title)
             .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
-        frame.render_widget(title, chunks[0]);
+        frame.render_widget(header, chunks[0]);
 
-        let fields = [
+        let fields: Vec<(&str, &str, InputField)> = vec![
             ("Label", &self.input_label, InputField::Label),
             ("Username", &self.input_username, InputField::Username),
             ("Password", &self.input_password, InputField::EntryPassword),
             ("URL", &self.input_url, InputField::Url),
+            ("Email", &self.input_email, InputField::Email),
             ("Notes", &self.input_notes, InputField::Notes),
+            ("Tags (comma-separated)", &self.input_tags, InputField::Tags),
         ];
 
         for (i, (name, value, field)) in fields.iter().enumerate() {
@@ -680,7 +1222,7 @@ impl App {
             let display_value = if *field == InputField::EntryPassword {
                 "*".repeat(value.len())
             } else {
-                (*value).clone()
+                value.to_string()
             };
 
             let input = Paragraph::new(display_value)
@@ -689,34 +1231,35 @@ impl App {
             frame.render_widget(input, chunks[i + 1]);
         }
 
-        let help = Paragraph::new("Tab: Next Field | Ctrl+Enter: Save | Esc: Cancel")
+        let help = Paragraph::new("Tab/Shift+Tab: Navigate | Ctrl+Enter: Save | Esc: Cancel")
             .style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(help, chunks[6]);
+        frame.render_widget(help, chunks[8]);
     }
 
     fn draw_view_entry_screen(&self, frame: &mut Frame) {
         let area = frame.area();
 
-        let entry = match self.entry_list_state.selected() {
-            Some(i) => match self.entries.get(i) {
+        let entry = match self.selected_entry_index() {
+            Some(idx) => match self.entries.get(idx) {
                 Some(e) => e,
                 None => return,
             },
             None => return,
         };
 
-        let popup_area = centered_rect(60, 50, area);
+        let popup_area = centered_rect(70, 70, area);
         frame.render_widget(Clear, popup_area);
 
+        let fav_marker = if entry.is_favorite { " *" } else { "" };
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(format!(" {} ", entry.label))
+            .title(format!(" {}{} ", entry.label, fav_marker))
             .style(Style::default().fg(Color::Cyan));
 
         let inner = block.inner(popup_area);
         frame.render_widget(block, popup_area);
 
-        let lines = vec![
+        let mut lines = vec![
             Line::from(vec![
                 Span::styled("Username: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(if entry.username.is_empty() {
@@ -734,6 +1277,17 @@ impl App {
                 }),
             ]),
             Line::from(vec![
+                Span::styled("Strength: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("{:?}", entry.password_strength),
+                    Style::default().fg(match entry.password_strength {
+                        PasswordStrength::VeryWeak | PasswordStrength::Weak => Color::Red,
+                        PasswordStrength::Fair => Color::Yellow,
+                        PasswordStrength::Strong | PasswordStrength::VeryStrong => Color::Green,
+                    }),
+                ),
+            ]),
+            Line::from(vec![
                 Span::styled("URL: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::raw(if entry.url.is_empty() {
                     "(none)"
@@ -741,27 +1295,487 @@ impl App {
                     &entry.url
                 }),
             ]),
-            Line::from(vec![
+        ];
+
+        if !entry.email.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("Email: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(&entry.email),
+            ]));
+        }
+
+        if !entry.phone.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("Phone: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(&entry.phone),
+            ]));
+        }
+
+        lines.push(Line::from(vec![
+            Span::styled("TOTP: ", Style::default().add_modifier(Modifier::BOLD)),
+            if entry.totp_secret.is_some() {
+                Span::styled("Configured", Style::default().fg(Color::Green))
+            } else {
+                Span::styled("Not configured", Style::default().fg(Color::DarkGray))
+            },
+        ]));
+
+        if !entry.notes.is_empty() {
+            lines.push(Line::from(vec![
                 Span::styled("Notes: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(if entry.notes.is_empty() {
-                    "(none)"
-                } else {
-                    &entry.notes
-                }),
-            ]),
+                Span::raw(&entry.notes),
+            ]));
+        }
+
+        if !entry.tags.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled("Tags: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(entry.tags.join(", "), Style::default().fg(Color::Magenta)),
+            ]));
+        }
+
+        if let Some(ref folder) = entry.folder {
+            lines.push(Line::from(vec![
+                Span::styled("Folder: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(folder.as_str()),
+            ]));
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled("Updated: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(format_timestamp_relative(entry.updated_at)),
+        ]));
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "p:Toggle Password | c:Copy Password | u:Copy Username | e:Edit | Esc:Close",
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+        frame.render_widget(paragraph, inner);
+    }
+
+    fn draw_confirm_delete_popup(&self, frame: &mut Frame) {
+        let area = frame.area();
+        let popup_area = centered_rect(50, 20, area);
+        frame.render_widget(Clear, popup_area);
+
+        let entry_name = self
+            .selected_entry_index()
+            .and_then(|idx| self.entries.get(idx))
+            .map(|e| e.label.as_str())
+            .unwrap_or("this entry");
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Confirm Delete ")
+            .style(Style::default().fg(Color::Red));
+
+        let inner = block.inner(popup_area);
+        frame.render_widget(block, popup_area);
+
+        let text = Paragraph::new(vec![
             Line::from(""),
-            Line::from(vec![
-                Span::styled("Updated: ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(format_timestamp_relative(entry.updated_at)),
-            ]),
+            Line::from(format!("Delete '{}'?", entry_name)),
             Line::from(""),
             Line::from(Span::styled(
-                "p: Toggle Password | c: Copy | Esc: Close",
+                "y: Yes, delete | n/Esc: Cancel",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ])
+        .style(Style::default().fg(Color::Yellow));
+        frame.render_widget(text, inner);
+    }
+
+    fn draw_vault_select_popup(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        let popup_area = centered_rect(40, 40, area);
+        frame.render_widget(Clear, popup_area);
+
+        let items: Vec<ListItem> = self
+            .available_vaults
+            .iter()
+            .map(|name| {
+                let marker = if *name == self.active_vault {
+                    " (active)"
+                } else {
+                    ""
+                };
+                ListItem::new(format!("{}{}", name, marker))
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Select Vault ")
+                    .style(Style::default().fg(Color::Cyan)),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("> ");
+        frame.render_stateful_widget(list, popup_area, &mut self.vault_list_state);
+    }
+
+    fn draw_help_screen(&self, frame: &mut Frame) {
+        let area = frame.area();
+        let popup_area = centered_rect(70, 80, area);
+        frame.render_widget(Clear, popup_area);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Help - Keyboard Shortcuts ")
+            .style(Style::default().fg(Color::Cyan));
+
+        let inner = block.inner(popup_area);
+        frame.render_widget(block, popup_area);
+
+        let lines = vec![
+            Line::from(Span::styled(
+                "Vault (Unlocked)",
+                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+            )),
+            Line::from("  a       Add new entry"),
+            Line::from("  e       Edit selected entry"),
+            Line::from("  d       Delete selected entry (with confirmation)"),
+            Line::from("  c       Copy password to clipboard"),
+            Line::from("  u       Copy username to clipboard"),
+            Line::from("  f       Toggle favorite"),
+            Line::from("  Enter   View entry details"),
+            Line::from("  /       Search entries"),
+            Line::from("  g       Password generator"),
+            Line::from("  v       Switch vault"),
+            Line::from("  h       Health dashboard"),
+            Line::from("  ?       This help screen"),
+            Line::from("  j/k     Navigate up/down"),
+            Line::from("  q/Esc   Quit"),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Entry View",
+                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+            )),
+            Line::from("  p       Toggle password visibility"),
+            Line::from("  c       Copy password"),
+            Line::from("  u       Copy username"),
+            Line::from("  e       Edit entry"),
+            Line::from("  Esc     Close"),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Add/Edit Form",
+                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+            )),
+            Line::from("  Tab         Next field"),
+            Line::from("  Shift+Tab   Previous field"),
+            Line::from("  Ctrl+Enter  Save"),
+            Line::from("  Esc         Cancel"),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Password Generator",
+                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+            )),
+            Line::from("  r/Enter  Regenerate"),
+            Line::from("  c        Copy to clipboard"),
+            Line::from("  +/-      Adjust length"),
+            Line::from("  l/U/d/s  Toggle lower/upper/digits/symbols"),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Press Esc or ? to close",
                 Style::default().fg(Color::DarkGray),
             )),
         ];
 
         let paragraph = Paragraph::new(lines);
+        frame.render_widget(paragraph, inner);
+    }
+
+    fn draw_search_screen(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .margin(1)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(0),
+                Constraint::Length(3),
+            ])
+            .split(area);
+
+        // Search input
+        let search_input = Paragraph::new(self.search_query.as_str())
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Search (Enter to confirm, Esc to cancel)")
+                    .style(Style::default().fg(Color::Yellow)),
+            )
+            .style(Style::default().fg(Color::Yellow));
+        frame.render_widget(search_input, chunks[0]);
+
+        // Filtered results
+        let items: Vec<ListItem> = self
+            .filtered_indices
+            .iter()
+            .filter_map(|&idx| self.entries.get(idx))
+            .map(|entry| {
+                let username = if entry.username.is_empty() {
+                    "(no username)"
+                } else {
+                    &entry.username
+                };
+                ListItem::new(Line::from(vec![
+                    Span::styled(
+                        &entry.label,
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" - "),
+                    Span::styled(username, Style::default().fg(Color::Gray)),
+                ]))
+            })
+            .collect();
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!("{} results", self.filtered_indices.len())),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("> ");
+        frame.render_stateful_widget(list, chunks[1], &mut self.entry_list_state);
+
+        let help = Paragraph::new("Type to search | Enter: Confirm | Esc: Cancel & clear")
+            .style(Style::default().fg(Color::DarkGray))
+            .block(Block::default().borders(Borders::TOP));
+        frame.render_widget(help, chunks[2]);
+    }
+
+    fn draw_generator_screen(&self, frame: &mut Frame) {
+        let area = frame.area();
+        let popup_area = centered_rect(60, 50, area);
+        frame.render_widget(Clear, popup_area);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Password Generator ")
+            .style(Style::default().fg(Color::Cyan));
+
+        let inner = block.inner(popup_area);
+        frame.render_widget(block, popup_area);
+
+        let strength = validate_password_strength(&self.gen_result);
+        let strength_color = match strength {
+            PasswordStrength::VeryWeak | PasswordStrength::Weak => Color::Red,
+            PasswordStrength::Fair => Color::Yellow,
+            PasswordStrength::Strong | PasswordStrength::VeryStrong => Color::Green,
+        };
+
+        let on = Style::default().fg(Color::Green);
+        let off = Style::default().fg(Color::DarkGray);
+
+        let lines = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Generated: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    &self.gen_result,
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("Strength:  ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{:?}", strength), Style::default().fg(strength_color)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Length:    ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(format!("{} (+/- to adjust)", self.gen_length)),
+            ]),
+            Line::from(vec![
+                Span::styled("[l] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("Lowercase: {}", if self.gen_lowercase { "ON" } else { "OFF" }),
+                    if self.gen_lowercase { on } else { off },
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("[U] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("Uppercase: {}", if self.gen_uppercase { "ON" } else { "OFF" }),
+                    if self.gen_uppercase { on } else { off },
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("[d] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("Digits:    {}", if self.gen_digits { "ON" } else { "OFF" }),
+                    if self.gen_digits { on } else { off },
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled("[s] ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("Symbols:   {}", if self.gen_symbols { "ON" } else { "OFF" }),
+                    if self.gen_symbols { on } else { off },
+                ),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled(
+                "r/Enter: Regenerate | c: Copy | Esc: Close",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ];
+
+        let paragraph = Paragraph::new(lines);
+        frame.render_widget(paragraph, inner);
+    }
+
+    fn draw_health_screen(&self, frame: &mut Frame) {
+        let area = frame.area();
+        let popup_area = centered_rect(70, 80, area);
+        frame.render_widget(Clear, popup_area);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Health Dashboard ")
+            .style(Style::default().fg(Color::Cyan));
+
+        let inner = block.inner(popup_area);
+        frame.render_widget(block, popup_area);
+
+        let report = match &self.health_report {
+            Some(r) => r,
+            None => {
+                let msg = Paragraph::new("No health report available. Unlock a vault first.");
+                frame.render_widget(msg, inner);
+                return;
+            }
+        };
+
+        let grade_color = match report.score.grade {
+            lilypad_common::HealthGrade::A => Color::Green,
+            lilypad_common::HealthGrade::B => Color::LightGreen,
+            lilypad_common::HealthGrade::C => Color::Yellow,
+            lilypad_common::HealthGrade::D => Color::LightRed,
+            lilypad_common::HealthGrade::F => Color::Red,
+        };
+
+        let mut lines = vec![
+            Line::from(vec![
+                Span::styled("Score: ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!(
+                        "{}/100 (Grade: {:?})",
+                        report.score.score, report.score.grade
+                    ),
+                    Style::default().fg(grade_color).add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    report.score.grade.description(),
+                    Style::default().fg(grade_color),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Statistics",
+                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+            )),
+            Line::from(format!(
+                "  Total entries:      {}",
+                report.stats.total_entries
+            )),
+            Line::from(format!(
+                "  Strong passwords:   {}",
+                report.stats.strong_passwords
+            )),
+            Line::from(format!(
+                "  Weak passwords:     {}",
+                report.stats.weak_passwords
+            )),
+            Line::from(format!(
+                "  Reused passwords:   {}",
+                report.stats.reused_passwords
+            )),
+            Line::from(format!(
+                "  With 2FA:           {}",
+                report.stats.with_2fa
+            )),
+            Line::from(format!(
+                "  Unique passwords:   {}",
+                report.stats.unique_passwords
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Score Breakdown",
+                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+            )),
+            Line::from(format!(
+                "  Password strength:  {}/25",
+                report.score.breakdown.password_strength
+            )),
+            Line::from(format!(
+                "  Uniqueness:         {}/25",
+                report.score.breakdown.uniqueness
+            )),
+            Line::from(format!(
+                "  Freshness:          {}/25",
+                report.score.breakdown.freshness
+            )),
+            Line::from(format!(
+                "  Two-factor:         {}/25",
+                report.score.breakdown.two_factor
+            )),
+        ];
+
+        if !report.issues.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                format!("Issues ({})", report.issues.len()),
+                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+            )));
+
+            for issue in report.issues.iter().take(10) {
+                let severity_color = match issue.severity {
+                    lilypad_common::IssueSeverity::Critical => Color::Red,
+                    lilypad_common::IssueSeverity::Warning => Color::Yellow,
+                    lilypad_common::IssueSeverity::Info => Color::Blue,
+                };
+                let severity_label = match issue.severity {
+                    lilypad_common::IssueSeverity::Critical => "CRIT",
+                    lilypad_common::IssueSeverity::Warning => "WARN",
+                    lilypad_common::IssueSeverity::Info => "INFO",
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("  [{}] ", severity_label),
+                        Style::default().fg(severity_color),
+                    ),
+                    Span::raw(&issue.title),
+                    Span::styled(
+                        format!(" ({} entries)", issue.affected_entries.len()),
+                        Style::default().fg(Color::DarkGray),
+                    ),
+                ]));
+            }
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Press Esc to close",
+            Style::default().fg(Color::DarkGray),
+        )));
+
+        let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
         frame.render_widget(paragraph, inner);
     }
 }
