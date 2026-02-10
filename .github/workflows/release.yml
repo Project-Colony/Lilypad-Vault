@@ -21,16 +21,20 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            binary: lilypad-cli
+            artifact: lilypad-desktop-linux
+            binary: lilypad-desktop
           - target: x86_64-apple-darwin
             os: macos-latest
-            binary: lilypad-cli
+            artifact: lilypad-desktop-macos-x86_64
+            binary: lilypad-desktop
           - target: aarch64-apple-darwin
             os: macos-latest
-            binary: lilypad-cli
+            artifact: lilypad-desktop-macos-arm64
+            binary: lilypad-desktop
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            binary: lilypad-cli.exe
+            artifact: lilypad-desktop-windows.exe
+            binary: lilypad-desktop.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -44,25 +48,21 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} --bin lilypad-cli
+        run: cargo build --release --target ${{ matrix.target }} -p lilypad-desktop
 
-      - name: Package (Unix)
+      - name: Rename binary (Unix)
         if: runner.os != 'Windows'
-        run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../lilypad-${{ matrix.target }}.tar.gz ${{ matrix.binary }}
+        run: cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.artifact }}
 
-      - name: Package (Windows)
+      - name: Rename binary (Windows)
         if: runner.os == 'Windows'
-        run: |
-          cd target/${{ matrix.target }}/release
-          7z a ../../../lilypad-${{ matrix.target }}.zip ${{ matrix.binary }}
+        run: copy target\${{ matrix.target }}\release\${{ matrix.binary }} ${{ matrix.artifact }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: lilypad-${{ matrix.target }}
-          path: lilypad-${{ matrix.target }}.*
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
 
   release:
     name: Create Release
