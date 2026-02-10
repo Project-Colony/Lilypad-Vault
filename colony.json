@@ -1,0 +1,9 @@
+{
+  "name": "Lilypad",
+  "category": "Security",
+  "platforms": ["windows", "linux"],
+  "releaseFiles": {
+    "windows": { "asset": "lilypad-desktop-windows.exe" },
+    "linux": { "asset": "lilypad-desktop-linux" }
+  }
+}
