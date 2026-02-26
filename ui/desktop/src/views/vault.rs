@@ -34,6 +34,7 @@ pub struct VaultViewParams<'a> {
     pub folder_filter: Option<&'a str>,
     pub entry_type: &'a str,
     pub entry_attachments: &'a [(String, String)],
+    pub show_advanced_fields: bool,
 }
 
 /// Render the vault entries section
@@ -60,6 +61,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
         folder_filter,
         entry_type,
         entry_attachments,
+        show_advanced_fields,
     } = params;
     let palette = theme.palette();
 
@@ -298,6 +300,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
             entry_custom_fields,
             entry_type,
             entry_attachments,
+            show_advanced_fields,
         ))
     } else {
         None
@@ -370,6 +373,36 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
         _ => theme::icon_button(theme),
     })
     .on_press(Message::ToggleFavorite(index));
+
+    // Type icon
+    let type_icon_str = match entry.entry_type {
+        lilypad_core::EntryType::Login => icons::KEY,
+        lilypad_core::EntryType::Card => icons::CREDIT_CARD,
+        lilypad_core::EntryType::Identity => icons::ID_CARD,
+        lilypad_core::EntryType::SecureNote => icons::STICKY_NOTE,
+        lilypad_core::EntryType::SoftwareLicense => icons::CERTIFICATE,
+        lilypad_core::EntryType::Wifi => icons::WIFI,
+        lilypad_core::EntryType::Server => icons::SERVER,
+        lilypad_core::EntryType::Custom => icons::ELLIPSIS,
+    };
+    let type_icon = container(
+        text(type_icon_str)
+            .size(18)
+            .font(fonts::FONT_REGULAR)
+            .color(palette.text_muted),
+    )
+    .width(Length::Fixed(36.0))
+    .height(Length::Fixed(36.0))
+    .align_x(Horizontal::Center)
+    .align_y(Vertical::Center)
+    .style(move |_| container::Style {
+        background: Some(iced::Background::Color(palette.surface_variant)),
+        border: iced::Border {
+            radius: 8.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
 
     // Title and username
     let title_str = entry.title.clone();
@@ -604,6 +637,8 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     }
 
     card_row = card_row
+        .push(type_icon)
+        .push(Space::with_width(10))
         .push(favorite_btn)
         .push(Space::with_width(8))
         .push(info_column)
@@ -617,6 +652,107 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     container(card_row)
         .width(Length::Fill)
         .style(move |_| theme::card_container(theme))
+        .into()
+}
+
+/// Field visibility per entry type
+struct FieldVisibility {
+    username: bool,
+    email: bool,
+    password: bool,
+    url: bool,
+    phone: bool,
+    totp: bool,
+    notes: bool,
+}
+
+fn fields_for_type(entry_type: &str) -> FieldVisibility {
+    match entry_type {
+        "Login" => FieldVisibility {
+            username: true, email: true, password: true, url: true,
+            phone: false, totp: true, notes: true,
+        },
+        "Card" => FieldVisibility {
+            username: true, email: false, password: true, url: false,
+            phone: true, totp: false, notes: true,
+        },
+        "Identity" => FieldVisibility {
+            username: true, email: true, password: false, url: false,
+            phone: true, totp: false, notes: true,
+        },
+        "SecureNote" => FieldVisibility {
+            username: false, email: false, password: false, url: false,
+            phone: false, totp: false, notes: true,
+        },
+        "SoftwareLicense" => FieldVisibility {
+            username: true, email: false, password: true, url: true,
+            phone: false, totp: false, notes: true,
+        },
+        "Wifi" => FieldVisibility {
+            username: true, email: false, password: true, url: false,
+            phone: false, totp: false, notes: false,
+        },
+        "Server" => FieldVisibility {
+            username: true, email: false, password: true, url: true,
+            phone: false, totp: true, notes: true,
+        },
+        _ => FieldVisibility { // Custom
+            username: true, email: true, password: true, url: true,
+            phone: true, totp: true, notes: true,
+        },
+    }
+}
+
+/// Type-aware labels and placeholders for fields
+fn type_labels(entry_type: &str) -> (&'static str, &'static str, &'static str, &'static str) {
+    // Returns (username_label, username_placeholder, password_label, url_label)
+    match entry_type {
+        "Card" => ("Cardholder Name", "Name on card", "PIN / CVV", ""),
+        "Identity" => ("Full Name", "First and last name", "", ""),
+        "SoftwareLicense" => ("License Key", "XXXX-XXXX-XXXX", "Activation Code", "Vendor Website"),
+        "Wifi" => ("Network Name (SSID)", "e.g., MyWiFi", "WiFi Password", ""),
+        "Server" => ("Username", "e.g., root", "Password", "Host / IP"),
+        _ => ("Username", "e.g., john_doe", "Password", "URL"),
+    }
+}
+
+/// Get icon for entry type
+fn type_icon(entry_type: &str) -> &'static str {
+    match entry_type {
+        "Login" => icons::KEY,
+        "Card" => icons::CREDIT_CARD,
+        "Identity" => icons::ID_CARD,
+        "SecureNote" => icons::STICKY_NOTE,
+        "SoftwareLicense" => icons::CERTIFICATE,
+        "Wifi" => icons::WIFI,
+        "Server" => icons::SERVER,
+        _ => icons::ELLIPSIS,
+    }
+}
+
+/// Helper to build a form section with title and icon (no card, just a labeled group)
+fn form_section<'a>(
+    theme: LilypadTheme,
+    icon: &'static str,
+    title: &'static str,
+    content: Element<'a, Message>,
+) -> Element<'a, Message> {
+    let palette = theme.palette();
+    let header = row![
+        text(icon).size(13).font(fonts::FONT_REGULAR).color(palette.text_muted),
+        Space::with_width(8),
+        text(title).size(14).color(palette.text_primary),
+    ]
+    .align_y(Vertical::Center);
+
+    // Separator line
+    let separator = container(Space::new(Length::Fill, Length::Fixed(1.0)))
+        .style(move |_| container::Style {
+            background: Some(iced::Background::Color(palette.surface_variant)),
+            ..Default::default()
+        });
+
+    column![separator, Space::with_height(12), header, Space::with_height(12), content,]
         .into()
 }
 
@@ -639,22 +775,47 @@ fn entry_form(
     entry_custom_fields: &[(String, String)],
     entry_type: &str,
     entry_attachments: &[(String, String)],
+    show_advanced: bool,
 ) -> Element<'static, Message> {
     let palette = theme.palette();
+    let vis = fields_for_type(entry_type);
+    let (username_label, username_placeholder, password_label, url_label) = type_labels(entry_type);
 
-    let form_title = text(if edit_mode { "Edit Entry" } else { "Add New Entry" })
-        .size(18)
-        .color(palette.text_primary);
+    // ── Header ──────────────────────────────────────────────────────────
+    let form_title = row![
+        text(type_icon(entry_type)).size(20).font(fonts::FONT_REGULAR).color(palette.primary),
+        Space::with_width(10),
+        text(if edit_mode { "Edit Entry" } else { "New Entry" })
+            .size(18)
+            .color(palette.text_primary),
+        Space::with_width(Length::Fill),
+        button(
+            text(icons::CLOSE).size(14).font(fonts::FONT_REGULAR).color(palette.text_muted),
+        )
+        .padding([6, 10])
+        .style(move |_theme, status| match status {
+            button::Status::Hovered => theme::icon_button_hovered(theme),
+            _ => theme::icon_button(theme),
+        })
+        .on_press(Message::HideAddEntry),
+    ]
+    .align_y(Vertical::Center);
 
-    // Entry type selector
-    let entry_types = ["Login", "Card", "Identity", "SecureNote", "SoftwareLicense", "Wifi", "Server", "Custom"];
-    let type_label = text("Entry Type")
-        .size(13)
-        .color(palette.text_secondary);
+    // ── Type selector ───────────────────────────────────────────────────
+    let entry_types = [
+        ("Login", icons::KEY),
+        ("Card", icons::CREDIT_CARD),
+        ("Identity", icons::ID_CARD),
+        ("SecureNote", icons::STICKY_NOTE),
+        ("SoftwareLicense", icons::CERTIFICATE),
+        ("Wifi", icons::WIFI),
+        ("Server", icons::SERVER),
+        ("Custom", icons::ELLIPSIS),
+    ];
 
     let type_buttons: Vec<Element<'static, Message>> = entry_types
         .iter()
-        .map(|t| {
+        .map(|(t, icon)| {
             let is_active = *t == entry_type;
             let type_str = (*t).to_string();
             let display = match *t {
@@ -663,15 +824,14 @@ fn entry_form(
                 other => other,
             };
             button(
-                text(display)
-                    .size(12)
-                    .color(if is_active {
-                        palette.primary
-                    } else {
-                        palette.text_muted
-                    }),
+                row![
+                    text(*icon).size(12).font(fonts::FONT_REGULAR),
+                    Space::with_width(5),
+                    text(display).size(12),
+                ]
+                .align_y(Vertical::Center),
             )
-            .padding([6, 12])
+            .padding([6, 10])
             .style(move |_theme, status| {
                 if is_active {
                     let mut style = theme::ghost_button(theme);
@@ -692,104 +852,175 @@ fn entry_form(
 
     let type_row = row(type_buttons).spacing(4);
 
+    // ── Section 1: General ──────────────────────────────────────────────
     let title_input = labeled_input(theme, "Title", "e.g., GitHub", entry_title.to_string(), |s| {
         Message::EntryTitleChanged(s)
     });
 
-    let username_input = labeled_input(
-        theme,
-        "Username",
-        "e.g., john_doe",
-        entry_username.to_string(),
-        Message::EntryUsernameChanged,
-    );
+    let general_section = form_section(theme, icons::INFO, "General", title_input);
 
-    let email_input = labeled_input(
-        theme,
-        "Email (optional)",
-        "e.g., john@example.com",
-        entry_email.to_string(),
-        Message::EntryEmailChanged,
-    );
+    // ── Section 2: Credentials ──────────────────────────────────────────
+    let has_credentials = vis.username || vis.email || vis.password;
+    let credentials_section: Option<Element<'static, Message>> = if has_credentials {
+        let mut creds_col = column![].spacing(12);
 
-    let password_row = row![
-        column![
-            text("Password").size(13).color(palette.text_secondary),
-            Space::with_height(6),
-            text_input("Enter password...", entry_password)
-                .padding(12)
-                .size(14)
-                .secure(true)
-                .on_input(Message::EntryPasswordChanged)
-                .style(move |_theme, status| match status {
-                    text_input::Status::Focused => theme::text_input_focused(theme),
-                    _ => theme::text_input_style(theme),
-                }),
-        ]
-        .width(Length::Fill),
-        Space::with_width(12),
-        column![
-            text("").size(13),
-            Space::with_height(6),
-            button(
-                row![text(icons::DICE).size(14).font(fonts::FONT_REGULAR), Space::with_width(6), text("Generate").size(13),]
-                    .align_y(Vertical::Center),
-            )
-            .padding([12, 16])
-            .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::secondary_button_hovered(theme),
-                _ => theme::secondary_button(theme),
-            })
-            .on_press(Message::UseGeneratedPassword),
-        ],
-    ]
-    .align_y(Vertical::Bottom);
+        // Row 1: Username + Email side by side (if both visible)
+        if vis.username && vis.email {
+            creds_col = creds_col.push(
+                row![
+                    column![labeled_input(
+                        theme, username_label, username_placeholder,
+                        entry_username.to_string(), Message::EntryUsernameChanged,
+                    )]
+                    .width(Length::Fill),
+                    Space::with_width(12),
+                    column![labeled_input(
+                        theme, "Email", "e.g., john@example.com",
+                        entry_email.to_string(), Message::EntryEmailChanged,
+                    )]
+                    .width(Length::Fill),
+                ],
+            );
+        } else if vis.username {
+            creds_col = creds_col.push(labeled_input(
+                theme, username_label, username_placeholder,
+                entry_username.to_string(), Message::EntryUsernameChanged,
+            ));
+        } else if vis.email {
+            creds_col = creds_col.push(labeled_input(
+                theme, "Email", "e.g., john@example.com",
+                entry_email.to_string(), Message::EntryEmailChanged,
+            ));
+        }
 
-    let url_input = labeled_input(
-        theme,
-        "URL (optional)",
-        "e.g., https://github.com",
-        entry_url.to_string(),
-        Message::EntryUrlChanged,
-    );
+        // Row 2: Password + Generate button
+        if vis.password {
+            let pw_label = if password_label.is_empty() { "Password" } else { password_label };
+            creds_col = creds_col.push(
+                row![
+                    column![
+                        text(pw_label).size(13).color(palette.text_secondary),
+                        Space::with_height(6),
+                        text_input("Enter password...", entry_password)
+                            .padding(12)
+                            .size(14)
+                            .secure(true)
+                            .on_input(Message::EntryPasswordChanged)
+                            .style(move |_theme, status| match status {
+                                text_input::Status::Focused => theme::text_input_focused(theme),
+                                _ => theme::text_input_style(theme),
+                            }),
+                    ]
+                    .width(Length::Fill),
+                    Space::with_width(12),
+                    column![
+                        text("").size(13),
+                        Space::with_height(6),
+                        button(
+                            row![
+                                text(icons::DICE).size(14).font(fonts::FONT_REGULAR),
+                                Space::with_width(6),
+                                text("Generate").size(13),
+                            ]
+                            .align_y(Vertical::Center),
+                        )
+                        .padding([12, 16])
+                        .style(move |_theme, status| match status {
+                            button::Status::Hovered => theme::secondary_button_hovered(theme),
+                            _ => theme::secondary_button(theme),
+                        })
+                        .on_press(Message::UseGeneratedPassword),
+                    ],
+                ]
+                .align_y(Vertical::Bottom),
+            );
+        }
 
-    let phone_input = labeled_input(
-        theme,
-        "Phone (optional)",
-        "e.g., +33 6 12 34 56 78",
-        entry_phone.to_string(),
-        Message::EntryPhoneChanged,
-    );
+        Some(form_section(theme, icons::KEY, "Credentials", creds_col.into()))
+    } else {
+        None
+    };
 
-    let folder_input = labeled_input(
-        theme,
-        "Folder (optional)",
-        "e.g., Work/Email",
-        entry_folder.to_string(),
-        Message::EntryFolderChanged,
-    );
+    // ── Section 3: Details (URL, Phone, TOTP) ───────────────────────────
+    let has_details = vis.url || vis.phone || vis.totp;
+    let details_section: Option<Element<'static, Message>> = if has_details {
+        let mut details_col = column![].spacing(12);
 
-    // Tags section
-    let tags_label = text("Tags (optional)")
-        .size(13)
-        .color(palette.text_secondary);
+        // URL + Phone side by side if both visible
+        if vis.url && vis.phone {
+            let url_lbl = if url_label.is_empty() { "URL" } else { url_label };
+            details_col = details_col.push(
+                row![
+                    column![labeled_input(
+                        theme, url_lbl, "e.g., https://github.com",
+                        entry_url.to_string(), Message::EntryUrlChanged,
+                    )]
+                    .width(Length::Fill),
+                    Space::with_width(12),
+                    column![labeled_input(
+                        theme, "Phone", "e.g., +33 6 12 34 56 78",
+                        entry_phone.to_string(), Message::EntryPhoneChanged,
+                    )]
+                    .width(Length::Fill),
+                ],
+            );
+        } else if vis.url {
+            let url_lbl = if url_label.is_empty() { "URL" } else { url_label };
+            details_col = details_col.push(labeled_input(
+                theme, url_lbl, "e.g., https://github.com",
+                entry_url.to_string(), Message::EntryUrlChanged,
+            ));
+        } else if vis.phone {
+            details_col = details_col.push(labeled_input(
+                theme, "Phone", "e.g., +33 6 12 34 56 78",
+                entry_phone.to_string(), Message::EntryPhoneChanged,
+            ));
+        }
 
-    let mut tags_display = row![].spacing(6).align_y(Vertical::Center);
+        if vis.totp {
+            details_col = details_col.push(labeled_input(
+                theme, "TOTP Secret", "e.g., JBSWY3DPEHPK3PXP",
+                entry_totp_secret.to_string(), Message::EntryTotpSecretChanged,
+            ));
+        }
+
+        Some(form_section(theme, icons::GLOBE, "Details", details_col.into()))
+    } else {
+        None
+    };
+
+    // ── Organization + Notes content (moved into Advanced) ────────────
+    let mut org_col = column![].spacing(12);
+    org_col = org_col.push(labeled_input(
+        theme, "Folder", "e.g., Work/Email",
+        entry_folder.to_string(), Message::EntryFolderChanged,
+    ));
+
+    // Tags
+    let mut tags_row = row![].spacing(6).align_y(Vertical::Center);
     for (i, tag) in entry_tags.iter().enumerate() {
         let tag_str = tag.clone();
-        tags_display = tags_display.push(
-            row![
-                text(tag_str).size(12).color(palette.text_secondary),
-                button(text("x").size(10).color(palette.text_muted))
-                    .padding([2, 4])
-                    .style(move |_theme, status| match status {
-                        button::Status::Hovered => theme::icon_button_hovered(theme),
-                        _ => theme::icon_button(theme),
-                    })
-                    .on_press(Message::RemoveEntryTag(i)),
-            ]
-            .spacing(2)
-            .align_y(Vertical::Center),
+        tags_row = tags_row.push(
+            container(
+                row![
+                    text(tag_str).size(11).color(palette.text_primary),
+                    Space::with_width(4),
+                    button(text(icons::CLOSE).size(9).font(fonts::FONT_REGULAR).color(palette.text_muted))
+                        .padding([2, 4])
+                        .style(move |_theme, status| match status {
+                            button::Status::Hovered => theme::icon_button_hovered(theme),
+                            _ => theme::icon_button(theme),
+                        })
+                        .on_press(Message::RemoveEntryTag(i)),
+                ]
+                .align_y(Vertical::Center),
+            )
+            .padding([3, 8])
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(palette.surface_variant)),
+                border: iced::Border { radius: 4.0.into(), ..Default::default() },
+                ..Default::default()
+            }),
         );
     }
 
@@ -804,152 +1035,274 @@ fn entry_form(
                 _ => theme::text_input_style(theme),
             }),
         Space::with_width(8),
-        button(text("+").size(14))
-            .padding([8, 14])
-            .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::secondary_button_hovered(theme),
-                _ => theme::secondary_button(theme),
-            })
-            .on_press(Message::AddEntryTag),
+        button(
+            row![
+                text(icons::PLUS).size(11).font(fonts::FONT_REGULAR),
+                Space::with_width(4),
+                text("Add").size(12),
+            ]
+            .align_y(Vertical::Center),
+        )
+        .padding([8, 12])
+        .style(move |_theme, status| match status {
+            button::Status::Hovered => theme::secondary_button_hovered(theme),
+            _ => theme::secondary_button(theme),
+        })
+        .on_press(Message::AddEntryTag),
     ]
     .align_y(Vertical::Center);
 
-    // TOTP secret
-    let totp_input = labeled_input(
-        theme,
-        "TOTP Secret (optional)",
-        "e.g., JBSWY3DPEHPK3PXP",
-        entry_totp_secret.to_string(),
-        Message::EntryTotpSecretChanged,
+    org_col = org_col.push(
+        column![
+            text("Tags").size(13).color(palette.text_secondary),
+            Space::with_height(6),
+            tags_row,
+            Space::with_height(6),
+            tag_input_row,
+        ],
     );
 
-    // Custom fields section
-    let custom_fields_label = text("Custom Fields")
-        .size(13)
-        .color(palette.text_secondary);
+    // ── Advanced section (collapsible) ────────────────────────────────
+    let advanced_toggle_icon = if show_advanced {
+        icons::CHEVRON_DOWN
+    } else {
+        icons::CHEVRON_RIGHT
+    };
 
-    let mut custom_fields_col = column![].spacing(8);
-    for (i, (name, value)) in entry_custom_fields.iter().enumerate() {
-        let name_owned = name.clone();
-        let value_owned = value.clone();
-        let idx = i;
-        custom_fields_col = custom_fields_col.push(
-            row![
-                text_input("Field name", &name_owned)
-                    .padding(10)
-                    .size(13)
-                    .on_input(move |s| Message::CustomFieldNameChanged(idx, s))
-                    .style(move |_theme, status| match status {
-                        text_input::Status::Focused => theme::text_input_focused(theme),
-                        _ => theme::text_input_style(theme),
-                    }),
-                Space::with_width(8),
-                text_input("Value", &value_owned)
-                    .padding(10)
-                    .size(13)
-                    .on_input(move |s| Message::CustomFieldValueChanged(idx, s))
-                    .style(move |_theme, status| match status {
-                        text_input::Status::Focused => theme::text_input_focused(theme),
-                        _ => theme::text_input_style(theme),
-                    }),
-                Space::with_width(8),
-                button(
-                    text(icons::CLOSE).size(12).font(fonts::FONT_REGULAR).color(palette.danger),
-                )
-                .padding([6, 10])
+    let advanced_header_btn = button(
+        row![
+            text(advanced_toggle_icon).size(12).font(fonts::FONT_REGULAR).color(palette.text_muted),
+            Space::with_width(8),
+            text(icons::COG).size(14).font(fonts::FONT_REGULAR).color(palette.text_muted),
+            Space::with_width(8),
+            text("Advanced").size(14).color(palette.text_primary),
+            Space::with_width(Length::Fill),
+            text(format!(
+                "{} field{}, {} file{}",
+                entry_custom_fields.len(),
+                if entry_custom_fields.len() == 1 { "" } else { "s" },
+                entry_attachments.len(),
+                if entry_attachments.len() == 1 { "" } else { "s" },
+            ))
+            .size(12)
+            .color(palette.text_muted),
+        ]
+        .align_y(Vertical::Center),
+    )
+    .width(Length::Fill)
+    .padding([12, 16])
+    .style(move |_theme, status| match status {
+        button::Status::Hovered => {
+            let mut s = theme::ghost_button_hovered(theme);
+            s.border.radius = 8.0.into();
+            s
+        }
+        _ => {
+            let mut s = theme::ghost_button(theme);
+            s.border.radius = 8.0.into();
+            s
+        }
+    })
+    .on_press(Message::ToggleAdvancedFields);
+
+    let advanced_section: Element<'static, Message> = if show_advanced {
+        let mut advanced_col = column![].spacing(16);
+
+        // Notes
+        if vis.notes {
+            let notes_input = text_input("Additional notes...", entry_notes)
+                .padding(12)
+                .size(14)
+                .on_input(Message::EntryNotesChanged)
                 .style(move |_theme, status| match status {
-                    button::Status::Hovered => theme::icon_button_hovered(theme),
-                    _ => theme::icon_button(theme),
-                })
-                .on_press(Message::RemoveCustomField(i)),
+                    text_input::Status::Focused => theme::text_input_focused(theme),
+                    _ => theme::text_input_style(theme),
+                });
+            advanced_col = advanced_col.push(
+                column![
+                    row![
+                        text(icons::EDIT).size(13).font(fonts::FONT_REGULAR).color(palette.text_muted),
+                        Space::with_width(6),
+                        text("Notes").size(13).color(palette.text_secondary),
+                    ]
+                    .align_y(Vertical::Center),
+                    Space::with_height(6),
+                    notes_input,
+                ],
+            );
+        }
+
+        // Organization (Folder + Tags)
+        advanced_col = advanced_col.push(
+            column![
+                row![
+                    text(icons::FOLDER).size(13).font(fonts::FONT_REGULAR).color(palette.text_muted),
+                    Space::with_width(6),
+                    text("Organization").size(13).color(palette.text_secondary),
+                ]
+                .align_y(Vertical::Center),
+                Space::with_height(6),
+                org_col,
+            ],
+        );
+
+        // Custom fields
+        let mut custom_fields_col = column![].spacing(8);
+        for (i, (name, value)) in entry_custom_fields.iter().enumerate() {
+            let name_owned = name.clone();
+            let value_owned = value.clone();
+            let idx = i;
+            custom_fields_col = custom_fields_col.push(
+                row![
+                    text_input("Field name", &name_owned)
+                        .padding(10)
+                        .size(13)
+                        .on_input(move |s| Message::CustomFieldNameChanged(idx, s))
+                        .style(move |_theme, status| match status {
+                            text_input::Status::Focused => theme::text_input_focused(theme),
+                            _ => theme::text_input_style(theme),
+                        }),
+                    Space::with_width(8),
+                    text_input("Value", &value_owned)
+                        .padding(10)
+                        .size(13)
+                        .on_input(move |s| Message::CustomFieldValueChanged(idx, s))
+                        .style(move |_theme, status| match status {
+                            text_input::Status::Focused => theme::text_input_focused(theme),
+                            _ => theme::text_input_style(theme),
+                        }),
+                    Space::with_width(8),
+                    button(
+                        text(icons::CLOSE).size(12).font(fonts::FONT_REGULAR).color(palette.danger),
+                    )
+                    .padding([6, 10])
+                    .style(move |_theme, status| match status {
+                        button::Status::Hovered => theme::icon_button_hovered(theme),
+                        _ => theme::icon_button(theme),
+                    })
+                    .on_press(Message::RemoveCustomField(i)),
+                ]
+                .align_y(Vertical::Center),
+            );
+        }
+
+        let add_field_btn = button(
+            row![
+                text(icons::PLUS).size(12).font(fonts::FONT_REGULAR),
+                Space::with_width(6),
+                text("Add Custom Field").size(13),
             ]
             .align_y(Vertical::Center),
-        );
-    }
-
-    let add_field_btn = button(
-        row![
-            text(icons::PLUS).size(12).font(fonts::FONT_REGULAR),
-            Space::with_width(6),
-            text("Add Field").size(13),
-        ]
-        .align_y(Vertical::Center),
-    )
-    .padding([8, 14])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme),
-        _ => theme::secondary_button(theme),
-    })
-    .on_press(Message::AddCustomField);
-
-    // Attachments section
-    let attachments_label = text("Attachments")
-        .size(13)
-        .color(palette.text_secondary);
-
-    let mut attachments_col = column![].spacing(6);
-    for (i, (filename, data)) in entry_attachments.iter().enumerate() {
-        let filename_str = filename.clone();
-        let size_bytes = data.len() * 3 / 4; // approximate decoded size from base64
-        let size_display = if size_bytes > 1_048_576 {
-            format!("{:.1} MB", size_bytes as f64 / 1_048_576.0)
-        } else if size_bytes > 1024 {
-            format!("{:.1} KB", size_bytes as f64 / 1024.0)
-        } else {
-            format!("{} B", size_bytes)
-        };
-
-        attachments_col = attachments_col.push(
-            row![
-                text(icons::SAVE).size(12).font(fonts::FONT_REGULAR).color(palette.text_muted),
-                Space::with_width(8),
-                text(filename_str).size(13).color(palette.text_primary),
-                Space::with_width(8),
-                text(size_display).size(11).color(palette.text_muted),
-                Space::with_width(Length::Fill),
-                button(
-                    text(icons::CLOSE).size(12).font(fonts::FONT_REGULAR).color(palette.danger),
-                )
-                .padding([4, 8])
-                .style(move |_theme, status| match status {
-                    button::Status::Hovered => theme::icon_button_hovered(theme),
-                    _ => theme::icon_button(theme),
-                })
-                .on_press(Message::RemoveAttachment(i)),
-            ]
-            .align_y(Vertical::Center)
-            .padding([6, 10]),
-        );
-    }
-
-    let add_attachment_btn = button(
-        row![
-            text(icons::PLUS).size(12).font(fonts::FONT_REGULAR),
-            Space::with_width(6),
-            text("Add Attachment").size(13),
-        ]
-        .align_y(Vertical::Center),
-    )
-    .padding([8, 14])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme),
-        _ => theme::secondary_button(theme),
-    })
-    .on_press(Message::AddAttachment);
-
-    let notes_label = text("Notes (optional)")
-        .size(13)
-        .color(palette.text_secondary);
-
-    let notes_input = text_input("Additional notes...", entry_notes)
-        .padding(12)
-        .size(14)
-        .on_input(Message::EntryNotesChanged)
+        )
+        .padding([8, 14])
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme),
-            _ => theme::text_input_style(theme),
-        });
+            button::Status::Hovered => theme::secondary_button_hovered(theme),
+            _ => theme::secondary_button(theme),
+        })
+        .on_press(Message::AddCustomField);
 
+        advanced_col = advanced_col.push(
+            column![
+                text("Custom Fields").size(13).color(palette.text_secondary),
+                Space::with_height(6),
+                custom_fields_col,
+                Space::with_height(6),
+                add_field_btn,
+            ],
+        );
+
+        // Attachments
+        let mut attachments_col = column![].spacing(6);
+        for (i, (filename, data)) in entry_attachments.iter().enumerate() {
+            let filename_str = filename.clone();
+            let size_bytes = data.len() * 3 / 4;
+            let size_display = if size_bytes > 1_048_576 {
+                format!("{:.1} MB", size_bytes as f64 / 1_048_576.0)
+            } else if size_bytes > 1024 {
+                format!("{:.1} KB", size_bytes as f64 / 1024.0)
+            } else {
+                format!("{} B", size_bytes)
+            };
+
+            attachments_col = attachments_col.push(
+                container(
+                    row![
+                        text(icons::SAVE).size(12).font(fonts::FONT_REGULAR).color(palette.text_muted),
+                        Space::with_width(8),
+                        text(filename_str).size(13).color(palette.text_primary),
+                        Space::with_width(8),
+                        text(size_display).size(11).color(palette.text_muted),
+                        Space::with_width(Length::Fill),
+                        button(
+                            text(icons::CLOSE).size(12).font(fonts::FONT_REGULAR).color(palette.danger),
+                        )
+                        .padding([4, 8])
+                        .style(move |_theme, status| match status {
+                            button::Status::Hovered => theme::icon_button_hovered(theme),
+                            _ => theme::icon_button(theme),
+                        })
+                        .on_press(Message::RemoveAttachment(i)),
+                    ]
+                    .align_y(Vertical::Center),
+                )
+                .padding([6, 10])
+                .style(move |_| container::Style {
+                    background: Some(iced::Background::Color(palette.surface_variant)),
+                    border: iced::Border { radius: 4.0.into(), ..Default::default() },
+                    ..Default::default()
+                }),
+            );
+        }
+
+        let add_attachment_btn = button(
+            row![
+                text(icons::PLUS).size(12).font(fonts::FONT_REGULAR),
+                Space::with_width(6),
+                text("Add Attachment").size(13),
+            ]
+            .align_y(Vertical::Center),
+        )
+        .padding([8, 14])
+        .style(move |_theme, status| match status {
+            button::Status::Hovered => theme::secondary_button_hovered(theme),
+            _ => theme::secondary_button(theme),
+        })
+        .on_press(Message::AddAttachment);
+
+        advanced_col = advanced_col.push(
+            column![
+                text("Attachments").size(13).color(palette.text_secondary),
+                Space::with_height(6),
+                attachments_col,
+                Space::with_height(6),
+                add_attachment_btn,
+            ],
+        );
+
+        let separator = container(Space::new(Length::Fill, Length::Fixed(1.0)))
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(palette.surface_variant)),
+                ..Default::default()
+            });
+
+        column![
+            separator,
+            Space::with_height(8),
+            advanced_header_btn,
+            advanced_col,
+        ]
+        .into()
+    } else {
+        let separator = container(Space::new(Length::Fill, Length::Fixed(1.0)))
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(palette.surface_variant)),
+                ..Default::default()
+            });
+
+        column![separator, Space::with_height(8), advanced_header_btn,].into()
+    };
+
+    // ── Actions ─────────────────────────────────────────────────────────
     let cancel_btn = button(text("Cancel").size(14).color(palette.text_secondary))
         .padding([12, 24])
         .style(move |_theme, status| match status {
@@ -959,8 +1312,12 @@ fn entry_form(
         .on_press(Message::HideAddEntry);
 
     let save_btn = button(
-        text(if edit_mode { "Update" } else { "Save" })
-            .size(14),
+        row![
+            text(icons::CHECK).size(14).font(fonts::FONT_REGULAR),
+            Space::with_width(6),
+            text(if edit_mode { "Update" } else { "Save" }).size(14),
+        ]
+        .align_y(Vertical::Center),
     )
     .padding([12, 24])
     .style(move |_theme, status| match status {
@@ -972,56 +1329,35 @@ fn entry_form(
     let actions_row = row![Space::with_width(Length::Fill), cancel_btn, Space::with_width(12), save_btn,]
         .align_y(Vertical::Center);
 
-    let form_content = column![
+    // ── Assemble form ───────────────────────────────────────────────────
+    let mut form_col = column![
         form_title,
-        Space::with_height(16),
-        type_label,
-        Space::with_height(6),
+        Space::with_height(12),
         type_row,
         Space::with_height(16),
-        title_input,
-        Space::with_height(16),
-        username_input,
-        Space::with_height(16),
-        email_input,
-        Space::with_height(16),
-        password_row,
-        Space::with_height(16),
-        url_input,
-        Space::with_height(16),
-        phone_input,
-        Space::with_height(16),
-        totp_input,
-        Space::with_height(16),
-        folder_input,
-        Space::with_height(16),
-        tags_label,
-        Space::with_height(6),
-        tags_display,
-        Space::with_height(6),
-        tag_input_row,
-        Space::with_height(16),
-        custom_fields_label,
-        Space::with_height(6),
-        custom_fields_col,
-        Space::with_height(6),
-        add_field_btn,
-        Space::with_height(16),
-        attachments_label,
-        Space::with_height(6),
-        attachments_col,
-        Space::with_height(6),
-        add_attachment_btn,
-        Space::with_height(16),
-        notes_label,
-        Space::with_height(6),
-        notes_input,
-        Space::with_height(24),
-        actions_row,
+        general_section,
     ]
-    .padding(24);
+    .spacing(0);
 
-    container(form_content)
+    if let Some(creds) = credentials_section {
+        form_col = form_col
+            .push(Space::with_height(12))
+            .push(creds);
+    }
+
+    if let Some(details) = details_section {
+        form_col = form_col
+            .push(Space::with_height(12))
+            .push(details);
+    }
+
+    form_col = form_col
+        .push(Space::with_height(12))
+        .push(advanced_section)
+        .push(Space::with_height(16))
+        .push(actions_row);
+
+    container(form_col.padding(24))
         .width(Length::Fill)
         .style(move |_| theme::card_container(theme))
         .into()

@@ -175,6 +175,8 @@ pub struct LilypadApp {
 
     // Entry type for form
     pub entry_type: String,
+    // Whether the advanced fields section is expanded in the entry form
+    pub show_advanced_fields: bool,
 }
 
 impl Drop for LilypadApp {
@@ -304,6 +306,7 @@ impl LilypadApp {
             show_audit_log: false,
             audit_events: Vec::new(),
             entry_type: "Login".to_string(),
+            show_advanced_fields: false,
         };
 
         // Check GitHub OAuth status on startup
@@ -935,6 +938,9 @@ impl LilypadApp {
             Message::EntryTypeChanged(t) => {
                 self.entry_type = t;
             }
+            Message::ToggleAdvancedFields => {
+                self.show_advanced_fields = !self.show_advanced_fields;
+            }
 
             // Audit log
             Message::ShowAuditLog => {
@@ -1024,6 +1030,7 @@ impl LilypadApp {
                 folder_filter: self.folder_filter.as_deref(),
                 entry_type: &self.entry_type,
                 entry_attachments: &self.entry_attachments,
+                show_advanced_fields: self.show_advanced_fields,
             }),
             Category::Health => views::health::view(self.theme, self.health_report.as_ref(), &self.breached_entries),
             Category::Generator => views::generator::view(views::generator::GeneratorViewParams {
@@ -1556,6 +1563,7 @@ impl LilypadApp {
         self.entry_custom_fields.clear();
         self.entry_attachments.clear();
         self.entry_type = "Login".to_string();
+        self.show_advanced_fields = false;
         self.edit_index = None;
     }
 

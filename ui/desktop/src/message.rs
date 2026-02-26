@@ -120,6 +120,8 @@ pub enum Message {
     SyncResolveKeepRemote,
     /// Change entry type
     EntryTypeChanged(String),
+    /// Toggle advanced fields section in entry form
+    ToggleAdvancedFields,
     /// Show/hide audit log
     ShowAuditLog,
     /// Close audit log

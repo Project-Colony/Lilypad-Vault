@@ -103,6 +103,14 @@ pub mod icons {
     pub const LAPTOP: &str = "\u{f109}"; //
     pub const MOBILE: &str = "\u{f10b}"; //
 
+    // Entry types
+    pub const CREDIT_CARD: &str = "\u{f09d}"; //
+    pub const ID_CARD: &str = "\u{f2c2}"; //
+    pub const STICKY_NOTE: &str = "\u{f249}"; //
+    pub const CERTIFICATE: &str = "\u{f0a3}"; //
+    pub const WIFI: &str = "\u{f1eb}"; //
+    pub const SERVER: &str = "\u{f233}"; //
+
     // Misc
     pub const CLOCK: &str = "\u{f017}"; //
     pub const CALENDAR: &str = "\u{f073}"; //
