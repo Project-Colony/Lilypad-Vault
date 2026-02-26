@@ -184,11 +184,8 @@ impl OAuthConfig {
     /// - `LILYPAD_OAUTH_FLOW` - `device` or `authorization_code` (optional)
     /// - `LILYPAD_OAUTH_PORT` - Callback port (optional)
     pub fn from_env() -> Result<Self> {
-        let client_id = std::env::var("LILYPAD_GITHUB_CLIENT_ID").map_err(|_| {
-            OAuthError::ConfigError(
-                "LILYPAD_GITHUB_CLIENT_ID environment variable is required".to_string(),
-            )
-        })?;
+        let client_id = std::env::var("LILYPAD_GITHUB_CLIENT_ID")
+            .unwrap_or_else(|_| crate::DEFAULT_GITHUB_CLIENT_ID.to_string());
 
         let mut config = Self::github(client_id);
 

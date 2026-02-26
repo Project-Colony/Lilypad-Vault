@@ -8,11 +8,16 @@ use iced::{Element, Length};
 
 use lilypad_common::{HealthGrade, HealthReport};
 
+use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::theme::{self, LilypadTheme};
 
 /// Render the health dashboard
-pub fn view(theme: LilypadTheme, health_report: Option<&HealthReport>) -> Element<'static, Message> {
+pub fn view(
+    theme: LilypadTheme,
+    health_report: Option<&HealthReport>,
+    breached_entries: &[String],
+) -> Element<'static, Message> {
     let palette = theme.palette();
 
     let title = text("Password Health")
@@ -86,7 +91,7 @@ pub fn view(theme: LilypadTheme, health_report: Option<&HealthReport>) -> Elemen
                 theme,
                 "Total Entries",
                 total_entries,
-                "🔐",
+                icons::VAULT,
                 palette.primary,
             ),
             Space::with_width(16),
@@ -94,7 +99,7 @@ pub fn view(theme: LilypadTheme, health_report: Option<&HealthReport>) -> Elemen
                 theme,
                 "Weak Passwords",
                 weak_passwords,
-                "⚠",
+                icons::TRIANGLE_EXCLAMATION,
                 if weak_passwords > 0 {
                     palette.warning
                 } else {
@@ -106,7 +111,7 @@ pub fn view(theme: LilypadTheme, health_report: Option<&HealthReport>) -> Elemen
                 theme,
                 "Reused Passwords",
                 reused_passwords,
-                "🔄",
+                icons::REFRESH,
                 if reused_passwords > 0 {
                     palette.danger
                 } else {
@@ -118,7 +123,7 @@ pub fn view(theme: LilypadTheme, health_report: Option<&HealthReport>) -> Elemen
                 theme,
                 "Expired",
                 expired_passwords,
-                "⏰",
+                icons::CLOCK,
                 if expired_passwords > 0 {
                     palette.warning
                 } else {
@@ -138,7 +143,10 @@ pub fn view(theme: LilypadTheme, health_report: Option<&HealthReport>) -> Elemen
         {
             container(
                 column![
-                    text("✓").size(32).color(palette.success),
+                    text(icons::CIRCLE_CHECK)
+                        .size(32)
+                        .font(fonts::FONT_REGULAR)
+                        .color(palette.success),
                     Space::with_height(12),
                     text("All passwords are healthy!")
                         .size(14)
@@ -204,9 +212,9 @@ pub fn view(theme: LilypadTheme, health_report: Option<&HealthReport>) -> Elemen
         // Refresh button
         let refresh_btn = button(
             row![
-                text("🔄").size(14),
+                text(icons::REFRESH).size(14).font(fonts::FONT_REGULAR),
                 Space::with_width(8),
-                text("Refresh Analysis").size(14),
+                text("Refresh").size(14),
             ]
             .align_y(Vertical::Center),
         )
@@ -217,7 +225,90 @@ pub fn view(theme: LilypadTheme, health_report: Option<&HealthReport>) -> Elemen
         })
         .on_press(Message::RefreshHealthReport);
 
-        column![
+        // Breach check button
+        let breach_btn = button(
+            row![
+                text(icons::SHIELD).size(14).font(fonts::FONT_REGULAR),
+                Space::with_width(8),
+                text("Check Breaches").size(14),
+            ]
+            .align_y(Vertical::Center),
+        )
+        .padding([10, 16])
+        .style(move |_theme, status| match status {
+            button::Status::Hovered => theme::primary_button_hovered(theme),
+            _ => theme::primary_button(theme),
+        })
+        .on_press(Message::CheckBreaches);
+
+        // Breached entries section
+        let breach_section: Element<'static, Message> = if !breached_entries.is_empty() {
+            let breach_title = text("Breached Passwords")
+                .size(16)
+                .color(palette.danger);
+
+            let breach_hint = text(format!(
+                "{} password{} found in known data breaches. Change {} immediately!",
+                breached_entries.len(),
+                if breached_entries.len() == 1 { "" } else { "s" },
+                if breached_entries.len() == 1 { "it" } else { "them" }
+            ))
+            .size(13)
+            .color(palette.text_secondary);
+
+            let breach_items: Vec<Element<'static, Message>> = breached_entries
+                .iter()
+                .map(|entry_label| {
+                    let label = entry_label.clone();
+                    container(
+                        row![
+                            text(icons::TRIANGLE_EXCLAMATION)
+                                .size(14)
+                                .font(fonts::FONT_REGULAR)
+                                .color(palette.danger),
+                            Space::with_width(12),
+                            text(label).size(14).color(palette.text_primary),
+                            Space::with_width(Length::Fill),
+                            text("COMPROMISED").size(11).color(palette.danger),
+                        ]
+                        .align_y(Vertical::Center)
+                        .padding(12),
+                    )
+                    .width(Length::Fill)
+                    .style(move |_| theme::elevated_container(theme))
+                    .into()
+                })
+                .collect();
+
+            container(
+                column![
+                    breach_title,
+                    Space::with_height(8),
+                    breach_hint,
+                    Space::with_height(12),
+                    column(breach_items).spacing(8),
+                ]
+                .padding(24),
+            )
+            .width(Length::Fill)
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(iced::Color {
+                    a: 0.08,
+                    ..palette.danger
+                })),
+                border: iced::Border {
+                    color: palette.danger,
+                    width: 1.0,
+                    radius: 12.0.into(),
+                },
+                ..Default::default()
+            })
+            .into()
+        } else {
+            Space::new(0, 0).into()
+        };
+
+        let mut content_col = column![
             title,
             Space::with_height(4),
             subtitle,
@@ -229,17 +320,27 @@ pub fn view(theme: LilypadTheme, health_report: Option<&HealthReport>) -> Elemen
             row![
                 issues_title,
                 Space::with_width(Length::Fill),
+                breach_btn,
+                Space::with_width(8),
                 refresh_btn,
             ]
             .align_y(Vertical::Center),
             Space::with_height(16),
             issues_content,
-        ]
+        ];
+
+        if !breached_entries.is_empty() {
+            content_col = content_col
+                .push(Space::with_height(24))
+                .push(breach_section);
+        }
+
+        content_col
     } else {
         // No report yet
         let analyze_btn = button(
             row![
-                text("💚").size(16),
+                text(icons::HEART_PULSE).size(16).font(fonts::FONT_REGULAR),
                 Space::with_width(8),
                 text("Analyze Passwords").size(15),
             ]
@@ -259,7 +360,7 @@ pub fn view(theme: LilypadTheme, health_report: Option<&HealthReport>) -> Elemen
             Space::with_height(48),
             container(
                 column![
-                    text("💚").size(64),
+                    text(icons::HEART_PULSE).size(64).font(fonts::FONT_REGULAR),
                     Space::with_height(24),
                     text("Analyze Your Passwords")
                         .size(18)
@@ -321,7 +422,7 @@ fn stat_card(
     container(
         column![
             row![
-                text(icon).size(20),
+                text(icon).size(20).font(fonts::FONT_REGULAR),
                 Space::with_width(Length::Fill),
             ],
             Space::with_height(12),

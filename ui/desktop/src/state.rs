@@ -166,6 +166,7 @@ pub struct VaultEntry {
     pub phone: String,
     pub totp_secret: Option<String>,
     pub custom_fields: Vec<CustomField>,
+    pub attachments: Vec<(String, usize)>, // (filename, data_size_bytes)
 
     // Metadata fields (from EntryMetadata, unencrypted)
     pub tags: Vec<String>,
@@ -181,6 +182,7 @@ pub struct VaultEntry {
     pub password_strength: PasswordStrength,
     pub is_expired: bool,
     pub color: Option<EntryColor>,
+    pub totp_code: Option<String>,
 }
 
 impl Drop for VaultEntry {

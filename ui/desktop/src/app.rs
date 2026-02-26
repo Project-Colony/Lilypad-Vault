@@ -7,8 +7,9 @@ use std::time::{Duration, Instant};
 
 use arboard::Clipboard;
 use directories::ProjectDirs;
-use iced::widget::{column, container, Space};
-use iced::{Element, Length, Subscription, Task};
+use iced::widget::{column, container};
+use iced::alignment::{Horizontal, Vertical};
+use iced::{Color, Element, Length, Subscription, Task};
 use rand::Rng;
 
 use lilypad_common::{
@@ -87,6 +88,9 @@ pub struct LilypadApp {
     pub entry_folder: String,
     pub entry_tags: Vec<String>,
     pub entry_new_tag: String,
+    pub entry_totp_secret: String,
+    pub entry_custom_fields: Vec<(String, String)>,
+    pub entry_attachments: Vec<(String, String)>, // (filename, base64_data)
 
     // Settings
     pub settings: AppSettings,
@@ -98,6 +102,7 @@ pub struct LilypadApp {
     pub last_activity: Instant,
 
     // Clipboard management
+    pub clipboard: Option<Clipboard>,
     pub clipboard_clear_time: Option<Instant>,
     pub clipboard_value: Option<String>,
 
@@ -137,8 +142,11 @@ pub struct LilypadApp {
     pub github_authenticated: bool,
     pub sync_status_text: Option<String>,
     pub sync_in_progress: bool,
+    pub sync_started_at: Option<Instant>,
     pub device_flow_code: Option<String>,
     pub device_flow_uri: Option<String>,
+    pub device_flow_device_code: Option<String>,
+    pub device_flow_interval: Option<u64>,
 
     // Key rotation
     pub show_change_password: bool,
@@ -150,6 +158,19 @@ pub struct LilypadApp {
 
     // Breach check
     pub breached_entries: Vec<String>,
+
+    // Folder filter
+    pub folder_filter: Option<String>,
+
+    // Sync conflict
+    pub sync_conflict: bool,
+
+    // Audit log
+    pub show_audit_log: bool,
+    pub audit_events: Vec<(u64, String, Option<String>)>,
+
+    // Entry type for form
+    pub entry_type: String,
 }
 
 impl Drop for LilypadApp {
@@ -227,11 +248,15 @@ impl LilypadApp {
             entry_folder: String::new(),
             entry_tags: Vec::new(),
             entry_new_tag: String::new(),
+            entry_totp_secret: String::new(),
+            entry_custom_fields: Vec::new(),
+            entry_attachments: Vec::new(),
             settings: AppSettings::default(),
             show_settings: false,
             theme: LilypadTheme::ClassicGreen,
             lockout_state: LockoutState::default(),
             last_activity: now,
+            clipboard: Clipboard::new().ok(),
             clipboard_clear_time: None,
             clipboard_value: None,
             show_reauth_modal: false,
@@ -257,13 +282,21 @@ impl LilypadApp {
             github_authenticated: false,
             sync_status_text: None,
             sync_in_progress: false,
+            sync_started_at: None,
             device_flow_code: None,
             device_flow_uri: None,
+            device_flow_device_code: None,
+            device_flow_interval: None,
             show_change_password: false,
             new_master_password: String::new(),
             show_entry_history: false,
             history_entries: Vec::new(),
             breached_entries: Vec::new(),
+            folder_filter: None,
+            sync_conflict: false,
+            show_audit_log: false,
+            audit_events: Vec::new(),
+            entry_type: "Login".to_string(),
         };
 
         // Check GitHub OAuth status on startup
@@ -434,6 +467,58 @@ impl LilypadApp {
                     self.entry_tags.remove(index);
                 }
             }
+            Message::EntryTotpSecretChanged(secret) => {
+                self.entry_totp_secret = secret;
+            }
+            Message::AddCustomField => {
+                self.entry_custom_fields
+                    .push((String::new(), String::new()));
+            }
+            Message::RemoveCustomField(index) => {
+                if index < self.entry_custom_fields.len() {
+                    self.entry_custom_fields.remove(index);
+                }
+            }
+            Message::CustomFieldNameChanged(index, name) => {
+                if let Some(field) = self.entry_custom_fields.get_mut(index) {
+                    field.0 = name;
+                }
+            }
+            Message::CustomFieldValueChanged(index, value) => {
+                if let Some(field) = self.entry_custom_fields.get_mut(index) {
+                    field.1 = value;
+                }
+            }
+
+            // Attachments
+            Message::AddAttachment => {
+                let file = rfd::FileDialog::new()
+                    .set_title("Select Attachment")
+                    .pick_file();
+                if let Some(path) = file {
+                    if let Ok(data) = fs::read(&path) {
+                        use base64::Engine;
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+                        let filename = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "attachment".to_string());
+                        self.entry_attachments.push((filename.clone(), b64));
+                        self.set_status(format!("Attached: {}", filename));
+                    } else {
+                        self.set_status("Failed to read file");
+                    }
+                }
+            }
+            Message::RemoveAttachment(index) => {
+                if index < self.entry_attachments.len() {
+                    self.entry_attachments.remove(index);
+                }
+            }
+            Message::AttachmentFileSelected(_) => {
+                // Handled synchronously in AddAttachment
+            }
+
             Message::SaveEntry => {
                 return self.save_entry();
             }
@@ -469,6 +554,19 @@ impl LilypadApp {
                 } else if let Some(entry) = self.vault_entries.get(index) {
                     self.copy_to_clipboard(&entry.password.clone());
                     self.set_status("Password copied to clipboard");
+                }
+            }
+            Message::FilterByFolder(folder) => {
+                self.folder_filter = folder;
+            }
+            Message::CopyTotpCode(index) => {
+                let code = self
+                    .vault_entries
+                    .get(index)
+                    .and_then(|e| e.totp_code.clone());
+                if let Some(code) = code {
+                    self.copy_to_clipboard(&code);
+                    self.set_status("TOTP code copied to clipboard");
                 }
             }
             Message::OpenUrl(index) => {
@@ -644,6 +742,17 @@ impl LilypadApp {
                 self.check_auto_lock();
                 self.check_clipboard_clear();
                 self.check_status_clear();
+                self.refresh_totp_codes();
+                // Timeout sync operations after 10 seconds
+                if self.sync_in_progress {
+                    if let Some(started) = self.sync_started_at {
+                        if started.elapsed() > Duration::from_secs(10) {
+                            self.sync_in_progress = false;
+                            self.sync_started_at = None;
+                            self.set_status("Sync operation timed out");
+                        }
+                    }
+                }
             }
             Message::ClearStatus => {
                 self.status_message = None;
@@ -651,6 +760,10 @@ impl LilypadApp {
             }
             Message::SetStatus(msg) => {
                 self.set_status(msg);
+            }
+            Message::CopyToClipboard(value) => {
+                self.copy_to_clipboard(&value);
+                self.set_status("Copied to clipboard");
             }
             Message::OpenExternalLink(url) => {
                 let _ = webbrowser::open(&url);
@@ -681,17 +794,22 @@ impl LilypadApp {
             }
             Message::GitHubLoginResult(result) => {
                 self.sync_in_progress = false;
+                self.sync_started_at = None;
                 match result {
                     Ok(username) => {
                         self.github_authenticated = true;
                         self.github_username = Some(username.clone());
                         self.device_flow_code = None;
                         self.device_flow_uri = None;
+                        self.device_flow_device_code = None;
+                        self.device_flow_interval = None;
                         self.set_status(format!("Logged in as {}", username));
                     }
                     Err(e) => {
                         self.device_flow_code = None;
                         self.device_flow_uri = None;
+                        self.device_flow_device_code = None;
+                        self.device_flow_interval = None;
                         self.set_status(format!("Login failed: {}", e));
                     }
                 }
@@ -699,9 +817,17 @@ impl LilypadApp {
             Message::DeviceFlowCode {
                 user_code,
                 verification_uri,
+                device_code,
+                interval,
             } => {
                 self.device_flow_code = Some(user_code);
-                self.device_flow_uri = Some(verification_uri);
+                self.device_flow_uri = Some(verification_uri.clone());
+                self.device_flow_device_code = Some(device_code.clone());
+                self.device_flow_interval = Some(interval);
+                // Open browser
+                let _ = webbrowser::open(&verification_uri);
+                // Start polling in background
+                return self.github_poll_for_token(device_code, interval);
             }
             Message::SyncCheckStatus => {
                 return self.sync_check_status();
@@ -714,6 +840,7 @@ impl LilypadApp {
             }
             Message::SyncCompleted(result) => {
                 self.sync_in_progress = false;
+                self.sync_started_at = None;
                 match result {
                     Ok(msg) => {
                         self.set_status(msg);
@@ -779,6 +906,40 @@ impl LilypadApp {
                 self.history_entries.clear();
             }
 
+            // Sync conflict resolution
+            Message::SyncResolveKeepLocal => {
+                self.sync_conflict = false;
+                return self.sync_push();
+            }
+            Message::SyncResolveKeepRemote => {
+                self.sync_conflict = false;
+                return self.sync_pull();
+            }
+
+            // Entry type
+            Message::EntryTypeChanged(t) => {
+                self.entry_type = t;
+            }
+
+            // Audit log
+            Message::ShowAuditLog => {
+                // Load audit events from vault
+                self.audit_events = if let Some(ref vault) = self.vault {
+                    vault
+                        .audit_log
+                        .iter()
+                        .rev()
+                        .map(|e| (e.timestamp, e.action.clone(), e.entry_label.clone()))
+                        .collect()
+                } else {
+                    Vec::new()
+                };
+                self.show_audit_log = true;
+            }
+            Message::CloseAuditLog => {
+                self.show_audit_log = false;
+            }
+
             // Backup
             Message::BackupVault => {
                 return self.backup_vault();
@@ -841,8 +1002,13 @@ impl LilypadApp {
                 entry_folder: &self.entry_folder,
                 entry_tags: &self.entry_tags,
                 entry_new_tag: &self.entry_new_tag,
+                entry_totp_secret: &self.entry_totp_secret,
+                entry_custom_fields: &self.entry_custom_fields,
+                folder_filter: self.folder_filter.as_deref(),
+                entry_type: &self.entry_type,
+                entry_attachments: &self.entry_attachments,
             }),
-            Category::Health => views::health::view(self.theme, self.health_report.as_ref()),
+            Category::Health => views::health::view(self.theme, self.health_report.as_ref(), &self.breached_entries),
             Category::Generator => views::generator::view(views::generator::GeneratorViewParams {
                 theme: self.theme,
                 generated_password: &self.generated_password,
@@ -860,6 +1026,7 @@ impl LilypadApp {
                 self.sync_in_progress,
                 self.device_flow_code.as_deref(),
                 self.device_flow_uri.as_deref(),
+                self.sync_conflict,
             ),
             Category::Account => views::settings::account_view(
                 self.theme,
@@ -882,22 +1049,7 @@ impl LilypadApp {
         let navigation = views::navigation::view(self.theme, self.selected_category);
 
         // Status bar
-        let status_bar: Element<Message> = if let Some(ref msg) = self.status_message {
-            let palette = self.theme.palette();
-            container(
-                iced::widget::text(msg)
-                    .size(13)
-                    .color(palette.text_secondary),
-            )
-            .width(Length::Fill)
-            .padding([8, 20])
-            .style(move |_| theme::nav_container(self.theme))
-            .into()
-        } else {
-            Space::new(0, 0).into()
-        };
-
-        let layout = column![header, main_content, navigation, status_bar,];
+        let layout = column![header, main_content, navigation];
 
         // Layer modals on top
         let content: Element<Message> = container(layout)
@@ -907,8 +1059,8 @@ impl LilypadApp {
             .into();
 
         // Add vault selector dropdown overlay
-        if self.show_vault_selector {
-            return iced::widget::stack![
+        let content: Element<Message> = if self.show_vault_selector {
+            iced::widget::stack![
                 content,
                 views::header::vault_dropdown_overlay(
                     self.theme,
@@ -916,49 +1068,82 @@ impl LilypadApp {
                     &self.available_vaults,
                 ),
             ]
-            .into();
-        }
-
-        // Add modal overlays
-        if self.show_settings {
-            return iced::widget::stack![
+            .into()
+        } else if self.show_settings {
+            iced::widget::stack![
                 content,
                 views::modals::settings_modal(self.theme),
             ]
-            .into();
-        }
-
-        if self.show_new_vault_modal {
-            return iced::widget::stack![
+            .into()
+        } else if self.show_new_vault_modal {
+            iced::widget::stack![
                 content,
                 views::modals::new_vault_modal(self.theme, &self.new_vault_name),
             ]
-            .into();
-        }
-
-        if self.show_delete_confirm {
+            .into()
+        } else if self.show_delete_confirm {
             let title = self
                 .pending_delete_index
                 .and_then(|i| self.vault_entries.get(i))
                 .map(|e| e.title.as_str())
                 .unwrap_or("this entry");
-
-            return iced::widget::stack![
+            iced::widget::stack![
                 content,
                 views::modals::delete_confirm_modal(self.theme, title),
             ]
-            .into();
-        }
-
-        if self.show_reauth_modal {
-            return iced::widget::stack![
+            .into()
+        } else if self.show_reauth_modal {
+            iced::widget::stack![
                 content,
                 views::modals::reauth_modal(self.theme, &self.reauth_password),
             ]
-            .into();
-        }
+            .into()
+        } else if self.show_change_password {
+            iced::widget::stack![
+                content,
+                views::modals::change_password_modal(self.theme, &self.new_master_password),
+            ]
+            .into()
+        } else if self.show_entry_history {
+            iced::widget::stack![
+                content,
+                views::modals::entry_history_modal(self.theme, &self.history_entries),
+            ]
+            .into()
+        } else if self.show_audit_log {
+            iced::widget::stack![
+                content,
+                views::modals::audit_log_modal(self.theme, &self.audit_events),
+            ]
+            .into()
+        } else {
+            content
+        };
 
-        content
+        // Toast notification overlay
+        if let Some(ref msg) = self.status_message {
+            let toast_pill: Element<Message> = container(
+                iced::widget::text(msg)
+                    .size(13)
+                    .color(Color::WHITE),
+            )
+            .padding([10, 20])
+            .style(move |_| theme::toast_container(self.theme))
+            .into();
+
+            let toast_overlay: Element<Message> = container(toast_pill)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(Horizontal::Center)
+                .align_y(Vertical::Bottom)
+                .padding(iced::Padding { top: 0.0, right: 0.0, bottom: 20.0, left: 0.0 })
+                .into();
+
+            iced::widget::stack![content, toast_overlay]
+                .into()
+        } else {
+            content
+        }
     }
 
     /// Create subscriptions
@@ -1020,15 +1205,18 @@ impl LilypadApp {
     }
 
     fn copy_to_clipboard(&mut self, value: &str) {
-        if let Ok(mut clipboard) = Clipboard::new() {
+        if let Some(ref mut clipboard) = self.clipboard {
             let _ = clipboard.set_text(value.to_string());
-            if self.settings.clipboard_timeout_seconds > 0 {
-                self.clipboard_value = Some(value.to_string());
-                self.clipboard_clear_time = Some(
-                    Instant::now()
-                        + Duration::from_secs(self.settings.clipboard_timeout_seconds as u64),
-                );
-            }
+        } else if let Ok(mut clipboard) = Clipboard::new() {
+            let _ = clipboard.set_text(value.to_string());
+            self.clipboard = Some(clipboard);
+        }
+        if self.settings.clipboard_timeout_seconds > 0 {
+            self.clipboard_value = Some(value.to_string());
+            self.clipboard_clear_time = Some(
+                Instant::now()
+                    + Duration::from_secs(self.settings.clipboard_timeout_seconds as u64),
+            );
         }
     }
 
@@ -1172,6 +1360,10 @@ impl LilypadApp {
                     .unwrap_or_default();
                 let url = entry.metadata.url.clone().unwrap_or_default();
 
+                let totp_code = secret.totp_secret.as_ref().and_then(|s| {
+                    generate_totp_code(s)
+                });
+
                 Some(VaultEntry {
                     title: entry.label.clone(),
                     username,
@@ -1182,6 +1374,19 @@ impl LilypadApp {
                     phone: secret.phone.unwrap_or_default(),
                     totp_secret: secret.totp_secret,
                     custom_fields: secret.custom_fields,
+                    attachments: secret
+                        .attachments
+                        .iter()
+                        .map(|a| {
+                            let size = base64::Engine::decode(
+                                &base64::engine::general_purpose::STANDARD,
+                                &a.data_base64,
+                            )
+                            .map(|d| d.len())
+                            .unwrap_or(0);
+                            (a.filename.clone(), size)
+                        })
+                        .collect(),
                     tags: entry.metadata.tags.clone(),
                     folder: entry.metadata.folder.clone(),
                     entry_type: entry.metadata.entry_type.clone(),
@@ -1193,6 +1398,7 @@ impl LilypadApp {
                     password_strength: strength,
                     is_expired,
                     color: entry.color,
+                    totp_code,
                 })
             })
             .collect();
@@ -1249,6 +1455,10 @@ impl LilypadApp {
         self.entry_folder.clear();
         self.entry_tags.clear();
         self.entry_new_tag.clear();
+        self.entry_totp_secret.clear();
+        self.entry_custom_fields.clear();
+        self.entry_attachments.clear();
+        self.entry_type = "Login".to_string();
         self.edit_index = None;
     }
 
@@ -1264,6 +1474,32 @@ impl LilypadApp {
             self.entry_folder = entry.folder.clone().unwrap_or_default();
             self.entry_tags = entry.tags.clone();
             self.entry_new_tag.clear();
+            self.entry_totp_secret = entry.totp_secret.clone().unwrap_or_default();
+            self.entry_custom_fields = entry
+                .custom_fields
+                .iter()
+                .map(|f| (f.name.clone(), f.value.clone()))
+                .collect();
+            self.entry_type = format!("{:?}", entry.entry_type);
+            // Load raw attachment data from vault for editing
+            self.entry_attachments = if let (Some(ref vault), Some(ref key)) =
+                (&self.vault, &self.vault_key)
+            {
+                vault
+                    .entries
+                    .get(index)
+                    .and_then(|e| decrypt(key, &e.ciphertext).ok())
+                    .and_then(|bytes| serde_json::from_slice::<EntrySecret>(&bytes).ok())
+                    .map(|s| {
+                        s.attachments
+                            .into_iter()
+                            .map(|a| (a.filename, a.data_base64))
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
             self.edit_mode = true;
             self.edit_index = Some(index);
             self.show_add_entry = true;
@@ -1309,6 +1545,26 @@ impl LilypadApp {
         } else {
             Some(self.entry_phone.clone())
         };
+        secret.totp_secret = if self.entry_totp_secret.is_empty() {
+            None
+        } else {
+            Some(self.entry_totp_secret.clone())
+        };
+        secret.custom_fields = self
+            .entry_custom_fields
+            .iter()
+            .filter(|(name, _)| !name.is_empty())
+            .map(|(name, value)| lilypad_core::CustomField {
+                name: name.clone(),
+                value: value.clone(),
+                field_type: lilypad_core::CustomFieldType::Text,
+            })
+            .collect();
+        secret.attachments = self
+            .entry_attachments
+            .iter()
+            .map(|(filename, data)| lilypad_core::Attachment::new(filename.clone(), data.clone()))
+            .collect();
 
         let secret_bytes = match serde_json::to_vec(&secret) {
             Ok(b) => b,
@@ -1343,7 +1599,16 @@ impl LilypadApp {
             } else {
                 Some(self.entry_folder.clone())
             },
-            ..Default::default()
+            entry_type: match self.entry_type.as_str() {
+                "Card" => lilypad_core::EntryType::Card,
+                "Identity" => lilypad_core::EntryType::Identity,
+                "SecureNote" => lilypad_core::EntryType::SecureNote,
+                "SoftwareLicense" => lilypad_core::EntryType::SoftwareLicense,
+                "Wifi" => lilypad_core::EntryType::Wifi,
+                "Server" => lilypad_core::EntryType::Server,
+                "Custom" => lilypad_core::EntryType::Custom,
+                _ => lilypad_core::EntryType::Login,
+            },
         };
 
         if was_edit_mode {
@@ -1460,6 +1725,14 @@ impl LilypadApp {
         self.generated_password = (0..self.generator_length)
             .map(|_| chars[rng.gen_range(0..chars.len())])
             .collect();
+    }
+
+    fn refresh_totp_codes(&mut self) {
+        for entry in &mut self.vault_entries {
+            if let Some(ref secret) = entry.totp_secret {
+                entry.totp_code = generate_totp_code(secret);
+            }
+        }
     }
 
     fn refresh_health_report(&mut self) {
@@ -1785,33 +2058,94 @@ impl LilypadApp {
         }
 
         self.sync_in_progress = true;
-        self.set_status("Starting GitHub login...");
+        self.sync_started_at = Some(Instant::now());
+        self.set_status("Connecting to GitHub...");
 
-        // Run OAuth in a background task
+        // Phase 1: Initiate device flow → get user code to show in UI
         Task::perform(
             async {
                 tokio::task::spawn_blocking(|| {
                     let config = match lilypad_oauth::OAuthConfig::from_env() {
                         Ok(c) => c,
-                        Err(e) => {
-                            return Err(format!(
-                                "OAuth not configured. Set LILYPAD_GITHUB_CLIENT_ID env var. Error: {}",
-                                e
-                            ));
-                        }
+                        Err(e) => return Err(format!("OAuth not configured: {}", e)),
                     };
 
-                    let backend = match lilypad_oauth::GitHubSyncBackend::authenticate(config) {
-                        Ok(b) => b,
-                        Err(e) => {
-                            return Err(format!("{}", e));
-                        }
+                    let device_auth = match lilypad_oauth::DeviceFlowAuth::new(config) {
+                        Ok(d) => d,
+                        Err(e) => return Err(format!("{}", e)),
                     };
 
-                    Ok(backend.username().to_string())
+                    match device_auth.initiate() {
+                        Ok(r) => Ok((r.user_code, r.verification_uri, r.device_code, r.interval)),
+                        Err(e) => Err(format!("{}", e)),
+                    }
                 })
                 .await
-                .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+                .unwrap_or_else(|e| Err(format!("{}", e)))
+            },
+            |result| match result {
+                Ok((user_code, verification_uri, device_code, interval)) => {
+                    Message::DeviceFlowCode {
+                        user_code,
+                        verification_uri,
+                        device_code,
+                        interval,
+                    }
+                }
+                Err(e) => Message::GitHubLoginResult(Err(e)),
+            },
+        )
+    }
+
+    /// Phase 2: Poll for token in background after user sees the code
+    fn github_poll_for_token(&mut self, device_code: String, interval: u64) -> Task<Message> {
+        Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    let config = match lilypad_oauth::OAuthConfig::from_env() {
+                        Ok(c) => c,
+                        Err(e) => return Err(format!("{}", e)),
+                    };
+
+                    let device_auth = match lilypad_oauth::DeviceFlowAuth::new(config) {
+                        Ok(d) => d,
+                        Err(e) => return Err(format!("{}", e)),
+                    };
+
+                    // This blocks until user authorizes or timeout
+                    let result = match device_auth.poll_for_token(&device_code, interval) {
+                        Ok(r) => r,
+                        Err(e) => return Err(format!("{}", e)),
+                    };
+
+                    // Get user info and store token
+                    let client = match lilypad_oauth::GitHubClient::new(&result.access_token) {
+                        Ok(c) => c,
+                        Err(e) => return Err(format!("Failed to get user info: {}", e)),
+                    };
+                    let user = match client.get_user() {
+                        Ok(u) => u,
+                        Err(e) => return Err(format!("{}", e)),
+                    };
+
+                    let token_store = match lilypad_oauth::TokenStoreManager::new() {
+                        Ok(t) => t,
+                        Err(e) => return Err(format!("{}", e)),
+                    };
+                    let token_info = result
+                        .to_token_info()
+                        .with_username(user.login.clone());
+                    if let Err(e) = token_store.save_token(
+                        lilypad_oauth::OAuthProvider::GitHub,
+                        token_info,
+                    ) {
+                        return Err(format!("{}", e));
+                    }
+
+                    Ok(user.login)
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("{}", e)))
             },
             Message::GitHubLoginResult,
         )
@@ -1862,6 +2196,7 @@ impl LilypadApp {
         let _key_clone = key.clone();
 
         self.sync_in_progress = true;
+        self.sync_started_at = Some(Instant::now());
 
         Task::perform(
             async move {
@@ -1898,8 +2233,8 @@ impl LilypadApp {
                 .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
             },
             |result: std::result::Result<String, String>| match result {
-                Ok(msg) => Message::SetStatus(msg),
-                Err(e) => Message::SetStatus(format!("Status check failed: {}", e)),
+                Ok(msg) => Message::SyncCompleted(Ok(msg)),
+                Err(e) => Message::SyncCompleted(Err(format!("Status check failed: {}", e))),
             },
         )
     }
@@ -1921,6 +2256,7 @@ impl LilypadApp {
         };
 
         self.sync_in_progress = true;
+        self.sync_started_at = Some(Instant::now());
         self.set_status("Pushing vault to GitHub...");
 
         Task::perform(
@@ -1960,6 +2296,7 @@ impl LilypadApp {
         let key_clone = key.clone();
 
         self.sync_in_progress = true;
+        self.sync_started_at = Some(Instant::now());
         self.set_status("Pulling vault from GitHub...");
 
         Task::perform(
@@ -2108,12 +2445,15 @@ impl LilypadApp {
         };
 
         // Detect format based on headers
-        let name_col = headers.iter().position(|h| matches!(h.as_str(), "name" | "title" | "login_name" | "login_label"));
-        let url_col = headers.iter().position(|h| matches!(h.as_str(), "url" | "login_uri" | "web site" | "website"));
-        let user_col = headers.iter().position(|h| matches!(h.as_str(), "username" | "login_username" | "user name" | "login"));
-        let pass_col = headers.iter().position(|h| matches!(h.as_str(), "password" | "login_password"));
-        let notes_col = headers.iter().position(|h| matches!(h.as_str(), "notes" | "extra" | "comments"));
-        let folder_col = headers.iter().position(|h| matches!(h.as_str(), "folder" | "group" | "grouping" | "collection_ids"));
+        // Supports: Chrome, Firefox, Bitwarden, LastPass, 1Password, KeePass, Dashlane, NordPass
+        let name_col = headers.iter().position(|h| matches!(h.as_str(), "name" | "title" | "login_name" | "login_label" | "entry"));
+        let url_col = headers.iter().position(|h| matches!(h.as_str(), "url" | "login_uri" | "web site" | "website" | "urls"));
+        let user_col = headers.iter().position(|h| matches!(h.as_str(), "username" | "login_username" | "user name" | "login" | "login_name"));
+        let pass_col = headers.iter().position(|h| matches!(h.as_str(), "password" | "login_password" | "pass"));
+        let notes_col = headers.iter().position(|h| matches!(h.as_str(), "notes" | "extra" | "comments" | "note"));
+        let folder_col = headers.iter().position(|h| matches!(h.as_str(), "folder" | "group" | "grouping" | "collection_ids" | "category"));
+        let totp_col = headers.iter().position(|h| matches!(h.as_str(), "totp" | "login_totp" | "otpauth" | "2fa"));
+        let email_col = headers.iter().position(|h| matches!(h.as_str(), "email" | "e-mail"));
 
         let mut imported = 0u32;
 
@@ -2135,6 +2475,8 @@ impl LilypadApp {
             let password = get_field(pass_col);
             let notes = get_field(notes_col);
             let folder = get_field(folder_col);
+            let totp = get_field(totp_col);
+            let email = get_field(email_col);
 
             // Skip empty entries
             let label = if name.is_empty() {
@@ -2147,6 +2489,12 @@ impl LilypadApp {
             let mut secret = EntrySecret::new(&password);
             if !notes.is_empty() {
                 secret.notes = Some(notes);
+            }
+            if !totp.is_empty() {
+                secret.totp_secret = Some(totp);
+            }
+            if !email.is_empty() {
+                secret.email = Some(email);
             }
 
             let secret_bytes = serde_json::to_vec(&secret).unwrap_or_default();
@@ -2198,6 +2546,7 @@ impl LilypadApp {
         }
 
         self.sync_in_progress = true;
+        self.sync_started_at = Some(Instant::now());
         self.set_status("Checking passwords against breach database...");
 
         Task::perform(
@@ -2428,4 +2777,18 @@ fn calculate_checksum(data: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let result = Sha256::digest(data);
     result.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Generate a TOTP code from a base32-encoded secret
+fn generate_totp_code(secret: &str) -> Option<String> {
+    use totp_rs::{Algorithm, TOTP};
+    let decoded = totp_rs::Secret::Encoded(secret.to_string())
+        .to_bytes()
+        .ok()?;
+    let totp = TOTP::new(Algorithm::SHA1, 6, 1, 30, decoded).ok()?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    Some(totp.generate(now))
 }

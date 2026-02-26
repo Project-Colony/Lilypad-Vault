@@ -90,6 +90,36 @@ pub enum Message {
     ViewEntryHistory(usize),
     /// Close entry history view
     CloseEntryHistory,
+    /// Entry TOTP secret changed
+    EntryTotpSecretChanged(String),
+    /// Add a custom field
+    AddCustomField,
+    /// Remove a custom field by index
+    RemoveCustomField(usize),
+    /// Custom field name changed
+    CustomFieldNameChanged(usize, String),
+    /// Custom field value changed
+    CustomFieldValueChanged(usize, String),
+    /// Add attachment to entry
+    AddAttachment,
+    /// Remove attachment by index
+    RemoveAttachment(usize),
+    /// Attachment file selected from dialog
+    AttachmentFileSelected(Option<std::path::PathBuf>),
+    /// Filter by folder
+    FilterByFolder(Option<String>),
+    /// Copy TOTP code to clipboard
+    CopyTotpCode(usize),
+    /// Resolve sync conflict: keep local version
+    SyncResolveKeepLocal,
+    /// Resolve sync conflict: keep remote version
+    SyncResolveKeepRemote,
+    /// Change entry type
+    EntryTypeChanged(String),
+    /// Show/hide audit log
+    ShowAuditLog,
+    /// Close audit log
+    CloseAuditLog,
 
     // ========================================================================
     // Re-authentication Modal
@@ -206,6 +236,8 @@ pub enum Message {
     ClearStatus,
     /// Set a status message
     SetStatus(String),
+    /// Copy arbitrary text to clipboard
+    CopyToClipboard(String),
     /// Open external link
     OpenExternalLink(String),
 
@@ -250,10 +282,12 @@ pub enum Message {
     SyncPull,
     /// Sync operation completed (result message)
     SyncCompleted(std::result::Result<String, String>),
-    /// Device flow: show user code for manual entry
+    /// Device flow: show user code for manual entry and start polling
     DeviceFlowCode {
         user_code: String,
         verification_uri: String,
+        device_code: String,
+        interval: u64,
     },
 
     // ========================================================================

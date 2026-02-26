@@ -6,6 +6,7 @@ use iced::alignment::{Horizontal, Vertical};
 use iced::widget::{button, checkbox, column, container, row, slider, text, Space};
 use iced::{Element, Length};
 
+use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::theme::{self, LilypadTheme};
 
@@ -62,7 +63,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
                     .size(18)
                     .color(palette.text_primary),
                 Space::with_width(Length::Fill),
-                button(text("📋").size(16))
+                button(text(icons::COPY).size(16).font(fonts::FONT_REGULAR))
                     .padding([8, 12])
                     .style(move |_theme, status| match status {
                         button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -81,7 +82,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     let generate_btn = button(
         container(
             row![
-                text("🎲").size(16),
+                text(icons::DICE).size(16).font(fonts::FONT_REGULAR),
                 Space::with_width(8),
                 text("Generate Password").size(15),
             ]

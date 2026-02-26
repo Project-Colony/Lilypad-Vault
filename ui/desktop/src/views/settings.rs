@@ -3,9 +3,10 @@
 //! Account and security settings sections.
 
 use iced::alignment::{Horizontal, Vertical};
-use iced::widget::{button, checkbox, column, container, row, slider, text, text_input, Space};
+use iced::widget::{button, checkbox, column, container, row, scrollable, slider, text, text_input, Space};
 use iced::{Element, Length};
 
+use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::theme::{self, LilypadTheme};
 
@@ -257,6 +258,90 @@ pub fn security_view(
     .width(Length::Fill)
     .style(move |_| theme::card_container(theme));
 
+    // Master password section
+    let master_pw_title = text("Master Password")
+        .size(16)
+        .color(palette.text_primary);
+
+    let change_pw_btn = button(
+        container(
+            row![
+                text(icons::KEY).size(14).font(fonts::FONT_REGULAR),
+                Space::with_width(8),
+                text("Change Master Password").size(14),
+            ]
+            .align_y(Vertical::Center),
+        )
+        .width(Length::Fill)
+        .align_x(Horizontal::Center),
+    )
+    .width(Length::Fill)
+    .padding([12, 16])
+    .style(move |_theme, status| match status {
+        button::Status::Hovered => theme::danger_button_hovered(theme),
+        _ => theme::danger_button(theme),
+    })
+    .on_press(Message::ChangeMasterPassword);
+
+    let master_pw_hint = text("Re-encrypts all vault entries with a new key derived from your new password")
+        .size(12)
+        .color(palette.text_muted);
+
+    let master_pw_section = container(
+        column![
+            master_pw_title,
+            Space::with_height(16),
+            change_pw_btn,
+            Space::with_height(8),
+            master_pw_hint,
+        ]
+        .padding(24),
+    )
+    .width(Length::Fill)
+    .style(move |_| theme::card_container(theme));
+
+    // Audit log section
+    let audit_title = text("Audit Log")
+        .size(16)
+        .color(palette.text_primary);
+
+    let audit_btn = button(
+        container(
+            row![
+                text(icons::SHIELD).size(14).font(fonts::FONT_REGULAR),
+                Space::with_width(8),
+                text("View Audit Log").size(14),
+            ]
+            .align_y(Vertical::Center),
+        )
+        .width(Length::Fill)
+        .align_x(Horizontal::Center),
+    )
+    .width(Length::Fill)
+    .padding([12, 16])
+    .style(move |_theme, status| match status {
+        button::Status::Hovered => theme::secondary_button_hovered(theme),
+        _ => theme::secondary_button(theme),
+    })
+    .on_press(Message::ShowAuditLog);
+
+    let audit_hint = text("View all vault actions: entry additions, updates, deletions, and more")
+        .size(12)
+        .color(palette.text_muted);
+
+    let audit_section = container(
+        column![
+            audit_title,
+            Space::with_height(16),
+            audit_btn,
+            Space::with_height(8),
+            audit_hint,
+        ]
+        .padding(24),
+    )
+    .width(Length::Fill)
+    .style(move |_| theme::card_container(theme));
+
     // Trusted devices section
     let devices_title = text("Trusted Devices")
         .size(16)
@@ -268,7 +353,7 @@ pub fn security_view(
         .map(|(index, device)| {
             let device_name = device.clone();
             row![
-                text("💻").size(16),
+                text(icons::DESKTOP).size(16).font(fonts::FONT_REGULAR),
                 Space::with_width(12),
                 text(device_name).size(14).color(palette.text_primary),
                 Space::with_width(Length::Fill),
@@ -314,18 +399,25 @@ pub fn security_view(
         Space::with_height(16),
         clipboard_section,
         Space::with_height(16),
+        master_pw_section,
+        Space::with_height(16),
+        audit_section,
+        Space::with_height(16),
         recovery_section,
         Space::with_height(16),
         devices_section,
     ]
     .width(Length::Fixed(560.0));
 
-    container(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(24)
-        .align_x(Horizontal::Center)
-        .into()
+    scrollable(
+        container(content)
+            .width(Length::Fill)
+            .padding(24)
+            .align_x(Horizontal::Center),
+    )
+    .height(Length::Fill)
+    .style(move |_theme, _status| theme::scrollable_style(theme))
+    .into()
 }
 
 /// Helper to create a labeled text input

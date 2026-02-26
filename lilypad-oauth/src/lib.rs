@@ -48,9 +48,9 @@ pub use token_store::{TokenInfo, TokenStoreManager};
 /// Users can override this with their own OAuth app credentials.
 ///
 /// ```
-/// assert_eq!(lilypad_oauth::DEFAULT_GITHUB_CLIENT_ID, "LILYPAD_GITHUB_CLIENT_ID");
+/// assert_eq!(lilypad_oauth::DEFAULT_GITHUB_CLIENT_ID, "Ov23liHBJt7RFU10DcWC");
 /// ```
-pub const DEFAULT_GITHUB_CLIENT_ID: &str = "LILYPAD_GITHUB_CLIENT_ID";
+pub const DEFAULT_GITHUB_CLIENT_ID: &str = "Ov23liHBJt7RFU10DcWC";
 
 /// Default OAuth scopes required for vault sync.
 pub const DEFAULT_GITHUB_SCOPES: &[&str] = &["repo", "read:user"];

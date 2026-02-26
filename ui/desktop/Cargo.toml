@@ -41,6 +41,12 @@ sha1.workspace = true
 csv.workspace = true
 reqwest = { workspace = true, features = ["blocking"] }
 
+# TOTP
+totp-rs.workspace = true
+
+# Encoding
+base64.workspace = true
+
 # Time handling
 chrono.workspace = true
 
