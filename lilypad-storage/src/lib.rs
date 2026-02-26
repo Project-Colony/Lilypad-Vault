@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use fs2::FileExt;
 use lilypad_common::validation::validate_vault_name;
-use lilypad_core::{decrypt, encrypt, AppConfig, KeyMaterial, KeyMetadata, Vault};
+use lilypad_core::{
+    decrypt, encrypt, AppConfig, EmbeddedKdfParams, KeyMaterial, KeyMetadata, Vault,
+};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -15,13 +17,14 @@ const SECURE_DELETE_PASSES: usize = 3;
 const VAULT_EXTENSION: &str = "lily";
 const LEGACY_EXTENSION: &str = "json";
 const LEGACY_VAULT_HEADER: &[u8] = b"LILYPAD_VAULT_V1\n";
-const VAULT_HEADER: &[u8] = b"LILYPAD_VAULT_V1\n# Lilypad vault (encrypted)\n";
-
-/// Current vault format version.
-const CURRENT_VERSION: u32 = 1;
+const VAULT_HEADER_V1: &[u8] = b"LILYPAD_VAULT_V1\n# Lilypad vault (encrypted)\n";
+const VAULT_HEADER_V2: &[u8] = b"LILYPAD_VAULT_V2\n# Lilypad vault (encrypted)\n";
 
 /// Maximum supported vault format version.
-const MAX_SUPPORTED_VERSION: u32 = 1;
+const MAX_SUPPORTED_VERSION: u32 = 2;
+
+/// Magic string used for password verification.
+const VERIFIER_MAGIC: &str = "LILYPAD_VERIFY_OK";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StoreStatus {
@@ -38,6 +41,16 @@ pub struct BackupInfo {
     pub size_bytes: u64,
 }
 
+/// A small encrypted blob used to verify the master password is correct
+/// before attempting full vault decryption (V2+).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PasswordVerifier {
+    /// The known plaintext marker, encrypted with the derived key.
+    pub ciphertext: lilypad_core::Ciphertext,
+    /// The expected plaintext (a constant magic string).
+    pub magic: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StoredVault {
     pub version: u32,
@@ -47,6 +60,10 @@ pub struct StoredVault {
     /// (allows detecting corruption without needing the decryption key)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub checksum: Option<String>,
+    /// Encrypted password verifier (V2+). Allows password validation
+    /// without decrypting the entire vault.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password_verifier: Option<PasswordVerifier>,
 }
 
 pub trait SyncBackend: Send + Sync {
@@ -98,15 +115,24 @@ impl LocalStore {
         // Compute SHA-256 checksum of the ciphertext for integrity verification
         let checksum = compute_checksum(&ciphertext);
 
+        // If vault has embedded KDF params, write V2 with password verifier
+        let (version, header, password_verifier) = if vault.key_metadata.kdf_params.is_some() {
+            let verifier = create_password_verifier(key)?;
+            (2, VAULT_HEADER_V2, Some(verifier))
+        } else {
+            (1, VAULT_HEADER_V1, None)
+        };
+
         let stored = StoredVault {
-            version: CURRENT_VERSION,
+            version,
             key_metadata: vault.key_metadata.clone(),
             ciphertext,
             checksum: Some(checksum),
+            password_verifier,
         };
         let serialized = serde_json::to_vec_pretty(&stored)?;
-        let mut bytes = Vec::with_capacity(VAULT_HEADER.len() + serialized.len());
-        bytes.extend_from_slice(VAULT_HEADER);
+        let mut bytes = Vec::with_capacity(header.len() + serialized.len());
+        bytes.extend_from_slice(header);
         bytes.extend_from_slice(&serialized);
         let path = self.vault_path(&vault.name)?;
         self.write_vault_file_atomic(&path, &bytes)?;
@@ -116,18 +142,7 @@ impl LocalStore {
     pub fn load_vault(&self, name: &str, key: &KeyMaterial) -> Result<Vault> {
         let path = self.vault_path(name)?;
         let bytes = self.read_vault_file_locked(&path)?;
-        let stored_bytes = if bytes.starts_with(VAULT_HEADER) {
-            &bytes[VAULT_HEADER.len()..]
-        } else if bytes.starts_with(LEGACY_VAULT_HEADER) {
-            &bytes[LEGACY_VAULT_HEADER.len()..]
-        } else if bytes.starts_with(b"{") {
-            bytes.as_slice()
-        } else {
-            return Err(anyhow!(
-                "vault file '{}' has an invalid header",
-                path.display()
-            ));
-        };
+        let stored_bytes = strip_header(&bytes)?;
         let stored: StoredVault = serde_json::from_slice(stored_bytes)?;
 
         // Validate vault version
@@ -138,14 +153,6 @@ impl LocalStore {
                 stored.version,
                 MAX_SUPPORTED_VERSION
             ));
-        }
-
-        // Check for version that may need migration
-        if stored.version < CURRENT_VERSION {
-            eprintln!(
-                "Note: vault '{}' uses format version {}. Saving will upgrade it to version {}.",
-                name, stored.version, CURRENT_VERSION
-            );
         }
 
         // Verify integrity checksum if present
@@ -159,16 +166,54 @@ impl LocalStore {
             }
         }
 
-        if stored.key_metadata.key_id != key.key_id() {
-            return Err(anyhow!(
-                "key id mismatch: expected {}, got {}",
-                stored.key_metadata.key_id,
-                key.key_id()
-            ));
+        // Password verification
+        if let Some(ref verifier) = stored.password_verifier {
+            // V2: use password verifier
+            match decrypt(key, &verifier.ciphertext) {
+                Ok(plaintext) if plaintext == verifier.magic.as_bytes() => {
+                    // Password correct, proceed
+                }
+                _ => {
+                    return Err(anyhow!("incorrect master password"));
+                }
+            }
+        } else {
+            // V1: use key_id comparison
+            if stored.key_metadata.key_id != key.key_id() {
+                return Err(anyhow!(
+                    "key id mismatch: expected {}, got {}",
+                    stored.key_metadata.key_id,
+                    key.key_id()
+                ));
+            }
         }
+
         let decrypted = decrypt(key, &stored.ciphertext)?;
         let vault: Vault = serde_json::from_slice(&decrypted)?;
         Ok(vault)
+    }
+
+    /// Checks whether a vault file exists on disk.
+    pub fn vault_exists(&self, name: &str) -> Result<bool> {
+        let lily_path = self.vault_path_with_extension(name, VAULT_EXTENSION);
+        if lily_path.exists() {
+            return Ok(true);
+        }
+        let legacy_path = self.vault_path_with_extension(name, LEGACY_EXTENSION);
+        Ok(legacy_path.exists())
+    }
+
+    /// Loads KDF params from a stored vault file without decrypting.
+    /// Returns None if the vault doesn't have embedded KDF params (V1 vault).
+    pub fn load_vault_kdf_params(&self, name: &str) -> Result<Option<EmbeddedKdfParams>> {
+        let path = self.vault_path(name)?;
+        if !path.exists() {
+            return Ok(None);
+        }
+        let bytes = self.read_vault_file_locked(&path)?;
+        let stored_bytes = strip_header(&bytes)?;
+        let stored: StoredVault = serde_json::from_slice(stored_bytes)?;
+        Ok(stored.key_metadata.kdf_params.clone())
     }
 
     fn vault_path(&self, name: &str) -> Result<PathBuf> {
@@ -454,6 +499,31 @@ impl LocalStore {
     }
 }
 
+/// Strips the vault file header, returning only the JSON payload.
+fn strip_header(bytes: &[u8]) -> Result<&[u8]> {
+    if bytes.starts_with(VAULT_HEADER_V2) {
+        Ok(&bytes[VAULT_HEADER_V2.len()..])
+    } else if bytes.starts_with(VAULT_HEADER_V1) {
+        Ok(&bytes[VAULT_HEADER_V1.len()..])
+    } else if bytes.starts_with(LEGACY_VAULT_HEADER) {
+        Ok(&bytes[LEGACY_VAULT_HEADER.len()..])
+    } else if bytes.starts_with(b"{") {
+        Ok(bytes)
+    } else {
+        Err(anyhow!("vault file has an invalid header"))
+    }
+}
+
+/// Creates a password verifier by encrypting a known magic string.
+fn create_password_verifier(key: &KeyMaterial) -> Result<PasswordVerifier> {
+    let ciphertext = encrypt(key, VERIFIER_MAGIC.as_bytes())
+        .map_err(|e| anyhow!("failed to create password verifier: {}", e))?;
+    Ok(PasswordVerifier {
+        ciphertext,
+        magic: VERIFIER_MAGIC.to_string(),
+    })
+}
+
 /// Computes a SHA-256 checksum of the ciphertext for integrity verification.
 fn compute_checksum(ciphertext: &lilypad_core::Ciphertext) -> String {
     let mut hasher = Sha256::new();
@@ -469,15 +539,7 @@ pub fn verify_vault_integrity(path: &Path) -> Result<()> {
     let bytes = fs::read(path)
         .with_context(|| format!("failed to read vault file: {}", path.display()))?;
 
-    let stored_bytes = if bytes.starts_with(VAULT_HEADER) {
-        &bytes[VAULT_HEADER.len()..]
-    } else if bytes.starts_with(LEGACY_VAULT_HEADER) {
-        &bytes[LEGACY_VAULT_HEADER.len()..]
-    } else if bytes.starts_with(b"{") {
-        bytes.as_slice()
-    } else {
-        return Err(anyhow!("invalid vault header"));
-    };
+    let stored_bytes = strip_header(&bytes)?;
 
     let stored: StoredVault = serde_json::from_slice(stored_bytes)
         .context("failed to parse vault JSON")?;
@@ -487,9 +549,6 @@ pub fn verify_vault_integrity(path: &Path) -> Result<()> {
         if &actual_checksum != expected_checksum {
             return Err(anyhow!("checksum mismatch: vault may be corrupted"));
         }
-    } else {
-        // No checksum present (older vault format)
-        return Ok(());
     }
 
     Ok(())
@@ -1135,5 +1194,177 @@ mod tests {
             .load_vault("concurrent-vault", &key)
             .expect("load from second store");
         assert_eq!(loaded2.entries.len(), 3);
+    }
+
+    // ===================== V2 VAULT FORMAT TESTS =====================
+
+    /// Helper: create a V2 vault with embedded KDF params and password verifier.
+    fn make_v2_test_vault(
+        name: &str,
+        password: &str,
+    ) -> (lilypad_core::Vault, lilypad_core::KeyMaterial, lilypad_core::KeyDerivationParams) {
+        let params = lilypad_core::KeyDerivationParams::generate();
+        let key = lilypad_core::derive_key(password, &params).expect("derive key");
+        let metadata = lilypad_core::KeyMetadata::new(
+            &key,
+            lilypad_core::CryptoAlgorithm::XChaCha20Poly1305,
+        )
+        .with_embedded_kdf(&params);
+        let vault = lilypad_core::Vault::new(name, metadata);
+        (vault, key, params)
+    }
+
+    #[test]
+    fn test_v2_vault_roundtrip() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let password = "correct-horse-battery-staple!";
+
+        let (mut vault, key, _params) = make_v2_test_vault("v2-test", password);
+        vault
+            .add_entry(make_test_entry("V2Entry", &key))
+            .expect("add entry");
+
+        // Save (should write V2 format with verifier)
+        store.save_vault(&vault, &key).expect("save V2 vault");
+
+        // Load with the correct key
+        let loaded = store.load_vault("v2-test", &key).expect("load V2 vault");
+        assert_eq!(loaded.name, "v2-test");
+        assert_eq!(loaded.entries.len(), 1);
+        assert!(loaded.find_entry("V2Entry").is_some());
+        // Verify embedded KDF params survived the roundtrip
+        assert!(loaded.key_metadata.kdf_params.is_some());
+    }
+
+    #[test]
+    fn test_v2_rejects_wrong_password() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let password = "correct-password-123!";
+        let wrong_password = "wrong-password-456!";
+
+        let (vault, key, params) = make_v2_test_vault("v2-reject", password);
+        store.save_vault(&vault, &key).expect("save V2 vault");
+
+        // Try to load with a wrong password (different derived key)
+        let wrong_key = lilypad_core::derive_key(wrong_password, &params).expect("derive wrong key");
+        let result = store.load_vault("v2-reject", &wrong_key);
+        assert!(result.is_err(), "V2 vault should reject wrong password");
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("incorrect master password"),
+            "error should mention incorrect password, got: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn test_v1_vault_still_loads() {
+        // V1 vaults (without embedded KDF) should still load fine
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        // Create a V1 vault (no kdf_params = V1 format)
+        let mut vault = make_test_vault("v1-compat", &key);
+        vault
+            .add_entry(make_test_entry("V1Entry", &key))
+            .expect("add entry");
+        store.save_vault(&vault, &key).expect("save V1 vault");
+
+        // Load should succeed
+        let loaded = store.load_vault("v1-compat", &key).expect("load V1 vault");
+        assert_eq!(loaded.name, "v1-compat");
+        assert_eq!(loaded.entries.len(), 1);
+        assert!(loaded.key_metadata.kdf_params.is_none());
+    }
+
+    #[test]
+    fn test_vault_exists() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        assert!(!store.vault_exists("nonexistent").expect("check nonexistent"));
+
+        let vault = make_test_vault("exists-test", &key);
+        store.save_vault(&vault, &key).expect("save vault");
+
+        assert!(store.vault_exists("exists-test").expect("check existing"));
+    }
+
+    #[test]
+    fn test_load_vault_kdf_params() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let password = "test-kdf-params-read!";
+
+        // Create V2 vault
+        let (vault, key, params) = make_v2_test_vault("kdf-read", password);
+        store.save_vault(&vault, &key).expect("save V2 vault");
+
+        // Read KDF params without full decryption
+        let embedded = store
+            .load_vault_kdf_params("kdf-read")
+            .expect("load kdf params")
+            .expect("should have embedded params");
+
+        assert_eq!(embedded.algorithm, "argon2id");
+        assert_eq!(embedded.salt, params.salt);
+        assert_eq!(embedded.memory_kib, params.memory_kib);
+        assert_eq!(embedded.iterations, params.iterations);
+        assert_eq!(embedded.parallelism, params.parallelism);
+    }
+
+    #[test]
+    fn test_load_vault_kdf_params_v1_returns_none() {
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        // Create V1 vault
+        let vault = make_test_vault("v1-no-kdf", &key);
+        store.save_vault(&vault, &key).expect("save V1 vault");
+
+        let result = store
+            .load_vault_kdf_params("v1-no-kdf")
+            .expect("load kdf params");
+        assert!(result.is_none(), "V1 vault should not have embedded KDF params");
+    }
+
+    #[test]
+    fn test_v2_sync_roundtrip() {
+        let dir_a = tempdir().expect("create dir A");
+        let dir_b = tempdir().expect("create dir B");
+        let store_a = make_test_store(dir_a.path());
+        let store_b = make_test_store(dir_b.path());
+        let password = "sync-test-password!";
+
+        // Device A: create V2 vault with entries
+        let (mut vault, key, _params) = make_v2_test_vault("sync-v2", password);
+        vault
+            .add_entry(make_test_entry("SyncedEntry", &key))
+            .expect("add entry");
+        store_a.save_vault(&vault, &key).expect("save on device A");
+
+        // Simulate GitHub sync: extract payload, apply to device B
+        let payload = store_a.sync_payload("sync-v2").expect("get payload");
+        store_b
+            .apply_sync_payload("sync-v2", &payload)
+            .expect("apply payload on device B");
+
+        // Device B: read KDF params from vault and derive key from password
+        let embedded = store_b
+            .load_vault_kdf_params("sync-v2")
+            .expect("load kdf on B")
+            .expect("should have KDF params");
+        let kdf_params = embedded.to_kdf_params();
+        let key_b = lilypad_core::derive_key(password, &kdf_params).expect("derive key on B");
+
+        // Device B: load vault with derived key
+        let loaded = store_b.load_vault("sync-v2", &key_b).expect("load on B");
+        assert_eq!(loaded.name, "sync-v2");
+        assert_eq!(loaded.entries.len(), 1);
+        assert!(loaded.find_entry("SyncedEntry").is_some());
     }
 }

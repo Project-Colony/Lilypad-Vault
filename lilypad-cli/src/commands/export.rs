@@ -2,11 +2,11 @@
 
 use anyhow::{anyhow, Context, Result};
 use csv::WriterBuilder;
-use lilypad_common::{keyfile::load_key, time::format_timestamp_relative};
+use lilypad_common::time::format_timestamp_relative;
 use lilypad_storage::LocalStore;
 use super::import::{CsvEntry, EntryExport, VaultExport};
 use super::utils::{
-    atomic_write, decrypt_entry_secret, entry_type_label, key_path, parse_date_to_timestamp,
+    atomic_write, decrypt_entry_secret, entry_type_label, load_vault_key, parse_date_to_timestamp,
 };
 
 /// Export a vault to a file.
@@ -39,7 +39,7 @@ pub fn export_vault(
     eprintln!("   Ensure you store or transmit this file securely, then delete it when done.");
     eprintln!();
 
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -110,7 +110,7 @@ pub fn export_audit_log(
     limit: Option<usize>,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;

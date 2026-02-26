@@ -1,12 +1,11 @@
 //! OAuth-related CLI commands for GitHub authentication and vault sync.
 
 use anyhow::{anyhow, Result};
-use lilypad_common::keyfile::load_key;
 use lilypad_oauth::{
     GitHubSyncBackend, OAuthConfig, OAuthProvider, SyncStatus, TokenStoreManager,
 };
 
-use super::utils::{key_path, OutputFormat};
+use super::utils::{load_vault_key, OutputFormat};
 
 /// Logs in to GitHub using OAuth.
 pub fn login(output_format: OutputFormat) -> Result<()> {
@@ -190,7 +189,7 @@ pub fn sync_push(
     }
 
     // Load vault to get the encrypted payload
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let _vault = store.load_vault(vault_name, &key)?;
 
     // Get the raw encrypted payload
@@ -275,7 +274,7 @@ pub fn sync_pull(
     match payload {
         Some(data) => {
             // Verify we can decrypt it with the provided key
-            let (key, _) = load_key(&key_path(config), master_password)?;
+            let key = load_vault_key(store, config, vault_name, master_password)?;
 
             // Apply the payload (this will overwrite local)
             store.apply_sync_payload(vault_name, &data)?;
@@ -340,7 +339,7 @@ pub fn sync_status(
     }
 
     // Load vault and calculate checksum
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let _vault = store.load_vault(vault_name, &key)?;
     let payload = store.sync_payload(vault_name)?;
     let local_checksum = calculate_checksum(&payload);

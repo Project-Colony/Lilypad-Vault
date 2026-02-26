@@ -2,7 +2,9 @@
 
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use lilypad_core::{decrypt, encrypt, Attachment, Entry, EntryMetadata, EntrySecret, EntryType, KeyMaterial, Vault};
+use lilypad_common::keyfile::load_key;
+use lilypad_core::{decrypt, derive_key, encrypt, Attachment, Entry, EntryMetadata, EntrySecret, EntryType, KeyMaterial, Vault};
+use lilypad_storage::LocalStore;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -66,6 +68,36 @@ pub fn atomic_write(path: impl AsRef<Path>, data: impl AsRef<[u8]>) -> Result<()
 /// Returns the path to the key file.
 pub fn key_path(config: &lilypad_core::AppConfig) -> PathBuf {
     PathBuf::from(&config.data_dir).join("key.json")
+}
+
+/// Loads the vault key, trying V2 (embedded KDF params in vault) first,
+/// then falling back to V1 (key.json).
+///
+/// This enables multi-device usage: a V2 vault pulled from GitHub can be
+/// unlocked with just the master password, without needing a local key.json.
+pub fn load_vault_key(
+    store: &LocalStore,
+    config: &lilypad_core::AppConfig,
+    vault_name: &str,
+    master_password: Option<&str>,
+) -> Result<KeyMaterial> {
+    // Try V2: read embedded KDF params from the vault file
+    if let Ok(Some(embedded)) = store.load_vault_kdf_params(vault_name) {
+        let password = master_password
+            .ok_or_else(|| anyhow!("master password required for this vault"))?;
+        if password.trim().is_empty() {
+            return Err(anyhow!("master password cannot be empty"));
+        }
+        let kdf_params = embedded.to_kdf_params();
+        let key = derive_key(password, &kdf_params)
+            .context("key derivation failed")?;
+        return Ok(key);
+    }
+
+    // Fall back to V1: load from key.json
+    let kp = key_path(config);
+    let (key, _) = load_key(&kp, master_password)?;
+    Ok(key)
 }
 
 /// Builds entry metadata from optional fields.

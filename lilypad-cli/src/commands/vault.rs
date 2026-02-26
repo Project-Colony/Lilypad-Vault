@@ -44,7 +44,12 @@ pub fn init_vault(
     save_key(&kp, &key_file)?;
 
     let metadata = if use_master_password {
-        KeyMetadata::new(&key, lilypad_core::CryptoAlgorithm::XChaCha20Poly1305).with_kdf("argon2id")
+        let kdf_params = match &key_file {
+            KeyFile::Kdf { params } => params,
+            _ => unreachable!(),
+        };
+        KeyMetadata::new(&key, lilypad_core::CryptoAlgorithm::XChaCha20Poly1305)
+            .with_embedded_kdf(kdf_params)
     } else {
         KeyMetadata::new(&key, lilypad_core::CryptoAlgorithm::XChaCha20Poly1305)
     };

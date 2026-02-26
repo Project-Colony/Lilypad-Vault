@@ -132,12 +132,16 @@ pub fn account_view(
     ]
     .width(Length::Fixed(560.0));
 
-    container(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(24)
-        .align_x(Horizontal::Center)
-        .into()
+    container(
+        scrollable(content)
+            .height(Length::Fill)
+            .style(move |_theme, _status| theme::scrollable_style(theme)),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .padding(24)
+    .align_x(Horizontal::Center)
+    .into()
 }
 
 /// Render the security settings section

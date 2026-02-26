@@ -321,7 +321,10 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
         .push(header_row)
         .push(entries_content);
 
-    let main_content: Element<'static, Message> = main_column.into();
+    let main_content: Element<'static, Message> = scrollable(main_column)
+        .height(Length::Fill)
+        .style(move |_theme, _status| theme::scrollable_style(theme))
+        .into();
 
     container(main_content)
         .width(Length::Fill)
@@ -352,8 +355,9 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     // Favorite star
     let is_fav = entry.is_favorite;
     let favorite_btn = button(
-        text(if is_fav { "★" } else { "☆" })
+        text(icons::STAR)
             .size(16)
+            .font(fonts::FONT_REGULAR)
             .color(if is_fav {
                 palette.warning
             } else {

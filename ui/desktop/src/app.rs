@@ -28,8 +28,8 @@ use zeroize::Zeroize;
 
 use crate::message::Message;
 use crate::state::{
-    AppSettings, Category, LockoutState, VaultEntry, VaultViewMode, DEFAULT_VAULT_NAME,
-    SETTINGS_VERSION,
+    AppSettings, Category, LockoutState, UnlockMode, VaultEntry, VaultViewMode,
+    DEFAULT_VAULT_NAME, SETTINGS_VERSION,
 };
 use crate::theme::{self, LilypadTheme};
 use crate::views;
@@ -57,8 +57,12 @@ pub struct LilypadApp {
     pub settings_path: Option<std::path::PathBuf>,
     pub lockout_path: Option<std::path::PathBuf>,
 
+    // Unlock mode
+    pub unlock_mode: UnlockMode,
+
     // Sensitive data
     pub master_password: String,
+    pub confirm_password: String,
     pub generated_password: String,
 
     // Core
@@ -176,6 +180,7 @@ pub struct LilypadApp {
 impl Drop for LilypadApp {
     fn drop(&mut self) {
         self.master_password.zeroize();
+        self.confirm_password.zeroize();
         self.generated_password.zeroize();
         self.entry_password.zeroize();
         self.reauth_password.zeroize();
@@ -224,7 +229,9 @@ impl LilypadApp {
             welcome_ack_path: None,
             settings_path: None,
             lockout_path: None,
+            unlock_mode: UnlockMode::Unlock,
             master_password: String::new(),
+            confirm_password: String::new(),
             generated_password: String::new(),
             config,
             store,
@@ -356,8 +363,9 @@ impl LilypadApp {
             }
         }
 
-        // Load available vaults
+        // Load available vaults and determine unlock mode
         app.load_available_vaults();
+        app.determine_unlock_mode();
 
         (app, Task::none())
     }
@@ -398,8 +406,15 @@ impl LilypadApp {
                 self.master_password = pwd;
                 self.error_message = None;
             }
+            Message::ConfirmPasswordChanged(pwd) => {
+                self.confirm_password = pwd;
+                self.error_message = None;
+            }
             Message::UnlockVault => {
                 return self.try_unlock_vault();
+            }
+            Message::CreateVaultWithPassword => {
+                return self.create_vault_with_password();
             }
             Message::LockVault => {
                 self.lock_vault();
@@ -845,7 +860,7 @@ impl LilypadApp {
                     Ok(msg) => {
                         self.set_status(msg);
                         // Refresh entries after pull
-                        let _ = self.unlock_vault_internal();
+                        let _ = self.unlock_existing_vault();
                     }
                     Err(e) => {
                         self.set_status(format!("Sync error: {}", e));
@@ -969,8 +984,10 @@ impl LilypadApp {
             return views::unlock::view(
                 self.theme,
                 &self.master_password,
+                &self.confirm_password,
                 &self.lockout_state,
                 self.error_message.as_deref(),
+                self.unlock_mode,
             );
         }
 
@@ -1183,10 +1200,13 @@ impl LilypadApp {
         }
         self.vault_entries.clear();
         self.master_password.zeroize();
+        self.confirm_password.zeroize();
         self.entry_password.zeroize();
         self.generated_password.zeroize();
         self.show_add_entry = false;
         self.show_settings = false;
+        // Re-determine unlock mode in case vault state changed
+        self.determine_unlock_mode();
     }
 
     fn check_clipboard_clear(&mut self) {
@@ -1279,8 +1299,7 @@ impl LilypadApp {
             return Task::none();
         }
 
-        // Try to load and decrypt vault
-        match self.unlock_vault_internal() {
+        match self.unlock_existing_vault() {
             Ok(()) => {
                 self.vault_unlocked = true;
                 self.lockout_state.reset();
@@ -1302,57 +1321,139 @@ impl LilypadApp {
         std::path::PathBuf::from(&self.config.data_dir).join("key.json")
     }
 
-    fn unlock_vault_internal(&mut self) -> anyhow::Result<()> {
+    /// Determines whether to show the Create or Unlock screen.
+    fn determine_unlock_mode(&mut self) {
+        match self.store.vault_exists(&self.active_vault) {
+            Ok(true) => self.unlock_mode = UnlockMode::Unlock,
+            _ => {
+                // Also check if key.json exists (V1 vault might be loadable)
+                if self.key_path().exists() {
+                    self.unlock_mode = UnlockMode::Unlock;
+                } else {
+                    self.unlock_mode = UnlockMode::Create;
+                }
+            }
+        }
+    }
+
+    /// Unlock an existing vault (V1 or V2).
+    fn unlock_existing_vault(&mut self) -> anyhow::Result<()> {
         let password = self.master_password.trim();
         if password.is_empty() {
             return Err(anyhow::anyhow!("Master password is required"));
         }
 
-        let path = self.key_path();
-        let (key, key_file) = if path.exists() {
-            // Load existing key
-            load_key(&path, Some(password))?
-        } else {
-            // Create new key from password
-            let params = KeyDerivationParams::generate();
-            let key = derive_key(password, &params)?;
-            let key_file = KeyFile::from_kdf(params);
-            save_key(&path, &key_file)?;
-            (key, key_file)
+        // First, try V2 path: read embedded KDF params from vault file
+        if let Ok(Some(embedded)) = self.store.load_vault_kdf_params(&self.active_vault) {
+            let kdf_params = embedded.to_kdf_params();
+            let key = derive_key(password, &kdf_params)?;
+            let mut vault = self.store.load_vault(&self.active_vault, &key)?;
+
+            // Auto-upgrade: ensure vault metadata has embedded KDF
+            if vault.key_metadata.kdf_params.is_none() {
+                vault.key_metadata = vault.key_metadata.clone().with_embedded_kdf(&kdf_params);
+                let _ = self.store.save_vault(&vault, &key);
+            }
+
+            self.populate_vault_entries(&vault, &key);
+            self.vault = Some(vault);
+            self.vault_key = Some(key);
+            return Ok(());
+        }
+
+        // Fall back to V1 path: load key.json
+        let key_path = self.key_path();
+        if !key_path.exists() {
+            return Err(anyhow::anyhow!(
+                "No vault found. Please create a vault first."
+            ));
+        }
+        let (key, key_file) = load_key(&key_path, Some(password))?;
+        let mut vault = self.store.load_vault(&self.active_vault, &key)?;
+
+        // Auto-upgrade V1 vault to V2 if key.json has KDF params
+        if vault.key_metadata.kdf_params.is_none() {
+            if let KeyFile::Kdf { ref params } = key_file {
+                vault.key_metadata = vault.key_metadata.clone().with_embedded_kdf(params);
+                let _ = self.store.save_vault(&vault, &key);
+            }
+        }
+
+        self.populate_vault_entries(&vault, &key);
+        self.vault = Some(vault);
+        self.vault_key = Some(key);
+        Ok(())
+    }
+
+    /// Create a new vault with embedded V2 format.
+    fn create_vault_with_password(&mut self) -> Task<Message> {
+        let password = self.master_password.trim().to_string();
+        if password.is_empty() {
+            self.error_message = Some("Master password is required".to_string());
+            return Task::none();
+        }
+
+        // Validate confirmation matches
+        if password != self.confirm_password.trim() {
+            self.error_message = Some("Passwords do not match".to_string());
+            return Task::none();
+        }
+
+        // Validate password strength
+        let strength = validate_password_strength(&password);
+        if !strength.is_acceptable() {
+            self.error_message = Some(format!("Password too weak: {}", strength.feedback()));
+            return Task::none();
+        }
+
+        // Generate KDF params and derive key
+        let kdf_params = KeyDerivationParams::generate_adaptive();
+        let key = match derive_key(&password, &kdf_params) {
+            Ok(k) => k,
+            Err(e) => {
+                self.error_message = Some(format!("Key derivation failed: {}", e));
+                return Task::none();
+            }
         };
 
-        // Load or create vault
-        let vault = if let Ok(v) = self.store.load_vault(&self.active_vault, &key) {
-            v
-        } else {
-            // Create new vault with key metadata
-            let metadata = match &key_file {
-                KeyFile::Kdf { .. } => {
-                    KeyMetadata::new(&key, CryptoAlgorithm::XChaCha20Poly1305).with_kdf("argon2id")
-                }
-                KeyFile::Raw { .. } => KeyMetadata::new(&key, CryptoAlgorithm::XChaCha20Poly1305),
-            };
-            let v = Vault::new(&self.active_vault, metadata);
-            self.store.save_vault(&v, &key)?;
-            v
-        };
+        // Build V2 metadata with embedded KDF
+        let metadata = KeyMetadata::new(&key, CryptoAlgorithm::XChaCha20Poly1305)
+            .with_embedded_kdf(&kdf_params);
+        let vault = Vault::new(&self.active_vault, metadata);
 
-        // Decrypt entries and build UI representation.
-        // Deserialize as EntrySecret (the canonical encrypted format used by CLI).
-        // This is backwards-compatible with old DesktopEntryPayload data because
-        // serde ignores unknown fields and all EntrySecret fields except `password`
-        // have #[serde(default)].
+        // Save as V2 vault (with password verifier)
+        if let Err(e) = self.store.save_vault(&vault, &key) {
+            self.error_message = Some(format!("Failed to create vault: {}", e));
+            return Task::none();
+        }
+
+        // Also save key.json for CLI backward compat
+        let key_file = KeyFile::from_kdf(kdf_params);
+        let _ = save_key(&self.key_path(), &key_file);
+
+        self.vault = Some(vault);
+        self.vault_key = Some(key);
+        self.vault_unlocked = true;
+        self.error_message = None;
+        self.confirm_password.zeroize();
+        self.load_available_vaults();
+        self.refresh_health_report();
+
+        Task::none()
+    }
+
+    /// Populates the UI vault entries from a decrypted vault.
+    fn populate_vault_entries(&mut self, vault: &Vault, key: &KeyMaterial) {
         self.vault_entries = vault
             .entries
             .iter()
             .filter_map(|entry| {
-                let decrypted = decrypt(&key, &entry.ciphertext).ok()?;
+                let decrypted = decrypt(key, &entry.ciphertext).ok()?;
                 let secret: EntrySecret = serde_json::from_slice(&decrypted).ok()?;
 
                 let strength = validate_password_strength(&secret.password);
                 let is_expired = entry.is_password_expired();
 
-                // Username and URL come from unencrypted EntryMetadata (canonical source)
                 let username = entry
                     .metadata
                     .username
@@ -1402,11 +1503,6 @@ impl LilypadApp {
                 })
             })
             .collect();
-
-        self.vault = Some(vault);
-        self.vault_key = Some(key);
-
-        Ok(())
     }
 
     fn load_available_vaults(&mut self) {
@@ -1422,6 +1518,7 @@ impl LilypadApp {
         self.vault_key = None;
         self.vault_entries.clear();
         self.vault_unlocked = false;
+        self.determine_unlock_mode();
     }
 
     fn create_new_vault(&mut self) -> Task<Message> {
@@ -1627,7 +1724,7 @@ impl LilypadApp {
         let _ = self.store.save_vault(vault, key);
 
         // Refresh entries
-        let _ = self.unlock_vault_internal();
+        let _ = self.unlock_existing_vault();
 
         self.show_add_entry = false;
         self.edit_mode = false;
@@ -1656,7 +1753,7 @@ impl LilypadApp {
             let label = vault.entries[index].label.clone();
             let _ = vault.remove_entry(&label);
             let _ = self.store.save_vault(vault, key);
-            let _ = self.unlock_vault_internal();
+            let _ = self.unlock_existing_vault();
             self.set_status("Entry deleted");
         }
 
@@ -1679,7 +1776,7 @@ impl LilypadApp {
             let new_favorite = !entry.is_favorite;
             let _ = vault.set_entry_favorite(&label, new_favorite);
             let _ = self.store.save_vault(vault, key);
-            let _ = self.unlock_vault_internal();
+            let _ = self.unlock_existing_vault();
         }
 
         Task::none()
@@ -1932,7 +2029,7 @@ impl LilypadApp {
                         match self.store.apply_sync_payload(vault_name, &data) {
                             Ok(()) => {
                                 // Re-decrypt to refresh entries
-                                let _ = self.unlock_vault_internal();
+                                let _ = self.unlock_existing_vault();
                                 self.set_status("Vault imported successfully");
                             }
                             Err(e) => {
@@ -2028,7 +2125,7 @@ impl LilypadApp {
                             }
 
                             let _ = self.store.save_vault(vault, key);
-                            let _ = self.unlock_vault_internal();
+                            let _ = self.unlock_existing_vault();
                             self.set_status(format!("{} entries imported", imported));
                         } else {
                             self.set_status("Invalid JSON format");
@@ -2513,7 +2610,7 @@ impl LilypadApp {
 
         if imported > 0 {
             let _ = self.store.save_vault(vault, key);
-            let _ = self.unlock_vault_internal();
+            let _ = self.unlock_existing_vault();
         }
         self.set_status(format!("{} entries imported from browser CSV", imported));
 
@@ -2651,29 +2748,34 @@ impl LilypadApp {
                 }
             }
 
+            // Upgrade to V2 with embedded KDF params
+            vault.key_metadata = KeyMetadata::new(&new_key, CryptoAlgorithm::XChaCha20Poly1305)
+                .with_embedded_kdf(&kdf_params);
+
             if let Err(e) = self.store.save_vault(&vault, &new_key) {
                 self.set_status(format!("Failed to save vault '{}': {}", vault_name, e));
                 return Task::none();
             }
         }
 
-        // Update key file with new KDF params
+        // Update key file with new KDF params (CLI backward compat)
         let key_file = KeyFile::from_kdf(kdf_params);
-        let config_dir = directories::ProjectDirs::from("com", "lilypad", "lilypad")
-            .map(|d| d.config_dir().to_path_buf());
-        if let Some(config_dir) = config_dir {
-            let key_path = config_dir.join("key.json");
-            let _ = save_key(&key_path, &key_file);
-        }
+        let _ = save_key(&self.key_path(), &key_file);
 
-        // Update the active key
-        self.vault_key = Some(new_key);
+        // Update the active key and reload
+        self.vault_key = Some(new_key.clone());
         self.master_password = self.new_master_password.clone();
         self.new_master_password.zeroize();
         self.show_change_password = false;
 
-        // Reload vault
-        let _ = self.unlock_vault_internal();
+        // Reload vault entries with the new key
+        if self.vault.is_some() {
+            // Re-load fresh from disk since we just saved
+            if let Ok(reloaded) = self.store.load_vault(&self.active_vault, &new_key) {
+                self.populate_vault_entries(&reloaded, &new_key);
+                self.vault = Some(reloaded);
+            }
+        }
 
         self.set_status(format!(
             "Master password changed. {} entries re-encrypted across {} vaults.",
@@ -2755,7 +2857,7 @@ impl LilypadApp {
                 let vault_name = &self.active_vault;
                 match self.store.apply_sync_payload(vault_name, &data) {
                     Ok(()) => {
-                        let _ = self.unlock_vault_internal();
+                        let _ = self.unlock_existing_vault();
                         self.set_status(format!("Vault restored from {}", path.display()));
                     }
                     Err(e) => {

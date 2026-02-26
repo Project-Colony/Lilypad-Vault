@@ -18,7 +18,7 @@ use std::os::unix::fs::PermissionsExt;
 use totp_rs::{Algorithm, Secret, TOTP};
 
 use super::utils::{
-    decrypt_entry_secret, encrypt_entry_secret, key_path,
+    decrypt_entry_secret, encrypt_entry_secret, key_path, load_vault_key,
     read_password_with_confirmation, OutputFormat,
 };
 
@@ -33,7 +33,9 @@ pub fn rotate_key(
     skip_backup: bool,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (old_key, old_key_file) = load_key(&key_path(config), master_password)?;
+    let old_key = load_vault_key(store, config, vault_name, master_password)?;
+    // Also load the old key file for backup purposes (if it exists)
+    let old_key_file = load_key(&key_path(config), master_password).ok();
     let mut vault = store
         .load_vault(vault_name, &old_key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -55,17 +57,24 @@ pub fn rotate_key(
         #[cfg(unix)]
         fs::set_permissions(&vault_backup_path, Permissions::from_mode(0o600))?;
 
-        // Backup key file
-        let key_backup_path = backup_dir.join(format!("key.{timestamp}.json.bak"));
-        save_key(&key_backup_path, &old_key_file)?;
-        #[cfg(unix)]
-        fs::set_permissions(&key_backup_path, Permissions::from_mode(0o600))?;
+        // Backup key file (if it exists)
+        if let Some((_, ref old_kf)) = old_key_file {
+            let key_backup_path = backup_dir.join(format!("key.{timestamp}.json.bak"));
+            save_key(&key_backup_path, old_kf)?;
+            #[cfg(unix)]
+            fs::set_permissions(&key_backup_path, Permissions::from_mode(0o600))?;
 
-        eprintln!(
-            "Backup created (contains encrypted vault and key file):\n  - {}\n  - {}",
-            vault_backup_path.display(),
-            key_backup_path.display()
-        );
+            eprintln!(
+                "Backup created (contains encrypted vault and key file):\n  - {}\n  - {}",
+                vault_backup_path.display(),
+                key_backup_path.display()
+            );
+        } else {
+            eprintln!(
+                "Backup created (contains encrypted vault):\n  - {}",
+                vault_backup_path.display()
+            );
+        }
         eprintln!("   Store these backups securely or delete them after rotation is verified.");
     }
 
@@ -80,7 +89,7 @@ pub fn rotate_key(
         let params = KeyDerivationParams::generate();
         let key = derive_key(password, &params)?;
         let metadata = KeyMetadata::new(&key, lilypad_core::CryptoAlgorithm::XChaCha20Poly1305)
-            .with_kdf("argon2id");
+            .with_embedded_kdf(&params);
         (key, KeyFile::from_kdf(params), metadata)
     } else {
         let key = KeyMaterial::generate();
@@ -112,8 +121,7 @@ pub fn change_master_password(
     })?;
 
     // Load and verify current key
-    let kp = key_path(config);
-    let (key, _) = load_key(&kp, Some(current_password))?;
+    let key = load_vault_key(store, config, vault_name, Some(current_password))?;
 
     // Verify vault exists and can be loaded
     let vault = store
@@ -143,12 +151,13 @@ pub fn change_master_password(
         entry.ciphertext = encrypt(&new_key, &plaintext)?;
     }
 
-    // Update vault metadata
+    // Update vault metadata with embedded KDF (V2)
     let new_metadata = KeyMetadata::new(&new_key, lilypad_core::CryptoAlgorithm::XChaCha20Poly1305)
-        .with_kdf("argon2id");
+        .with_embedded_kdf(&new_params);
     updated_vault.key_metadata = new_metadata;
 
     // Save the updated key file and vault
+    let kp = key_path(config);
     let new_key_file = KeyFile::from_kdf(new_params);
     save_key(&kp, &new_key_file)?;
     store.save_vault(&updated_vault, &new_key)?;
@@ -165,7 +174,7 @@ pub fn breach_check(
     entry_label: Option<&str>,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -279,7 +288,7 @@ pub fn show_totp(
     label: &str,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -313,7 +322,7 @@ pub fn backup_codes(
     verify: Option<&str>,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let mut vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -413,7 +422,7 @@ pub fn audit_vault(
     output_format: OutputFormat,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -532,7 +541,7 @@ pub fn show_entry_history(
     limit: usize,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;

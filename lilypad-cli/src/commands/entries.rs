@@ -3,7 +3,6 @@
 use anyhow::{anyhow, Context, Result};
 use lilypad_common::{
     clipboard::copy_to_clipboard_with_timeout,
-    keyfile::load_key,
     time::format_timestamp_relative,
     validation::validate_password_strength,
 };
@@ -14,7 +13,7 @@ use std::path::PathBuf;
 
 use super::utils::{
     apply_metadata_updates, build_metadata, decrypt_entry_secret, encrypt_entry_secret,
-    entry_type_label, key_path, load_attachments, OutputFormat,
+    entry_type_label, load_attachments, load_vault_key, OutputFormat,
 };
 
 /// Add a new entry to a vault.
@@ -48,7 +47,7 @@ pub fn add_entry(
         eprintln!("Warning: {}", strength.feedback());
     }
 
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let mut vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -85,7 +84,7 @@ pub fn list_entries(
     output_format: OutputFormat,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -152,7 +151,7 @@ pub fn get_entry(
     output_format: OutputFormat,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -257,7 +256,7 @@ pub fn update_entry(
         eprintln!("Warning: {}", strength.feedback());
     }
 
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let mut vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -319,7 +318,7 @@ pub fn remove_entry(
     label: &str,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let mut vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;
@@ -340,7 +339,7 @@ pub fn search_entries(
     output_format: OutputFormat,
     master_password: Option<&str>,
 ) -> Result<()> {
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let vault = store
         .load_vault(vault_name, &key)
         .with_context(|| format!("vault not found: {vault_name}"))?;

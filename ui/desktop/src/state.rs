@@ -19,6 +19,16 @@ pub const LOCKOUT_DURATION_SECS: u64 = 300;
 /// Current settings format version for migration support
 pub const SETTINGS_VERSION: u32 = 1;
 
+/// Whether the user is creating a new vault or unlocking an existing one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UnlockMode {
+    /// A vault exists; user is unlocking it.
+    #[default]
+    Unlock,
+    /// No vault exists yet; user is creating one.
+    Create,
+}
+
 /// View modes for the vault section
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VaultViewMode {

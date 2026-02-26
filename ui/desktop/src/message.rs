@@ -24,8 +24,12 @@ pub enum Message {
     // ========================================================================
     /// Master password input changed
     MasterPasswordChanged(String),
+    /// Confirm password input changed (for vault creation)
+    ConfirmPasswordChanged(String),
     /// Attempt to unlock the vault
     UnlockVault,
+    /// Create a new vault with the entered password
+    CreateVaultWithPassword,
     /// Lock the vault (manual or auto-lock)
     LockVault,
     /// Acknowledge the welcome screen

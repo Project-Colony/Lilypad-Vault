@@ -3,7 +3,7 @@
 //! UI for generating secure passwords with customizable options.
 
 use iced::alignment::{Horizontal, Vertical};
-use iced::widget::{button, checkbox, column, container, row, slider, text, Space};
+use iced::widget::{button, checkbox, column, container, row, scrollable, slider, text, Space};
 use iced::{Element, Length};
 
 use crate::fonts::{self, icons};
@@ -261,9 +261,13 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     .width(Length::Fixed(480.0));
 
     container(
-        container(content)
-            .padding(32)
-            .style(move |_| theme::card_container(theme)),
+        scrollable(
+            container(content)
+                .padding(32)
+                .style(move |_| theme::card_container(theme)),
+        )
+        .height(Length::Fill)
+        .style(move |_theme, _status| theme::scrollable_style(theme)),
     )
     .width(Length::Fill)
     .height(Length::Fill)

@@ -5,14 +5,13 @@
 
 use anyhow::{anyhow, Result};
 use csv::ReaderBuilder;
-use lilypad_common::keyfile::load_key;
 use lilypad_core::{CryptoAlgorithm, EntrySecret, KeyMaterial, KeyMetadata, Vault};
 use lilypad_storage::LocalStore;
 use serde::Deserialize;
 use std::fs;
 
 use super::utils::{
-    build_metadata, key_path, parse_tags, upsert_entry, validate_import_entry,
+    build_metadata, load_vault_key, parse_tags, upsert_entry, validate_import_entry,
 };
 
 // ============== CSV Record Definitions ==============
@@ -564,7 +563,7 @@ pub fn import_vault(
         return Ok(());
     }
 
-    let (key, _) = load_key(&key_path(config), master_password)?;
+    let key = load_vault_key(store, config, vault_name, master_password)?;
     let mut vault = match store.load_vault(vault_name, &key) {
         Ok(vault) => vault,
         Err(_) => {

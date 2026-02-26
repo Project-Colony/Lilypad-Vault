@@ -1543,12 +1543,52 @@ impl Attachment {
     }
 }
 
+/// Full KDF parameters embedded in the vault file (V2+).
+/// This allows the vault to be self-contained: a new device can derive the
+/// encryption key from the master password without needing a separate key.json file.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EmbeddedKdfParams {
+    pub algorithm: String,
+    pub salt: [u8; 16],
+    pub memory_kib: u32,
+    pub iterations: u32,
+    pub parallelism: u32,
+}
+
+impl EmbeddedKdfParams {
+    /// Creates embedded params from the existing `KeyDerivationParams`.
+    pub fn from_kdf_params(params: &crate::crypto::KeyDerivationParams) -> Self {
+        Self {
+            algorithm: "argon2id".to_string(),
+            salt: params.salt,
+            memory_kib: params.memory_kib,
+            iterations: params.iterations,
+            parallelism: params.parallelism,
+        }
+    }
+
+    /// Converts back to `KeyDerivationParams` for key derivation.
+    pub fn to_kdf_params(&self) -> crate::crypto::KeyDerivationParams {
+        crate::crypto::KeyDerivationParams {
+            salt: self.salt,
+            memory_kib: self.memory_kib,
+            iterations: self.iterations,
+            parallelism: self.parallelism,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct KeyMetadata {
     pub key_id: String,
     pub algorithm: CryptoAlgorithm,
     #[serde(default)]
     pub kdf: Option<String>,
+    /// Full KDF parameters embedded in the vault (V2+).
+    /// When present, the vault is self-contained and can be decrypted
+    /// on any device with just the master password.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kdf_params: Option<EmbeddedKdfParams>,
 }
 
 impl KeyMetadata {
@@ -1557,11 +1597,19 @@ impl KeyMetadata {
             key_id: key.key_id(),
             algorithm,
             kdf: None,
+            kdf_params: None,
         }
     }
 
     pub fn with_kdf(mut self, kdf: impl Into<String>) -> Self {
         self.kdf = Some(kdf.into());
+        self
+    }
+
+    /// Embeds full KDF parameters in the metadata, making the vault self-contained (V2).
+    pub fn with_embedded_kdf(mut self, params: &crate::crypto::KeyDerivationParams) -> Self {
+        self.kdf = Some("argon2id".to_string());
+        self.kdf_params = Some(EmbeddedKdfParams::from_kdf_params(params));
         self
     }
 }
@@ -2086,5 +2134,66 @@ mod tests {
         // Verify different colors are not equal
         assert_ne!(red, blue);
         assert_ne!(green, purple);
+    }
+
+    // ==================== EmbeddedKdfParams tests ====================
+
+    #[test]
+    fn test_embedded_kdf_roundtrip() {
+        use super::EmbeddedKdfParams;
+        use crate::crypto::KeyDerivationParams;
+
+        let params = KeyDerivationParams::generate();
+        let embedded = EmbeddedKdfParams::from_kdf_params(&params);
+
+        // Serialize and deserialize
+        let json = serde_json::to_string(&embedded).expect("serialize");
+        let restored: EmbeddedKdfParams = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored.algorithm, "argon2id");
+        assert_eq!(restored.salt, params.salt);
+        assert_eq!(restored.memory_kib, params.memory_kib);
+        assert_eq!(restored.iterations, params.iterations);
+        assert_eq!(restored.parallelism, params.parallelism);
+
+        // Convert back to KDF params and verify
+        let kdf_restored = restored.to_kdf_params();
+        assert_eq!(kdf_restored.salt, params.salt);
+        assert_eq!(kdf_restored.memory_kib, params.memory_kib);
+        assert_eq!(kdf_restored.iterations, params.iterations);
+        assert_eq!(kdf_restored.parallelism, params.parallelism);
+    }
+
+    #[test]
+    fn test_key_metadata_v1_compat() {
+        // V1 JSON (no kdf_params field) should still deserialize
+        let json = r#"{
+            "key_id": "abc123",
+            "algorithm": "XChaCha20Poly1305"
+        }"#;
+        let metadata: KeyMetadata = serde_json::from_str(json).expect("deserialize V1 metadata");
+        assert_eq!(metadata.key_id, "abc123");
+        assert!(metadata.kdf_params.is_none());
+        assert!(metadata.kdf.is_none());
+    }
+
+    #[test]
+    fn test_key_metadata_with_embedded_kdf() {
+        use crate::crypto::KeyDerivationParams;
+
+        let key = KeyMaterial::generate();
+        let params = KeyDerivationParams::generate();
+        let metadata = KeyMetadata::new(&key, CryptoAlgorithm::XChaCha20Poly1305)
+            .with_embedded_kdf(&params);
+
+        assert!(metadata.kdf_params.is_some());
+        assert_eq!(metadata.kdf.as_deref(), Some("argon2id"));
+
+        // Serialize and verify it roundtrips
+        let json = serde_json::to_string(&metadata).expect("serialize");
+        let embedded = metadata.kdf_params.unwrap();
+        assert_eq!(embedded.salt, params.salt);
+        let restored: KeyMetadata = serde_json::from_str(&json).expect("deserialize");
+        assert!(restored.kdf_params.is_some());
     }
 }
