@@ -6,6 +6,7 @@ use iced::alignment::{Horizontal, Vertical};
 use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
 use iced::{Element, Length, Padding};
 
+use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::state::{VaultEntry, VaultViewMode};
 use crate::theme::{self, LilypadTheme};
@@ -135,7 +136,13 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
 
     // Entry list or empty state
     let entries_content: Element<'static, Message> = if filtered_entries.is_empty() {
-        let empty_icon = text(if search_query.is_empty() { "🔐" } else { "🔍" }).size(48);
+        let empty_icon = text(if search_query.is_empty() {
+            icons::VAULT
+        } else {
+            icons::SEARCH
+        })
+        .size(48)
+        .font(fonts::FONT_REGULAR);
 
         let empty_text = text(if search_query.is_empty() {
             match view_mode {
