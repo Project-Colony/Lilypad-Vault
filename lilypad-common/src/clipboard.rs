@@ -2,6 +2,9 @@
 //!
 //! Provides secure clipboard operations with automatic clearing after a timeout.
 //! Uses a generation counter to mitigate race conditions when clearing.
+//!
+//! On Linux, includes a shell-based fallback (`wl-copy`, `xclip`, `xsel`) when
+//! `arboard` fails — this is common on Wayland compositors and some X11 setups.
 
 use anyhow::{anyhow, Result};
 use arboard::Clipboard;
@@ -16,31 +19,180 @@ use zeroize::Zeroize;
 /// only proceeds if the generation hasn't changed (meaning no new copy happened).
 static CLIPBOARD_GENERATION: AtomicU64 = AtomicU64::new(0);
 
-/// Copies a value to the clipboard.
+// ── Linux shell fallback ───────────────────────────────────────────────
+
+/// Try to copy text using shell commands (Linux only).
+/// Attempts, in order: `wl-copy` (Wayland), `xclip` (X11), `xsel` (X11).
+#[cfg(target_os = "linux")]
+fn shell_copy(value: &str) -> Result<()> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    // Detect session type to pick the best tool first
+    let session_type = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
+
+    let tools: &[(&str, &[&str])] = if session_type == "wayland" {
+        &[
+            ("wl-copy", &[]),
+            ("xclip", &["-selection", "clipboard"]),
+            ("xsel", &["--clipboard", "--input"]),
+        ]
+    } else {
+        &[
+            ("xclip", &["-selection", "clipboard"]),
+            ("xsel", &["--clipboard", "--input"]),
+            ("wl-copy", &[]),
+        ]
+    };
+
+    let mut last_err = String::new();
+
+    for (cmd, args) in tools {
+        match Command::new(cmd)
+            .args(*args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(mut child) => {
+                if let Some(ref mut stdin) = child.stdin {
+                    if stdin.write_all(value.as_bytes()).is_ok() {
+                        drop(child.stdin.take());
+                        if let Ok(status) = child.wait() {
+                            if status.success() {
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+                last_err = format!("{cmd} failed");
+            }
+            Err(e) => {
+                last_err = format!("{cmd}: {e}");
+            }
+        }
+    }
+
+    Err(anyhow!(
+        "no working clipboard tool found (tried wl-copy, xclip, xsel): {last_err}"
+    ))
+}
+
+/// Try to clear (set empty) the clipboard using shell commands (Linux only).
+#[cfg(target_os = "linux")]
+fn shell_clear() {
+    let _ = shell_copy("");
+}
+
+/// Try to read the clipboard content using shell commands (Linux only).
+#[cfg(target_os = "linux")]
+fn shell_get() -> Option<String> {
+    use std::process::Command;
+
+    let session_type = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
+
+    let tools: &[(&str, &[&str])] = if session_type == "wayland" {
+        &[
+            ("wl-paste", &["--no-newline"]),
+            ("xclip", &["-selection", "clipboard", "-o"]),
+            ("xsel", &["--clipboard", "--output"]),
+        ]
+    } else {
+        &[
+            ("xclip", &["-selection", "clipboard", "-o"]),
+            ("xsel", &["--clipboard", "--output"]),
+            ("wl-paste", &["--no-newline"]),
+        ]
+    };
+
+    for (cmd, args) in tools {
+        if let Ok(output) = Command::new(cmd).args(*args).output() {
+            if output.status.success() {
+                return String::from_utf8(output.stdout).ok();
+            }
+        }
+    }
+
+    None
+}
+
+// ── Core clipboard operations ──────────────────────────────────────────
+
+/// On Linux, prefer shell tools over arboard.
 ///
-/// # Arguments
-/// * `value` - The text to copy to clipboard
-///
-/// # Returns
-/// Ok(()) on success, or an error if clipboard access fails.
-///
-/// # Examples
-///
-/// ```no_run
-/// use lilypad_common::copy_to_clipboard;
-///
-/// // Copy a secret to the system clipboard.
-/// copy_to_clipboard("my-secret-password").expect("clipboard should be available");
-/// ```
+/// arboard often reports success on Wayland but doesn't actually populate
+/// the system clipboard. Shell tools (`wl-copy`, `xclip`) are more reliable.
+#[cfg(target_os = "linux")]
 pub fn copy_to_clipboard(value: &str) -> Result<()> {
-    let mut clipboard = Clipboard::new().map_err(|err| anyhow!("clipboard unavailable: {err}"))?;
-    clipboard
-        .set_text(value.to_string())
-        .map_err(|err| anyhow!("failed to copy to clipboard: {err}"))?;
-    // Increment generation on every copy
+    // On Linux, try shell tools first — they are more reliable,
+    // especially on Wayland where arboard silently fails.
+    match shell_copy(value) {
+        Ok(()) => {
+            CLIPBOARD_GENERATION.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+        Err(shell_err) => {
+            // Shell tools not available, fall back to arboard
+            eprintln!("[clipboard] shell tools failed ({shell_err}), trying arboard");
+            Clipboard::new()
+                .and_then(|mut cb| cb.set_text(value.to_string()))
+                .map_err(|arboard_err| {
+                    anyhow!("clipboard failed — shell: {shell_err}, arboard: {arboard_err}")
+                })?;
+            CLIPBOARD_GENERATION.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+}
+
+/// Copy text to the system clipboard (non-Linux: arboard only).
+#[cfg(not(target_os = "linux"))]
+pub fn copy_to_clipboard(value: &str) -> Result<()> {
+    Clipboard::new()
+        .and_then(|mut cb| cb.set_text(value.to_string()))
+        .map_err(|err| anyhow!("clipboard unavailable: {err}"))?;
     CLIPBOARD_GENERATION.fetch_add(1, Ordering::SeqCst);
     Ok(())
 }
+
+/// Read text from the system clipboard.
+///
+/// On Linux, prefers shell tools. Falls back to arboard.
+fn get_clipboard_text() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(text) = shell_get() {
+            return Some(text);
+        }
+    }
+
+    if let Ok(mut cb) = Clipboard::new() {
+        if let Ok(text) = cb.get_text() {
+            return Some(text);
+        }
+    }
+
+    None
+}
+
+/// Clear the system clipboard (set to empty string).
+///
+/// On Linux, prefers shell tools. Falls back to arboard.
+fn clear_clipboard() {
+    #[cfg(target_os = "linux")]
+    {
+        if shell_copy("").is_ok() {
+            return;
+        }
+    }
+
+    if let Ok(mut cb) = Clipboard::new() {
+        let _ = cb.set_text(String::new());
+    }
+}
+
+// ── Public API (unchanged signatures) ──────────────────────────────────
 
 /// Copies a value to the clipboard and clears it after a timeout.
 ///
@@ -73,11 +225,9 @@ pub fn copy_to_clipboard_with_timeout(value: &str, timeout_secs: u64) -> Result<
                 return;
             }
 
-            if let Ok(mut clipboard) = Clipboard::new() {
-                // Double-check: only clear if clipboard still contains our value
-                if clipboard.get_text().ok().as_deref() == Some(&value) {
-                    let _ = clipboard.set_text(String::new());
-                }
+            // Double-check: only clear if clipboard still contains our value
+            if get_clipboard_text().as_deref() == Some(&value) {
+                clear_clipboard();
             }
             value.zeroize();
         });
@@ -109,12 +259,9 @@ pub fn clear_clipboard_after(original_value: String, timeout_secs: u64) -> mpsc:
 
     thread::spawn(move || {
         thread::sleep(Duration::from_secs(timeout_secs));
-        let cleared = if let Ok(mut clipboard) = Clipboard::new() {
-            if clipboard.get_text().ok().as_deref() == Some(&original_value) {
-                clipboard.set_text(String::new()).is_ok()
-            } else {
-                false
-            }
+        let cleared = if get_clipboard_text().as_deref() == Some(&original_value) {
+            clear_clipboard();
+            true
         } else {
             false
         };
@@ -149,10 +296,8 @@ impl ClipboardGuard {
             let timeout = self.timeout_secs;
             thread::spawn(move || {
                 thread::sleep(Duration::from_secs(timeout));
-                if let Ok(mut clipboard) = Clipboard::new() {
-                    if clipboard.get_text().ok().as_deref() == Some(&value) {
-                        let _ = clipboard.set_text(String::new());
-                    }
+                if get_clipboard_text().as_deref() == Some(&value) {
+                    clear_clipboard();
                 }
             });
             self.cleared = true;
