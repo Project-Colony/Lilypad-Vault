@@ -15,11 +15,15 @@ use iced::{Size, Task};
 
 /// Application entry point
 fn main() -> iced::Result {
-    // Initialize logging
+    // Initialize logging — suppress noisy warnings from GPU and font subsystems
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::WARN.into()),
+                .add_directive(tracing::Level::WARN.into())
+                .add_directive("wgpu_hal=error".parse().unwrap())
+                .add_directive("wgpu_core=error".parse().unwrap())
+                .add_directive("fontdb=error".parse().unwrap())
+                .add_directive("naga=error".parse().unwrap()),
         )
         .init();
 
