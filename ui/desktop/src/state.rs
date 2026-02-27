@@ -87,6 +87,8 @@ pub struct AppSettings {
     pub account_marketing_opt_in: bool,
     #[serde(default)]
     pub security_recovery_email: String,
+    #[serde(default)]
+    pub active_vault: String,
 }
 
 impl Default for AppSettings {
@@ -105,6 +107,7 @@ impl Default for AppSettings {
             account_two_factor_enabled: false,
             account_marketing_opt_in: false,
             security_recovery_email: String::new(),
+            active_vault: String::new(),
         }
     }
 }
@@ -162,7 +165,6 @@ impl LockoutState {
 /// Contains data from both `EntryMetadata` (unencrypted) and `EntrySecret`
 /// (decrypted), providing a complete view of the entry for the Desktop UI.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct VaultEntry {
     // Core fields
     pub title: String,
@@ -292,7 +294,6 @@ pub enum Category {
     Security,
 }
 
-#[allow(dead_code)]
 impl Category {
     pub fn from_index(index: usize) -> Self {
         match index {

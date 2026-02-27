@@ -60,11 +60,43 @@ impl PartialEq for KeyMaterial {
 impl Eq for KeyMaterial {}
 
 impl KeyMaterial {
+    /// Generates a new random 256-bit encryption key.
+    ///
+    /// Uses the operating system's cryptographically secure random
+    /// number generator.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lilypad_core::KeyMaterial;
+    ///
+    /// let key = KeyMaterial::generate();
+    /// assert_eq!(key.as_bytes().len(), 32);
+    ///
+    /// // Each generated key is unique.
+    /// let key2 = KeyMaterial::generate();
+    /// assert_ne!(key.as_bytes(), key2.as_bytes());
+    /// ```
     pub fn generate() -> Self {
         let key = XChaCha20Poly1305::generate_key(&mut OsRng);
         Self { key: key.into() }
     }
 
+    /// Creates a [`KeyMaterial`] from an existing 32-byte slice.
+    ///
+    /// Returns an error if `bytes` is not exactly 32 bytes long.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lilypad_core::KeyMaterial;
+    ///
+    /// let key = KeyMaterial::from_bytes(&[0xAB; 32]).unwrap();
+    /// assert_eq!(key.as_bytes()[0], 0xAB);
+    ///
+    /// // Wrong length is rejected.
+    /// assert!(KeyMaterial::from_bytes(&[0u8; 16]).is_err());
+    /// ```
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         if bytes.len() != KEY_LEN {
             return Err(CoreError::InvalidKeyLength {
@@ -102,6 +134,19 @@ impl KeyDerivationParams {
     ///
     /// Uses 64 MiB memory, 3 iterations, and single-threaded processing.
     /// For systems with limited resources, use `generate_adaptive()` instead.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lilypad_core::KeyDerivationParams;
+    ///
+    /// let params = KeyDerivationParams::generate();
+    /// assert_eq!(params.memory_kib, 64 * 1024);
+    /// assert_eq!(params.iterations, 3);
+    /// assert_eq!(params.parallelism, 1);
+    /// // Salt is 16 bytes of random data.
+    /// assert_eq!(params.salt.len(), 16);
+    /// ```
     pub fn generate() -> Self {
         let mut salt = [0u8; SALT_LEN];
         OsRng.fill_bytes(&mut salt);

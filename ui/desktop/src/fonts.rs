@@ -2,7 +2,9 @@
 //!
 //! JetBrainsMono Nerd Font with icons for the Lilypad application.
 
-use iced::Font;
+use iced::alignment::Horizontal;
+use iced::widget::{container, text};
+use iced::{Color, Element, Font, Length};
 
 // Font data embedded at compile time
 pub const JETBRAINS_MONO_REGULAR: &[u8] =
@@ -40,9 +42,7 @@ pub const FONT_LIGHT: Font = Font {
 // ============================================================================
 // Reference: https://www.nerdfonts.com/cheat-sheet
 
-// Icons are declared up front so they are available as the UI grows.
-// Not all icons are used yet; suppress dead-code warnings for the module.
-#[allow(dead_code)]
+// Icon library for the Lilypad UI. All icons reference Nerd Font codepoints.
 pub mod icons {
     // Navigation & UI
     pub const VAULT: &str = "\u{f023}"; //
@@ -119,4 +119,44 @@ pub mod icons {
     pub const STAR: &str = "\u{f005}"; //
     pub const FLOWER: &str = "\u{e240}"; //  (dev icon, closest to lilypad)
     pub const LEAF: &str = "\u{f06c}"; //
+    pub const SORT: &str = "\u{f0dc}"; //
+}
+
+/// Create a centered Nerd Font icon element.
+///
+/// Nerd Font glyphs have asymmetric left/right side bearings within their monospace
+/// advance width, causing icons to appear shifted right. We compensate by applying
+/// extra right padding to nudge the glyph left within the container.
+pub fn centered_icon<M: 'static>(glyph: &str, size: f32) -> Element<'static, M> {
+    let nudge = size * 0.18;
+    container(text(glyph.to_string()).size(size).font(FONT_REGULAR))
+        .width(Length::Fixed(size + nudge))
+        .padding(iced::Padding {
+            top: 0.0,
+            right: nudge,
+            bottom: 0.0,
+            left: 0.0,
+        })
+        .align_x(Horizontal::Center)
+        .into()
+}
+
+/// Create a centered Nerd Font icon element with an explicit color.
+pub fn centered_icon_colored<M: 'static>(glyph: &str, size: f32, color: Color) -> Element<'static, M> {
+    let nudge = size * 0.18;
+    container(
+        text(glyph.to_string())
+            .size(size)
+            .font(FONT_REGULAR)
+            .color(color),
+    )
+    .width(Length::Fixed(size + nudge))
+    .padding(iced::Padding {
+        top: 0.0,
+        right: nudge,
+        bottom: 0.0,
+        left: 0.0,
+    })
+    .align_x(Horizontal::Center)
+    .into()
 }

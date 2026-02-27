@@ -10,8 +10,29 @@ use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::theme::{self, LilypadTheme};
 
+/// Compute hue (0..360) from an iced Color for sorting themes by color.
+fn color_hue(c: iced::Color) -> f32 {
+    let r = c.r;
+    let g = c.g;
+    let b = c.b;
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+    if delta < 0.001 {
+        return 0.0; // achromatic
+    }
+    let hue = if (max - r).abs() < 0.001 {
+        60.0 * (((g - b) / delta) % 6.0)
+    } else if (max - g).abs() < 0.001 {
+        60.0 * (((b - r) / delta) + 2.0)
+    } else {
+        60.0 * (((r - g) / delta) + 4.0)
+    };
+    if hue < 0.0 { hue + 360.0 } else { hue }
+}
+
 /// Render the settings modal
-pub fn settings_modal<'a>(theme: LilypadTheme) -> Element<'a, Message> {
+pub fn settings_modal<'a>(theme: LilypadTheme, sort_by_color: bool) -> Element<'a, Message> {
     let current_theme = theme;
     let palette = theme.palette();
 
@@ -20,7 +41,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme) -> Element<'a, Message> {
         .color(palette.text_primary);
 
     let close_btn = button(
-        text(icons::CLOSE).size(16).font(fonts::FONT_REGULAR).color(palette.text_muted),
+        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
     )
     .padding([8, 12])
     .style(move |_theme, status| match status {
@@ -31,25 +52,77 @@ pub fn settings_modal<'a>(theme: LilypadTheme) -> Element<'a, Message> {
 
     let header = row![title, Space::with_width(Length::Fill), close_btn,].align_y(Vertical::Center);
 
-    // Theme selection
+    // Theme label + sort toggle
     let theme_label = text("Theme")
         .size(14)
         .color(palette.text_secondary);
 
-    let theme_buttons: Vec<Element<'a, Message>> = LilypadTheme::ALL
-        .iter()
-        .map(|t| {
+    let sort_label = if sort_by_color { "Color" } else { "A-Z" };
+    let sort_btn = button(
+        row![
+            fonts::centered_icon(icons::SORT, 12.0),
+            Space::with_width(6),
+            text(sort_label).size(12).color(palette.text_secondary),
+        ]
+        .align_y(Vertical::Center),
+    )
+    .padding([6, 10])
+    .style(move |_theme, status| match status {
+        button::Status::Hovered => theme::ghost_button_hovered(theme),
+        _ => theme::ghost_button(theme),
+    })
+    .on_press(Message::ToggleThemeSort);
+
+    let theme_header = row![
+        theme_label,
+        Space::with_width(Length::Fill),
+        sort_btn,
+    ]
+    .align_y(Vertical::Center);
+
+    // Sort themes
+    let mut themes: Vec<LilypadTheme> = LilypadTheme::ALL.to_vec();
+    if sort_by_color {
+        themes.sort_by(|a, b| {
+            let ha = color_hue(a.palette().primary);
+            let hb = color_hue(b.palette().primary);
+            ha.partial_cmp(&hb).unwrap_or(std::cmp::Ordering::Equal)
+        });
+    } else {
+        themes.sort_by(|a, b| a.name().cmp(b.name()));
+    }
+
+    // Build theme grid: 2 per row
+    let mut theme_rows: Vec<Element<'a, Message>> = Vec::new();
+    for pair in themes.chunks(2) {
+        let mut r = Vec::new();
+        for t in pair {
             let is_active = *t == current_theme;
-            button(
-                text(t.name())
-                    .size(14)
-                    .color(if is_active {
-                        palette.primary
-                    } else {
-                        palette.text_primary
-                    }),
+            let t_palette = t.palette();
+            let theme_btn = button(
+                row![
+                    container(Space::new(Length::Fixed(12.0), Length::Fixed(12.0)))
+                        .style(move |_| container::Style {
+                            background: Some(iced::Background::Color(t_palette.primary)),
+                            border: iced::Border {
+                                radius: 6.0.into(),
+                                ..Default::default()
+                            },
+                            ..Default::default()
+                        }),
+                    Space::with_width(10),
+                    text(t.name())
+                        .size(13)
+                        .color(if is_active {
+                            palette.primary
+                        } else {
+                            palette.text_primary
+                        }),
+                ]
+                .align_y(Vertical::Center),
             )
-            .padding([10, 16])
+            .width(Length::FillPortion(1))
+            .padding([10, 14])
             .style(move |_theme, status| {
                 if is_active {
                     let mut style = theme::secondary_button(theme);
@@ -62,20 +135,32 @@ pub fn settings_modal<'a>(theme: LilypadTheme) -> Element<'a, Message> {
                     }
                 }
             })
-            .on_press(Message::ChangeTheme(*t))
-            .into()
-        })
-        .collect();
+            .on_press(Message::ChangeTheme(*t));
+            r.push(theme_btn.into());
+            r.push(Space::with_width(8).into());
+        }
+        // If odd number, add spacer for second column
+        if pair.len() == 1 {
+            r.push(Space::with_width(Length::FillPortion(1)).into());
+            r.push(Space::with_width(8).into());
+        }
+        theme_rows.push(row(r).into());
+        theme_rows.push(Space::with_height(8).into());
+    }
 
-    let theme_row = row(theme_buttons).spacing(8);
+    let theme_grid = scrollable(
+        column(theme_rows),
+    )
+    .height(Length::Fixed(320.0))
+    .style(move |_theme, _status| theme::scrollable_style(theme));
 
     let content = column![
         header,
         Space::with_height(24),
-        theme_label,
+        theme_header,
         Space::with_height(8),
-        theme_row,
-        Space::with_height(24),
+        theme_grid,
+        Space::with_height(16),
         button(
             container(text("Close").size(14))
                 .width(Length::Fill)
@@ -90,7 +175,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme) -> Element<'a, Message> {
         .on_press(Message::HideSettings),
     ]
     .padding(24)
-    .width(Length::Fixed(400.0));
+    .width(Length::Fixed(440.0));
 
     wrap_modal(theme, content)
 }
@@ -104,7 +189,7 @@ pub fn new_vault_modal<'a>(theme: LilypadTheme, vault_name: &str) -> Element<'a,
         .color(palette.text_primary);
 
     let close_btn = button(
-        text(icons::CLOSE).size(16).font(fonts::FONT_REGULAR).color(palette.text_muted),
+        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
     )
     .padding([8, 12])
     .style(move |_theme, status| match status {
@@ -172,14 +257,88 @@ pub fn new_vault_modal<'a>(theme: LilypadTheme, vault_name: &str) -> Element<'a,
     wrap_modal(theme, content)
 }
 
+/// Render the rename vault modal
+pub fn rename_vault_modal<'a>(theme: LilypadTheme, vault_name: &str) -> Element<'a, Message> {
+    let palette = theme.palette();
+
+    let title = text("Rename Vault")
+        .size(20)
+        .color(palette.text_primary);
+
+    let close_btn = button(
+        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
+    )
+    .padding([8, 12])
+    .style(move |_theme, status| match status {
+        button::Status::Hovered => theme::icon_button_hovered(theme),
+        _ => theme::icon_button(theme),
+    })
+    .on_press(Message::CancelRenameVault);
+
+    let header = row![title, Space::with_width(Length::Fill), close_btn,].align_y(Vertical::Center);
+
+    let name_label = text("New Name")
+        .size(14)
+        .color(palette.text_secondary);
+
+    let name_input = text_input("Enter new vault name...", vault_name)
+        .padding(14)
+        .size(14)
+        .on_input(Message::RenameVaultNameChanged)
+        .on_submit(Message::ConfirmRenameVault)
+        .style(move |_theme, status| match status {
+            text_input::Status::Focused => theme::text_input_focused(theme),
+            _ => theme::text_input_style(theme),
+        });
+
+    let cancel_btn = button(text("Cancel").size(14).color(palette.text_secondary))
+        .padding([12, 24])
+        .style(move |_theme, status| match status {
+            button::Status::Hovered => theme::ghost_button_hovered(theme),
+            _ => theme::ghost_button(theme),
+        })
+        .on_press(Message::CancelRenameVault);
+
+    let rename_btn = button(text("Rename").size(14))
+        .padding([12, 24])
+        .style(move |_theme, status| match status {
+            button::Status::Hovered => theme::primary_button_hovered(theme),
+            button::Status::Disabled => {
+                let mut style = theme::primary_button(theme);
+                style.background = Some(iced::Background::Color(palette.border));
+                style
+            }
+            _ => theme::primary_button(theme),
+        })
+        .on_press_maybe(if vault_name.trim().is_empty() {
+            None
+        } else {
+            Some(Message::ConfirmRenameVault)
+        });
+
+    let actions = row![Space::with_width(Length::Fill), cancel_btn, Space::with_width(12), rename_btn,]
+        .align_y(Vertical::Center);
+
+    let content = column![
+        header,
+        Space::with_height(24),
+        name_label,
+        Space::with_height(8),
+        name_input,
+        Space::with_height(24),
+        actions,
+    ]
+    .padding(24)
+    .width(Length::Fixed(420.0));
+
+    wrap_modal(theme, content)
+}
+
 /// Render the delete confirmation modal
 pub fn delete_confirm_modal<'a>(theme: LilypadTheme, entry_title: &str) -> Element<'a, Message> {
     let palette = theme.palette();
 
-    let icon = text(icons::TRIANGLE_EXCLAMATION)
-        .size(48)
-        .font(fonts::FONT_REGULAR)
-        .color(palette.warning);
+    let icon = fonts::centered_icon_colored(icons::TRIANGLE_EXCLAMATION, 48.0, palette.warning);
 
     let title = text("Delete Entry?")
         .size(20)
@@ -288,7 +447,7 @@ pub fn reauth_modal<'a>(theme: LilypadTheme, reauth_password: &str) -> Element<'
         .align_y(Vertical::Center);
 
     let content = column![
-        text(icons::VAULT).size(48).font(fonts::FONT_REGULAR),
+        fonts::centered_icon(icons::VAULT, 48.0),
         Space::with_height(16),
         title,
         Space::with_height(8),
@@ -312,10 +471,7 @@ pub fn change_password_modal<'a>(
 ) -> Element<'a, Message> {
     let palette = theme.palette();
 
-    let icon = text(icons::KEY)
-        .size(48)
-        .font(fonts::FONT_REGULAR)
-        .color(palette.primary);
+    let icon = fonts::centered_icon_colored(icons::KEY, 48.0, palette.primary);
 
     let title = text("Change Master Password")
         .size(20)
@@ -326,10 +482,7 @@ pub fn change_password_modal<'a>(
         .color(palette.text_secondary);
 
     let warning = row![
-        text(icons::TRIANGLE_EXCLAMATION)
-            .size(13)
-            .font(fonts::FONT_REGULAR)
-            .color(palette.warning),
+        fonts::centered_icon_colored(icons::TRIANGLE_EXCLAMATION, 13.0, palette.warning),
         Space::with_width(8),
         text("Make sure you remember this password. If you forget it, your vault data cannot be recovered.")
             .size(12)
@@ -403,17 +556,14 @@ pub fn entry_history_modal<'a>(
 ) -> Element<'a, Message> {
     let palette = theme.palette();
 
-    let icon = text(icons::CLOCK)
-        .size(32)
-        .font(fonts::FONT_REGULAR)
-        .color(palette.primary);
+    let icon = fonts::centered_icon_colored(icons::CLOCK, 32.0, palette.primary);
 
     let title = text("Entry History")
         .size(20)
         .color(palette.text_primary);
 
     let close_btn = button(
-        text(icons::CLOSE).size(16).font(fonts::FONT_REGULAR).color(palette.text_muted),
+        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
     )
     .padding([8, 12])
     .style(move |_theme, status| match status {
@@ -428,10 +578,7 @@ pub fn entry_history_modal<'a>(
     let history_content: Element<'a, Message> = if history_entries.is_empty() {
         container(
             column![
-                text(icons::CLOCK)
-                    .size(32)
-                    .font(fonts::FONT_REGULAR)
-                    .color(palette.text_muted),
+                fonts::centered_icon_colored(icons::CLOCK, 32.0, palette.text_muted),
                 Space::with_height(12),
                 text("No history available")
                     .size(14)
@@ -530,17 +677,14 @@ pub fn audit_log_modal<'a>(
 ) -> Element<'a, Message> {
     let palette = theme.palette();
 
-    let icon = text(icons::SHIELD)
-        .size(32)
-        .font(fonts::FONT_REGULAR)
-        .color(palette.primary);
+    let icon = fonts::centered_icon_colored(icons::SHIELD, 32.0, palette.primary);
 
     let title = text("Audit Log")
         .size(20)
         .color(palette.text_primary);
 
     let close_btn = button(
-        text(icons::CLOSE).size(16).font(fonts::FONT_REGULAR).color(palette.text_muted),
+        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
     )
     .padding([8, 12])
     .style(move |_theme, status| match status {
@@ -555,10 +699,7 @@ pub fn audit_log_modal<'a>(
     let log_content: Element<'a, Message> = if audit_events.is_empty() {
         container(
             column![
-                text(icons::SHIELD)
-                    .size(32)
-                    .font(fonts::FONT_REGULAR)
-                    .color(palette.text_muted),
+                fonts::centered_icon_colored(icons::SHIELD, 32.0, palette.text_muted),
                 Space::with_height(12),
                 text("No events recorded yet")
                     .size(14)
@@ -619,10 +760,84 @@ pub fn audit_log_modal<'a>(
     .size(12)
     .color(palette.text_muted);
 
+    let has_events = !audit_events.is_empty();
+
+    let export_json_btn = button(
+        row![
+            fonts::centered_icon(icons::DOWNLOAD, 12.0),
+            Space::with_width(6),
+            text("JSON").size(12),
+        ]
+        .align_y(Vertical::Center),
+    )
+    .padding([8, 14])
+    .style(move |_theme, status| match status {
+        button::Status::Hovered => theme::ghost_button_hovered(theme),
+        _ => theme::ghost_button(theme),
+    })
+    .on_press_maybe(if has_events {
+        Some(Message::ExportAuditLogJson)
+    } else {
+        None
+    });
+
+    let export_csv_btn = button(
+        row![
+            fonts::centered_icon(icons::DOWNLOAD, 12.0),
+            Space::with_width(6),
+            text("CSV").size(12),
+        ]
+        .align_y(Vertical::Center),
+    )
+    .padding([8, 14])
+    .style(move |_theme, status| match status {
+        button::Status::Hovered => theme::ghost_button_hovered(theme),
+        _ => theme::ghost_button(theme),
+    })
+    .on_press_maybe(if has_events {
+        Some(Message::ExportAuditLogCsv)
+    } else {
+        None
+    });
+
+    let export_txt_btn = button(
+        row![
+            fonts::centered_icon(icons::DOWNLOAD, 12.0),
+            Space::with_width(6),
+            text("Text").size(12),
+        ]
+        .align_y(Vertical::Center),
+    )
+    .padding([8, 14])
+    .style(move |_theme, status| match status {
+        button::Status::Hovered => theme::ghost_button_hovered(theme),
+        _ => theme::ghost_button(theme),
+    })
+    .on_press_maybe(if has_events {
+        Some(Message::ExportAuditLogText)
+    } else {
+        None
+    });
+
+    let export_label = text("Export:")
+        .size(12)
+        .color(palette.text_muted);
+
+    let export_row = row![
+        export_label,
+        Space::with_width(8),
+        export_json_btn,
+        Space::with_width(4),
+        export_csv_btn,
+        Space::with_width(4),
+        export_txt_btn,
+    ]
+    .align_y(Vertical::Center);
+
     let content = column![
         header,
         Space::with_height(12),
-        count_text,
+        row![count_text, Space::with_width(Length::Fill), export_row,].align_y(Vertical::Center),
         Space::with_height(12),
         log_content,
         Space::with_height(16),
@@ -640,7 +855,7 @@ pub fn audit_log_modal<'a>(
         .on_press(Message::CloseAuditLog),
     ]
     .padding(24)
-    .width(Length::Fixed(520.0));
+    .width(Length::Fixed(560.0));
 
     wrap_modal(theme, content)
 }

@@ -26,11 +26,11 @@ pub fn view(
     // Vault selector button
     let vault_btn = button(
         row![
-            text(icons::VAULT).size(14).font(fonts::FONT_REGULAR).color(palette.primary),
+            fonts::centered_icon_colored(icons::VAULT, 14.0, palette.primary),
             Space::with_width(8),
             text(active_vault_owned).size(14).font(fonts::FONT_MEDIUM).color(palette.text_primary),
             Space::with_width(8),
-            text(icons::CHEVRON_DOWN).size(10).font(fonts::FONT_REGULAR).color(palette.text_muted),
+            fonts::centered_icon_colored(icons::CHEVRON_DOWN, 10.0, palette.text_muted),
         ]
         .align_y(Vertical::Center),
     )
@@ -59,7 +59,7 @@ pub fn view(
     let has_search = !search_query.is_empty();
     let clear_search_btn: Option<Element<'static, Message>> = if has_search {
         Some(
-            button(text(icons::CLOSE).size(12).font(fonts::FONT_REGULAR).color(palette.text_muted))
+            button(fonts::centered_icon_colored(icons::CLOSE, 12.0, palette.text_muted))
                 .padding([8, 10])
                 .style(move |_theme, status| match status {
                     button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -83,7 +83,7 @@ pub fn view(
     // Action buttons
     let add_entry_btn = button(
         row![
-            text(icons::PLUS).size(14).font(fonts::FONT_REGULAR),
+            fonts::centered_icon(icons::PLUS, 14.0),
             Space::with_width(6),
             text("Add Entry").size(14).font(fonts::FONT_SEMIBOLD),
         ]
@@ -98,20 +98,12 @@ pub fn view(
 
     // GitHub sync status indicator
     let sync_indicator: Element<'static, Message> = if github_authenticated {
-        text(icons::CIRCLE)
-            .size(10)
-            .font(fonts::FONT_REGULAR)
-            .color(palette.success)
-            .into()
+        fonts::centered_icon_colored(icons::CIRCLE, 10.0, palette.success)
     } else {
-        text(icons::CIRCLE)
-            .size(10)
-            .font(fonts::FONT_REGULAR)
-            .color(palette.text_muted)
-            .into()
+        fonts::centered_icon_colored(icons::CIRCLE, 10.0, palette.text_muted)
     };
 
-    let settings_btn = button(text(icons::COG).size(16).font(fonts::FONT_REGULAR).color(palette.text_secondary))
+    let settings_btn = button(fonts::centered_icon_colored(icons::COG, 16.0, palette.text_secondary))
         .padding([10, 12])
         .style(move |_theme, status| match status {
             button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -119,7 +111,7 @@ pub fn view(
         })
         .on_press(Message::ShowSettings);
 
-    let lock_btn = button(text(icons::LOCK).size(16).font(fonts::FONT_REGULAR).color(palette.text_secondary))
+    let lock_btn = button(fonts::centered_icon_colored(icons::LOCK, 16.0, palette.text_secondary))
         .padding([10, 12])
         .style(move |_theme, status| match status {
             button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -163,7 +155,8 @@ pub fn vault_dropdown_overlay(
         .iter()
         .map(|name| {
             let is_active = name == &active_vault_owned;
-            let name_owned = name.clone();
+            let name_for_select = name.clone();
+            let name_for_rename = name.clone();
             button(
                 row![
                     text(if is_active { icons::CIRCLE } else { "" })
@@ -172,6 +165,16 @@ pub fn vault_dropdown_overlay(
                         .color(palette.primary)
                         .width(Length::Fixed(16.0)),
                     text(name.clone()).size(14).font(fonts::FONT_REGULAR).color(palette.text_primary),
+                    Space::with_width(Length::Fill),
+                    button(
+                        fonts::centered_icon_colored(icons::EDIT, 12.0, palette.text_muted),
+                    )
+                    .padding([4, 6])
+                    .style(move |_theme, status| match status {
+                        button::Status::Hovered => theme::icon_button_hovered(theme),
+                        _ => theme::icon_button(theme),
+                    })
+                    .on_press(Message::StartRenameVault(name_for_rename)),
                 ]
                 .align_y(Vertical::Center),
             )
@@ -181,7 +184,7 @@ pub fn vault_dropdown_overlay(
                 button::Status::Hovered => theme::ghost_button_hovered(theme),
                 _ => theme::ghost_button(theme),
             })
-            .on_press(Message::SelectVault(name_owned))
+            .on_press(Message::SelectVault(name_for_select))
             .into()
         })
         .collect();
@@ -202,15 +205,19 @@ pub fn vault_dropdown_overlay(
     // Add "Create new vault" option
     items.push(
         button(
-            row![
-                text(icons::PLUS).size(14).font(fonts::FONT_REGULAR).color(palette.primary),
-                Space::with_width(8),
-                text("Create new vault")
-                    .size(14)
-                    .font(fonts::FONT_MEDIUM)
-                    .color(palette.primary),
-            ]
-            .align_y(Vertical::Center),
+            container(
+                row![
+                    fonts::centered_icon_colored(icons::PLUS, 14.0, palette.primary),
+                    Space::with_width(8),
+                    text("Create new vault")
+                        .size(14)
+                        .font(fonts::FONT_MEDIUM)
+                        .color(palette.primary),
+                ]
+                .align_y(Vertical::Center),
+            )
+            .width(Length::Fill)
+            .center_y(Length::Shrink),
         )
         .width(Length::Fill)
         .padding([10, 12])

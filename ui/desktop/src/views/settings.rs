@@ -13,68 +13,33 @@ use crate::theme::{self, LilypadTheme};
 /// Render the account settings section
 pub fn account_view(
     theme: LilypadTheme,
-    display_name: &str,
-    email: &str,
-    timezone: &str,
+    github_authenticated: bool,
+    github_username: Option<&str>,
+    sync_in_progress: bool,
+    device_flow_code: Option<&str>,
+    device_flow_uri: Option<&str>,
     two_factor_enabled: bool,
     marketing_opt_in: bool,
 ) -> Element<'static, Message> {
     let palette = theme.palette();
-    let display_name_owned = display_name.to_string();
-    let email_owned = email.to_string();
-    let timezone_owned = timezone.to_string();
 
     let title = text("Account Settings")
         .size(24)
         .color(palette.text_primary);
 
-    let subtitle = text("Manage your profile and preferences")
+    let subtitle = text("Manage your account connection and preferences")
         .size(14)
         .color(palette.text_secondary);
 
-    // Profile section
-    let profile_title = text("Profile")
-        .size(16)
-        .color(palette.text_primary);
-
-    let name_input = labeled_input(
+    // GitHub Account section
+    let github_section = github_auth_section(
         theme,
-        "Display Name",
-        "Your name",
-        display_name_owned,
-        Message::DisplayNameChanged,
+        github_authenticated,
+        github_username,
+        sync_in_progress,
+        device_flow_code,
+        device_flow_uri,
     );
-
-    let email_input = labeled_input(
-        theme,
-        "Email Address",
-        "your@email.com",
-        email_owned,
-        Message::EmailChanged,
-    );
-
-    let timezone_input = labeled_input(
-        theme,
-        "Timezone",
-        "Europe/Paris",
-        timezone_owned,
-        Message::TimezoneChanged,
-    );
-
-    let profile_section = container(
-        column![
-            profile_title,
-            Space::with_height(16),
-            name_input,
-            Space::with_height(12),
-            email_input,
-            Space::with_height(12),
-            timezone_input,
-        ]
-        .padding(24),
-    )
-    .width(Length::Fill)
-    .style(move |_| theme::card_container(theme));
 
     // Security preferences
     let security_title = text("Security")
@@ -124,7 +89,7 @@ pub fn account_view(
         Space::with_height(4),
         subtitle,
         Space::with_height(24),
-        profile_section,
+        github_section,
         Space::with_height(16),
         security_section,
         Space::with_height(16),
@@ -141,6 +106,177 @@ pub fn account_view(
     .height(Length::Fill)
     .padding(24)
     .align_x(Horizontal::Center)
+    .into()
+}
+
+/// GitHub authentication card
+fn github_auth_section(
+    theme: LilypadTheme,
+    authenticated: bool,
+    username: Option<&str>,
+    in_progress: bool,
+    device_code: Option<&str>,
+    device_uri: Option<&str>,
+) -> Element<'static, Message> {
+    let palette = theme.palette();
+
+    let section_title = text("GitHub Account")
+        .size(16)
+        .color(palette.text_primary);
+
+    let content: Element<'static, Message> = if authenticated {
+        let user_display = username.unwrap_or("Unknown").to_string();
+        column![
+            row![
+                fonts::centered_icon_colored(icons::CHECK, 16.0, palette.success),
+                Space::with_width(8),
+                text("Connected to GitHub")
+                    .size(14)
+                    .color(palette.text_primary),
+            ]
+            .align_y(Vertical::Center),
+            Space::with_height(8),
+            row![
+                text("Username:").size(13).color(palette.text_secondary),
+                Space::with_width(8),
+                text(user_display).size(13).color(palette.text_primary),
+            ],
+            Space::with_height(16),
+            button(
+                container(
+                    text("Logout from GitHub").size(14)
+                )
+                .width(Length::Fill)
+                .align_x(Horizontal::Center),
+            )
+            .width(Length::Fill)
+            .padding([10, 16])
+            .style(move |_theme, status| match status {
+                button::Status::Hovered => {
+                    let mut style = theme::secondary_button(theme);
+                    style.text_color = palette.danger;
+                    style
+                }
+                _ => theme::secondary_button(theme),
+            })
+            .on_press(Message::GitHubLogout),
+        ]
+        .into()
+    } else if in_progress {
+        let mut items: Vec<Element<'static, Message>> = vec![
+            row![
+                fonts::centered_icon(icons::CLOCK, 16.0),
+                Space::with_width(8),
+                text("Authenticating with GitHub...")
+                    .size(14)
+                    .color(palette.text_primary),
+            ]
+            .align_y(Vertical::Center)
+            .into(),
+        ];
+
+        if let (Some(code), Some(uri)) = (device_code, device_uri) {
+            let code_owned = code.to_string();
+            let code_for_copy = code.to_string();
+            let _uri_owned = uri.to_string();
+            items.push(Space::with_height(16).into());
+            items.push(
+                container(
+                    column![
+                        text("Enter this code at GitHub:")
+                            .size(13)
+                            .color(palette.text_secondary),
+                        Space::with_height(8),
+                        button(
+                            row![
+                                text(code_owned)
+                                    .size(24)
+                                    .color(palette.primary),
+                                Space::with_width(12),
+                                fonts::centered_icon_colored(icons::COPY, 14.0, palette.text_muted),
+                            ]
+                            .align_y(Vertical::Center),
+                        )
+                        .padding([8, 16])
+                        .style(move |_theme, status| match status {
+                            button::Status::Hovered => {
+                                let mut style = theme::ghost_button_hovered(theme);
+                                style.background = Some(iced::Background::Color(palette.hover));
+                                style
+                            }
+                            _ => theme::ghost_button(theme),
+                        })
+                        .on_press(Message::CopyToClipboard(code_for_copy)),
+                        Space::with_height(4),
+                        text("Click code to copy")
+                            .size(11)
+                            .color(palette.text_muted),
+                        Space::with_height(8),
+                        button(
+                            text("https://github.com/login/device").size(12).color(palette.primary)
+                        )
+                        .padding([4, 8])
+                        .style(move |_theme, status| match status {
+                            button::Status::Hovered => theme::ghost_button_hovered(theme),
+                            _ => theme::ghost_button(theme),
+                        })
+                        .on_press(Message::OpenExternalLink(
+                            "https://github.com/login/device".to_string()
+                        )),
+                    ]
+                    .align_x(Horizontal::Center),
+                )
+                .width(Length::Fill)
+                .padding(16)
+                .style(move |_| theme::elevated_container(theme))
+                .into(),
+            );
+        }
+
+        column(items).into()
+    } else {
+        column![
+            row![
+                fonts::centered_icon_colored(icons::CIRCLE, 16.0, palette.text_muted),
+                Space::with_width(8),
+                text("Not connected to GitHub")
+                    .size(14)
+                    .color(palette.text_secondary),
+            ]
+            .align_y(Vertical::Center),
+            Space::with_height(8),
+            text("Connect to GitHub to sync your vault across devices securely. All data is encrypted before upload.")
+                .size(12)
+                .color(palette.text_muted),
+            Space::with_height(16),
+            button(
+                container(
+                    row![
+                        fonts::centered_icon(icons::GITHUB, 14.0),
+                        Space::with_width(8),
+                        text("Login with GitHub").size(14),
+                    ]
+                    .align_y(Vertical::Center),
+                )
+                .width(Length::Fill)
+                .align_x(Horizontal::Center),
+            )
+            .width(Length::Fill)
+            .padding([12, 16])
+            .style(move |_theme, status| match status {
+                button::Status::Hovered => theme::primary_button_hovered(theme),
+                _ => theme::primary_button(theme),
+            })
+            .on_press(Message::GitHubLogin),
+        ]
+        .into()
+    };
+
+    container(
+        column![section_title, Space::with_height(16), content,].padding(24),
+    )
+    .width(Length::Fill)
+    .style(move |_| theme::card_container(theme))
     .into()
 }
 
@@ -270,7 +406,7 @@ pub fn security_view(
     let change_pw_btn = button(
         container(
             row![
-                text(icons::KEY).size(14).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::KEY, 14.0),
                 Space::with_width(8),
                 text("Change Master Password").size(14),
             ]
@@ -312,7 +448,7 @@ pub fn security_view(
     let audit_btn = button(
         container(
             row![
-                text(icons::SHIELD).size(14).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::SHIELD, 14.0),
                 Space::with_width(8),
                 text("View Audit Log").size(14),
             ]
@@ -346,6 +482,96 @@ pub fn security_view(
     .width(Length::Fill)
     .style(move |_| theme::card_container(theme));
 
+    // Backup management section
+    let backup_title = text("Backup Management")
+        .size(16)
+        .color(palette.text_primary);
+
+    let backup_btn = button(
+        container(
+            row![
+                fonts::centered_icon(icons::SAVE, 14.0),
+                Space::with_width(8),
+                text("Create Backup").size(14),
+            ]
+            .align_y(Vertical::Center),
+        )
+        .width(Length::Fill)
+        .align_x(Horizontal::Center),
+    )
+    .width(Length::FillPortion(1))
+    .padding([12, 16])
+    .style(move |_theme, status| match status {
+        button::Status::Hovered => theme::secondary_button_hovered(theme),
+        _ => theme::secondary_button(theme),
+    })
+    .on_press(Message::BackupVault);
+
+    let restore_btn = button(
+        container(
+            row![
+                fonts::centered_icon(icons::UPLOAD, 14.0),
+                Space::with_width(8),
+                text("Restore").size(14),
+            ]
+            .align_y(Vertical::Center),
+        )
+        .width(Length::Fill)
+        .align_x(Horizontal::Center),
+    )
+    .width(Length::FillPortion(1))
+    .padding([12, 16])
+    .style(move |_theme, status| match status {
+        button::Status::Hovered => theme::secondary_button_hovered(theme),
+        _ => theme::secondary_button(theme),
+    })
+    .on_press(Message::RestoreVault);
+
+    let prune_btn = button(
+        container(
+            row![
+                fonts::centered_icon(icons::TRASH, 14.0),
+                Space::with_width(8),
+                text("Prune Old").size(14),
+            ]
+            .align_y(Vertical::Center),
+        )
+        .width(Length::Fill)
+        .align_x(Horizontal::Center),
+    )
+    .width(Length::FillPortion(1))
+    .padding([12, 16])
+    .style(move |_theme, status| match status {
+        button::Status::Hovered => theme::danger_button_hovered(theme),
+        _ => theme::danger_button(theme),
+    })
+    .on_press(Message::PruneBackups);
+
+    let backup_actions = row![
+        backup_btn,
+        Space::with_width(8),
+        restore_btn,
+        Space::with_width(8),
+        prune_btn,
+    ];
+
+    let backup_hint = text("Prune removes old backups, keeping the 5 most recent per vault")
+        .size(12)
+        .color(palette.text_muted);
+
+    let backup_section = container(
+        column![
+            backup_title,
+            Space::with_height(16),
+            backup_actions,
+            Space::with_height(8),
+            backup_hint,
+        ]
+        .padding(24),
+    )
+    .width(Length::Fill)
+    .style(move |_| theme::card_container(theme));
+
     // Trusted devices section
     let devices_title = text("Trusted Devices")
         .size(16)
@@ -357,7 +583,7 @@ pub fn security_view(
         .map(|(index, device)| {
             let device_name = device.clone();
             row![
-                text(icons::DESKTOP).size(16).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::DESKTOP, 16.0),
                 Space::with_width(12),
                 text(device_name).size(14).color(palette.text_primary),
                 Space::with_width(Length::Fill),
@@ -406,6 +632,8 @@ pub fn security_view(
         master_pw_section,
         Space::with_height(16),
         audit_section,
+        Space::with_height(16),
+        backup_section,
         Space::with_height(16),
         recovery_section,
         Space::with_height(16),

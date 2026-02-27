@@ -131,10 +131,7 @@ pub fn view(params: OnboardingParams<'_>) -> Element<'static, Message> {
 // ============================================================================
 
 fn welcome_page(_theme: LilypadTheme, palette: &LilypadPalette) -> Element<'static, Message> {
-    let logo = text(icons::FLOWER)
-        .size(64)
-        .font(fonts::FONT_REGULAR)
-        .color(palette.primary);
+    let logo = fonts::centered_icon_colored(icons::FLOWER, 64.0, palette.primary);
 
     let title = text("Welcome to Lilypad")
         .size(32)
@@ -236,10 +233,7 @@ fn feature_item(
     description: &'static str,
 ) -> Element<'static, Message> {
     let icon_el = container(
-        text(icon)
-            .size(20)
-            .font(fonts::FONT_REGULAR)
-            .color(palette.primary),
+        fonts::centered_icon_colored(icon, 20.0, palette.primary),
     )
     .width(Length::Fixed(40.0))
     .height(Length::Fixed(40.0))
@@ -269,10 +263,7 @@ fn feature_item(
 // ============================================================================
 
 fn colony_page(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'static, Message> {
-    let globe = text(icons::GLOBE)
-        .size(48)
-        .font(fonts::FONT_REGULAR)
-        .color(palette.primary);
+    let globe = fonts::centered_icon_colored(icons::GLOBE, 48.0, palette.primary);
 
     let title = text("Part of Colony")
         .size(24)
@@ -300,10 +291,7 @@ fn colony_page(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'static
 
     let github_btn = button(
         row![
-            text(icons::GITHUB)
-                .size(16)
-                .font(fonts::FONT_REGULAR)
-                .color(palette.text_primary),
+            fonts::centered_icon_colored(icons::GITHUB, 16.0, palette.text_primary),
             Space::with_width(8),
             text("Learn more on GitHub")
                 .size(13)
@@ -396,7 +384,7 @@ fn tutorial_generate(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'
     let gen_btn = button(
         container(
             row![
-                text(icons::DICE).size(16).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::DICE, 16.0),
                 Space::with_width(8),
                 text("Generate Password").size(14),
             ]
@@ -446,10 +434,7 @@ fn tutorial_view_vault(
     let mock_card = container(
         column![
             row![
-                text(icons::GLOBE)
-                    .size(18)
-                    .font(fonts::FONT_REGULAR)
-                    .color(palette.primary),
+                fonts::centered_icon_colored(icons::GLOBE, 18.0, palette.primary),
                 Space::with_width(12),
                 column![
                     text("Example Account")
@@ -465,10 +450,7 @@ fn tutorial_view_vault(
             .align_y(Vertical::Center),
             Space::with_height(12),
             row![
-                text(icons::KEY)
-                    .size(14)
-                    .font(fonts::FONT_REGULAR)
-                    .color(palette.text_muted),
+                fonts::centered_icon_colored(icons::KEY, 14.0, palette.text_muted),
                 Space::with_width(8),
                 text(generated_pw)
                     .size(13)
@@ -525,7 +507,7 @@ fn tutorial_copy(
     let copy_btn: Element<'static, Message> = if pw_copied {
         button(
             row![
-                text(icons::CHECK).size(16).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::CHECK, 16.0),
                 Space::with_width(8),
                 text("Copied!").size(14),
             ]
@@ -541,7 +523,7 @@ fn tutorial_copy(
     } else {
         button(
             row![
-                text(icons::COPY).size(16).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::COPY, 16.0),
                 Space::with_width(8),
                 text("Copy Password").size(14),
             ]
@@ -658,10 +640,7 @@ fn github_not_connected(
     theme: LilypadTheme,
     palette: &LilypadPalette,
 ) -> Element<'static, Message> {
-    let icon = text(icons::GITHUB)
-        .size(48)
-        .font(fonts::FONT_REGULAR)
-        .color(palette.text_muted);
+    let icon = fonts::centered_icon_colored(icons::GITHUB, 48.0, palette.text_muted);
 
     let description = text(
         "All vault data is encrypted before upload. \
@@ -675,7 +654,7 @@ fn github_not_connected(
     let connect_btn = button(
         container(
             row![
-                text(icons::GITHUB).size(16).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::GITHUB, 16.0),
                 Space::with_width(8),
                 text("Connect to GitHub").size(14),
             ]
@@ -717,10 +696,7 @@ fn github_in_progress(
     device_flow_uri: Option<&str>,
 ) -> Element<'static, Message> {
     let status_row = row![
-        text(icons::CLOCK)
-            .size(16)
-            .font(fonts::FONT_REGULAR)
-            .color(palette.primary),
+        fonts::centered_icon_colored(icons::CLOCK, 16.0, palette.primary),
         Space::with_width(8),
         text("Authenticating with GitHub...")
             .size(14)
@@ -745,10 +721,7 @@ fn github_in_progress(
                     row![
                         text(code_owned).size(24).color(palette.primary),
                         Space::with_width(12),
-                        text(icons::COPY)
-                            .size(14)
-                            .font(fonts::FONT_REGULAR)
-                            .color(palette.text_muted),
+                        fonts::centered_icon_colored(icons::COPY, 14.0, palette.text_muted),
                     ]
                     .align_y(Vertical::Center),
                 )
@@ -793,10 +766,7 @@ fn github_connected(
 ) -> Element<'static, Message> {
     let user_display = username.unwrap_or("Unknown").to_string();
 
-    let success_icon = text(icons::CIRCLE_CHECK)
-        .size(48)
-        .font(fonts::FONT_REGULAR)
-        .color(palette.success);
+    let success_icon = fonts::centered_icon_colored(icons::CIRCLE_CHECK, 48.0, palette.success);
 
     let connected_text = text("Connected to GitHub")
         .size(16)
@@ -869,10 +839,7 @@ fn create_vault_page(
     let danger_color = palette.danger;
     let muted_color = palette.text_muted;
 
-    let icon = text(icons::SHIELD)
-        .size(48)
-        .font(fonts::FONT_REGULAR)
-        .color(palette.primary);
+    let icon = fonts::centered_icon_colored(icons::SHIELD, 48.0, palette.primary);
 
     let title = text("Create Your Vault")
         .size(24)
@@ -995,7 +962,7 @@ fn create_vault_page(
     let create_btn = button(
         container(
             row![
-                text(icons::VAULT).size(16).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::VAULT, 16.0),
                 Space::with_width(8),
                 text("Create Vault").size(16).font(fonts::FONT_SEMIBOLD),
             ]

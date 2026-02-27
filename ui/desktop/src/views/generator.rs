@@ -63,7 +63,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
                     .size(18)
                     .color(palette.text_primary),
                 Space::with_width(Length::Fill),
-                button(text(icons::COPY).size(16).font(fonts::FONT_REGULAR))
+                button(fonts::centered_icon(icons::COPY, 16.0))
                     .padding([8, 12])
                     .style(move |_theme, status| match status {
                         button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -82,7 +82,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     let generate_btn = button(
         container(
             row![
-                text(icons::DICE).size(16).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::DICE, 16.0),
                 Space::with_width(8),
                 text("Generate Password").size(15),
             ]

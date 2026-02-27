@@ -104,6 +104,7 @@ pub struct LilypadApp {
     pub settings: AppSettings,
     pub show_settings: bool,
     pub theme: LilypadTheme,
+    pub theme_sort_by_color: bool,
 
     // Security
     pub lockout_state: LockoutState,
@@ -132,6 +133,8 @@ pub struct LilypadApp {
     pub show_vault_selector: bool,
     pub show_new_vault_modal: bool,
     pub new_vault_name: String,
+    pub renaming_vault: Option<String>,
+    pub rename_vault_input: String,
 
     // Account settings (demo)
     pub account_display_name: String,
@@ -272,6 +275,7 @@ impl LilypadApp {
             settings: AppSettings::default(),
             show_settings: false,
             theme: LilypadTheme::ClassicGreen,
+            theme_sort_by_color: false,
             lockout_state: LockoutState::default(),
             last_activity: now,
             clipboard: Clipboard::new().ok(),
@@ -288,6 +292,8 @@ impl LilypadApp {
             show_vault_selector: false,
             show_new_vault_modal: false,
             new_vault_name: String::new(),
+            renaming_vault: None,
+            rename_vault_input: String::new(),
             account_display_name: String::new(),
             account_email: String::new(),
             account_timezone: String::new(),
@@ -734,6 +740,42 @@ impl LilypadApp {
             Message::CreateVault => {
                 return self.create_new_vault();
             }
+            Message::StartRenameVault(name) => {
+                self.rename_vault_input = name.clone();
+                self.renaming_vault = Some(name);
+                self.show_vault_selector = false;
+            }
+            Message::RenameVaultNameChanged(name) => {
+                self.rename_vault_input = name;
+            }
+            Message::ConfirmRenameVault => {
+                if let Some(old_name) = self.renaming_vault.take() {
+                    let new_name = self.rename_vault_input.trim().to_string();
+                    if !new_name.is_empty() && new_name != old_name {
+                        match self.store.rename_vault(&old_name, &new_name) {
+                            Ok(()) => {
+                                if let Some(v) = self.available_vaults.iter_mut().find(|v| *v == &old_name) {
+                                    *v = new_name.clone();
+                                }
+                                if self.active_vault == old_name {
+                                    self.active_vault = new_name.clone();
+                                }
+                                self.settings.active_vault = self.active_vault.clone();
+                                self.save_settings();
+                                self.set_status(format!("Vault renamed to '{}'", new_name));
+                            }
+                            Err(e) => {
+                                self.set_status(format!("Failed to rename vault: {}", e));
+                            }
+                        }
+                    }
+                    self.rename_vault_input.clear();
+                }
+            }
+            Message::CancelRenameVault => {
+                self.renaming_vault = None;
+                self.rename_vault_input.clear();
+            }
 
             // Settings
             Message::ShowSettings => {
@@ -746,6 +788,9 @@ impl LilypadApp {
                 self.theme = theme;
                 self.settings.theme_index = theme.to_index();
                 self.save_settings();
+            }
+            Message::ToggleThemeSort => {
+                self.theme_sort_by_color = !self.theme_sort_by_color;
             }
             Message::ChangeAutoLock(minutes) => {
                 self.settings.auto_lock_minutes = minutes;
@@ -1015,6 +1060,15 @@ impl LilypadApp {
             Message::CloseAuditLog => {
                 self.show_audit_log = false;
             }
+            Message::ExportAuditLogJson => {
+                return self.export_audit_log_json();
+            }
+            Message::ExportAuditLogCsv => {
+                return self.export_audit_log_csv();
+            }
+            Message::ExportAuditLogText => {
+                return self.export_audit_log_text();
+            }
 
             // Backup
             Message::BackupVault => {
@@ -1027,6 +1081,9 @@ impl LilypadApp {
                 if let Some(path) = path {
                     return self.restore_vault_file(path);
                 }
+            }
+            Message::PruneBackups => {
+                return self.prune_backups();
             }
 
             Message::None => {}
@@ -1115,17 +1172,16 @@ impl LilypadApp {
             Category::Sync => views::sync::view(
                 self.theme,
                 self.github_authenticated,
-                self.github_username.as_deref(),
                 self.sync_in_progress,
-                self.device_flow_code.as_deref(),
-                self.device_flow_uri.as_deref(),
                 self.sync_conflict,
             ),
             Category::Account => views::settings::account_view(
                 self.theme,
-                &self.account_display_name,
-                &self.account_email,
-                &self.account_timezone,
+                self.github_authenticated,
+                self.github_username.as_deref(),
+                self.sync_in_progress,
+                self.device_flow_code.as_deref(),
+                self.device_flow_uri.as_deref(),
                 self.account_two_factor_enabled,
                 self.account_marketing_opt_in,
             ),
@@ -1165,13 +1221,19 @@ impl LilypadApp {
         } else if self.show_settings {
             iced::widget::stack![
                 content,
-                views::modals::settings_modal(self.theme),
+                views::modals::settings_modal(self.theme, self.theme_sort_by_color),
             ]
             .into()
         } else if self.show_new_vault_modal {
             iced::widget::stack![
                 content,
                 views::modals::new_vault_modal(self.theme, &self.new_vault_name),
+            ]
+            .into()
+        } else if self.renaming_vault.is_some() {
+            iced::widget::stack![
+                content,
+                views::modals::rename_vault_modal(self.theme, &self.rename_vault_input),
             ]
             .into()
         } else if self.show_delete_confirm {
@@ -1603,10 +1665,19 @@ impl LilypadApp {
         if self.available_vaults.is_empty() {
             self.available_vaults.push(DEFAULT_VAULT_NAME.to_string());
         }
+        // Restore persisted active vault, or fall back to first available
+        let persisted = &self.settings.active_vault;
+        if !persisted.is_empty() && self.available_vaults.contains(persisted) {
+            self.active_vault = persisted.clone();
+        } else {
+            self.active_vault = self.available_vaults[0].clone();
+        }
     }
 
     fn switch_vault(&mut self, name: &str) {
         self.active_vault = name.to_string();
+        self.settings.active_vault = name.to_string();
+        self.save_settings();
         self.vault = None;
         self.vault_key = None;
         self.vault_entries.clear();
@@ -2983,6 +3054,227 @@ impl LilypadApp {
                 self.set_status(format!("Failed to read backup file: {}", e));
             }
         }
+
+        Task::none()
+    }
+
+    // ========================================================================
+    // Audit Log Export
+    // ========================================================================
+
+    fn export_audit_log_json(&mut self) -> Task<Message> {
+        if self.audit_events.is_empty() {
+            self.set_status("No audit events to export");
+            return Task::none();
+        }
+
+        let events: Vec<serde_json::Value> = self
+            .audit_events
+            .iter()
+            .map(|(ts, action, label)| {
+                serde_json::json!({
+                    "timestamp": ts,
+                    "action": action,
+                    "entry_label": label,
+                })
+            })
+            .collect();
+
+        let export = serde_json::json!({
+            "vault": self.active_vault,
+            "exported_at": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            "event_count": events.len(),
+            "events": events,
+        });
+
+        let json_str = match serde_json::to_string_pretty(&export) {
+            Ok(s) => s,
+            Err(e) => {
+                self.set_status(format!("Export failed: {}", e));
+                return Task::none();
+            }
+        };
+
+        let file = rfd::FileDialog::new()
+            .set_title("Export Audit Log (JSON)")
+            .set_file_name("audit_log.json")
+            .add_filter("JSON", &["json"])
+            .save_file();
+
+        if let Some(path) = file {
+            match fs::write(&path, json_str.as_bytes()) {
+                Ok(()) => self.set_status(format!(
+                    "{} events exported to {}",
+                    self.audit_events.len(),
+                    path.display()
+                )),
+                Err(e) => self.set_status(format!("Export failed: {}", e)),
+            }
+        }
+
+        Task::none()
+    }
+
+    fn export_audit_log_csv(&mut self) -> Task<Message> {
+        if self.audit_events.is_empty() {
+            self.set_status("No audit events to export");
+            return Task::none();
+        }
+
+        let mut csv_data = String::from("timestamp,date,action,entry_label\n");
+        for (ts, action, label) in &self.audit_events {
+            let date = lilypad_common::time::format_timestamp_relative(*ts);
+            let escape = |s: &str| -> String {
+                if s.contains(',') || s.contains('"') || s.contains('\n') {
+                    format!("\"{}\"", s.replace('"', "\"\""))
+                } else {
+                    s.to_string()
+                }
+            };
+            csv_data.push_str(&format!(
+                "{},{},{},{}\n",
+                ts,
+                escape(&date),
+                escape(action),
+                escape(label.as_deref().unwrap_or("")),
+            ));
+        }
+
+        let file = rfd::FileDialog::new()
+            .set_title("Export Audit Log (CSV)")
+            .set_file_name("audit_log.csv")
+            .add_filter("CSV", &["csv"])
+            .save_file();
+
+        if let Some(path) = file {
+            match fs::write(&path, csv_data.as_bytes()) {
+                Ok(()) => self.set_status(format!(
+                    "{} events exported to {}",
+                    self.audit_events.len(),
+                    path.display()
+                )),
+                Err(e) => self.set_status(format!("Export failed: {}", e)),
+            }
+        }
+
+        Task::none()
+    }
+
+    fn export_audit_log_text(&mut self) -> Task<Message> {
+        if self.audit_events.is_empty() {
+            self.set_status("No audit events to export");
+            return Task::none();
+        }
+
+        let mut text_data = format!(
+            "Lilypad Audit Log - Vault: {}\n{}\n\n",
+            self.active_vault,
+            "=".repeat(50)
+        );
+
+        for (ts, action, label) in &self.audit_events {
+            let date = lilypad_common::time::format_timestamp_relative(*ts);
+            let label_str = label.as_deref().unwrap_or("-");
+            text_data.push_str(&format!("[{}] {} | {}\n", date, action, label_str));
+        }
+
+        text_data.push_str(&format!(
+            "\n{}\nTotal: {} events\n",
+            "-".repeat(50),
+            self.audit_events.len()
+        ));
+
+        let file = rfd::FileDialog::new()
+            .set_title("Export Audit Log (Text)")
+            .set_file_name("audit_log.txt")
+            .add_filter("Text", &["txt"])
+            .save_file();
+
+        if let Some(path) = file {
+            match fs::write(&path, text_data.as_bytes()) {
+                Ok(()) => self.set_status(format!(
+                    "{} events exported to {}",
+                    self.audit_events.len(),
+                    path.display()
+                )),
+                Err(e) => self.set_status(format!("Export failed: {}", e)),
+            }
+        }
+
+        Task::none()
+    }
+
+    // ========================================================================
+    // Backup Pruning
+    // ========================================================================
+
+    fn prune_backups(&mut self) -> Task<Message> {
+        let dir = rfd::FileDialog::new()
+            .set_title("Select Backup Directory to Prune")
+            .pick_folder();
+
+        let Some(dir) = dir else {
+            return Task::none();
+        };
+
+        let vault_name = self.active_vault.clone();
+        let prefix = format!("{}_backup_", vault_name);
+
+        // Collect matching backup files
+        let mut backups: Vec<std::path::PathBuf> = match fs::read_dir(&dir) {
+            Ok(entries) => entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.extension().and_then(|e| e.to_str()) == Some("lily")
+                        && p.file_stem()
+                            .and_then(|s| s.to_str())
+                            .map(|s| s.starts_with(&prefix))
+                            .unwrap_or(false)
+                })
+                .collect(),
+            Err(e) => {
+                self.set_status(format!("Failed to read directory: {}", e));
+                return Task::none();
+            }
+        };
+
+        if backups.len() <= 5 {
+            self.set_status(format!(
+                "Only {} backups found (keeping all; prune removes when >5)",
+                backups.len()
+            ));
+            return Task::none();
+        }
+
+        // Sort by modification time, newest first
+        backups.sort_by(|a, b| {
+            let ta = fs::metadata(a)
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            let tb = fs::metadata(b)
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::UNIX_EPOCH);
+            tb.cmp(&ta)
+        });
+
+        // Keep the 5 newest, delete the rest
+        let to_delete = &backups[5..];
+        let mut deleted = 0u32;
+        for path in to_delete {
+            if fs::remove_file(path).is_ok() {
+                deleted += 1;
+            }
+        }
+
+        self.set_status(format!(
+            "Pruned {} old backups, kept {} most recent",
+            deleted,
+            backups.len().min(5)
+        ));
 
         Task::none()
     }

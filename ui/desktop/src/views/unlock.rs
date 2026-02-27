@@ -26,12 +26,10 @@ pub fn view(
     let error_message_owned = error_message.map(|s| s.to_string());
 
     // Logo/Brand
-    let logo = text(icons::SHIELD)
-        .size(56)
-        .font(fonts::FONT_REGULAR)
-        .color(palette.primary)
+    let logo: Element<'static, Message> = container(fonts::centered_icon_colored(icons::SHIELD, 56.0, palette.primary))
         .width(Length::Fill)
-        .align_x(Horizontal::Center);
+        .align_x(Horizontal::Center)
+        .into();
 
     let title = text("Lilypad")
         .size(36)
@@ -152,7 +150,7 @@ pub fn view(
 fn build_create_form(
     theme: LilypadTheme,
     palette: crate::theme::LilypadPalette,
-    logo: iced::widget::Text<'static>,
+    logo: Element<'static, Message>,
     title: iced::widget::Text<'static>,
     master_password: &str,
     confirm_password: &str,
@@ -293,7 +291,7 @@ fn build_create_form(
 fn build_unlock_form(
     theme: LilypadTheme,
     palette: crate::theme::LilypadPalette,
-    logo: iced::widget::Text<'static>,
+    logo: Element<'static, Message>,
     title: iced::widget::Text<'static>,
     master_password: &str,
     error_message: Option<String>,

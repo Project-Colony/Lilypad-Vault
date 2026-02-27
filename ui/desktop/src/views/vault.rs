@@ -196,7 +196,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
             folder_chips = folder_chips.push(
                 button(
                     row![
-                        text(icons::FOLDER).size(10).font(fonts::FONT_REGULAR),
+                        fonts::centered_icon(icons::FOLDER, 10.0),
                         Space::with_width(4),
                         text(folder_name.clone()).size(11),
                     ]
@@ -275,10 +275,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
             .map(|(index, entry)| entry_card(theme, *index, entry))
             .collect();
 
-        scrollable(column(entry_cards).spacing(12))
-            .height(Length::Fill)
-            .style(move |_theme, _status| theme::scrollable_style(theme))
-            .into()
+        column(entry_cards).spacing(12).into()
     };
 
     // Add/Edit entry form
@@ -357,15 +354,9 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
 
     // Favorite star
     let is_fav = entry.is_favorite;
+    let star_color = if is_fav { palette.warning } else { palette.text_muted };
     let favorite_btn = button(
-        text(icons::STAR)
-            .size(16)
-            .font(fonts::FONT_REGULAR)
-            .color(if is_fav {
-                palette.warning
-            } else {
-                palette.text_muted
-            }),
+        fonts::centered_icon_colored(icons::STAR, 16.0, star_color),
     )
     .padding([4, 8])
     .style(move |_theme, status| match status {
@@ -386,10 +377,7 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
         lilypad_core::EntryType::Custom => icons::ELLIPSIS,
     };
     let type_icon = container(
-        text(type_icon_str)
-            .size(18)
-            .font(fonts::FONT_REGULAR)
-            .color(palette.text_muted),
+        fonts::centered_icon_colored(type_icon_str, 18.0, palette.text_muted),
     )
     .width(Length::Fixed(36.0))
     .height(Length::Fixed(36.0))
@@ -449,7 +437,7 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
             badge_row = badge_row.push(
                 container(
                     row![
-                        text(icons::SAVE).size(9).font(fonts::FONT_REGULAR),
+                        fonts::centered_icon(icons::SAVE, 9.0),
                         Space::with_width(3),
                         text(format!("{}", count)).size(10),
                     ]
@@ -546,7 +534,7 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
 
     // Action buttons
     let copy_user_btn = button(
-        text(icons::USER).size(14).font(fonts::FONT_REGULAR),
+        fonts::centered_icon(icons::USER, 14.0),
     )
     .padding([6, 10])
     .style(move |_theme, status| match status {
@@ -556,7 +544,7 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     .on_press(Message::CopyUsername(index));
 
     let copy_pass_btn = button(
-        text(icons::KEY).size(14).font(fonts::FONT_REGULAR),
+        fonts::centered_icon(icons::KEY, 14.0),
     )
     .padding([6, 10])
     .style(move |_theme, status| match status {
@@ -569,7 +557,7 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     let open_url_btn: Option<Element<'static, Message>> = if has_url {
         Some(
             button(
-                text(icons::EXTERNAL_LINK).size(14).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::EXTERNAL_LINK, 14.0),
             )
             .padding([6, 10])
             .style(move |_theme, status| match status {
@@ -584,7 +572,7 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     };
 
     let history_btn = button(
-        text(icons::CLOCK).size(14).font(fonts::FONT_REGULAR),
+        fonts::centered_icon(icons::CLOCK, 14.0),
     )
     .padding([6, 10])
     .style(move |_theme, status| match status {
@@ -594,7 +582,7 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     .on_press(Message::ViewEntryHistory(index));
 
     let edit_btn = button(
-        text(icons::EDIT).size(14).font(fonts::FONT_REGULAR),
+        fonts::centered_icon(icons::EDIT, 14.0),
     )
     .padding([6, 10])
     .style(move |_theme, status| match status {
@@ -604,7 +592,7 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     .on_press(Message::EditEntry(index));
 
     let delete_btn = button(
-        text(icons::TRASH).size(14).font(fonts::FONT_REGULAR),
+        fonts::centered_icon(icons::TRASH, 14.0),
     )
         .padding([6, 10])
         .style(move |_theme, status| match status {
@@ -739,7 +727,7 @@ fn form_section<'a>(
 ) -> Element<'a, Message> {
     let palette = theme.palette();
     let header = row![
-        text(icon).size(13).font(fonts::FONT_REGULAR).color(palette.text_muted),
+        fonts::centered_icon_colored(icon, 13.0, palette.text_muted),
         Space::with_width(8),
         text(title).size(14).color(palette.text_primary),
     ]
@@ -790,7 +778,7 @@ fn entry_form(
             .color(palette.text_primary),
         Space::with_width(Length::Fill),
         button(
-            text(icons::CLOSE).size(14).font(fonts::FONT_REGULAR).color(palette.text_muted),
+            fonts::centered_icon_colored(icons::CLOSE, 14.0, palette.text_muted),
         )
         .padding([6, 10])
         .style(move |_theme, status| match status {
@@ -825,7 +813,7 @@ fn entry_form(
             };
             button(
                 row![
-                    text(*icon).size(12).font(fonts::FONT_REGULAR),
+                    fonts::centered_icon(*icon, 12.0),
                     Space::with_width(5),
                     text(display).size(12),
                 ]
@@ -918,7 +906,7 @@ fn entry_form(
                         Space::with_height(6),
                         button(
                             row![
-                                text(icons::DICE).size(14).font(fonts::FONT_REGULAR),
+                                fonts::centered_icon(icons::DICE, 14.0),
                                 Space::with_width(6),
                                 text("Generate").size(13),
                             ]
@@ -1005,7 +993,7 @@ fn entry_form(
                 row![
                     text(tag_str).size(11).color(palette.text_primary),
                     Space::with_width(4),
-                    button(text(icons::CLOSE).size(9).font(fonts::FONT_REGULAR).color(palette.text_muted))
+                    button(fonts::centered_icon_colored(icons::CLOSE, 9.0, palette.text_muted))
                         .padding([2, 4])
                         .style(move |_theme, status| match status {
                             button::Status::Hovered => theme::icon_button_hovered(theme),
@@ -1037,7 +1025,7 @@ fn entry_form(
         Space::with_width(8),
         button(
             row![
-                text(icons::PLUS).size(11).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::PLUS, 11.0),
                 Space::with_width(4),
                 text("Add").size(12),
             ]
@@ -1071,9 +1059,9 @@ fn entry_form(
 
     let advanced_header_btn = button(
         row![
-            text(advanced_toggle_icon).size(12).font(fonts::FONT_REGULAR).color(palette.text_muted),
+            fonts::centered_icon_colored(advanced_toggle_icon, 12.0, palette.text_muted),
             Space::with_width(8),
-            text(icons::COG).size(14).font(fonts::FONT_REGULAR).color(palette.text_muted),
+            fonts::centered_icon_colored(icons::COG, 14.0, palette.text_muted),
             Space::with_width(8),
             text("Advanced").size(14).color(palette.text_primary),
             Space::with_width(Length::Fill),
@@ -1121,7 +1109,7 @@ fn entry_form(
             advanced_col = advanced_col.push(
                 column![
                     row![
-                        text(icons::EDIT).size(13).font(fonts::FONT_REGULAR).color(palette.text_muted),
+                        fonts::centered_icon_colored(icons::EDIT, 13.0, palette.text_muted),
                         Space::with_width(6),
                         text("Notes").size(13).color(palette.text_secondary),
                     ]
@@ -1136,7 +1124,7 @@ fn entry_form(
         advanced_col = advanced_col.push(
             column![
                 row![
-                    text(icons::FOLDER).size(13).font(fonts::FONT_REGULAR).color(palette.text_muted),
+                    fonts::centered_icon_colored(icons::FOLDER, 13.0, palette.text_muted),
                     Space::with_width(6),
                     text("Organization").size(13).color(palette.text_secondary),
                 ]
@@ -1173,7 +1161,7 @@ fn entry_form(
                         }),
                     Space::with_width(8),
                     button(
-                        text(icons::CLOSE).size(12).font(fonts::FONT_REGULAR).color(palette.danger),
+                        fonts::centered_icon_colored(icons::CLOSE, 12.0, palette.danger),
                     )
                     .padding([6, 10])
                     .style(move |_theme, status| match status {
@@ -1188,7 +1176,7 @@ fn entry_form(
 
         let add_field_btn = button(
             row![
-                text(icons::PLUS).size(12).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::PLUS, 12.0),
                 Space::with_width(6),
                 text("Add Custom Field").size(13),
             ]
@@ -1227,14 +1215,14 @@ fn entry_form(
             attachments_col = attachments_col.push(
                 container(
                     row![
-                        text(icons::SAVE).size(12).font(fonts::FONT_REGULAR).color(palette.text_muted),
+                        fonts::centered_icon_colored(icons::SAVE, 12.0, palette.text_muted),
                         Space::with_width(8),
                         text(filename_str).size(13).color(palette.text_primary),
                         Space::with_width(8),
                         text(size_display).size(11).color(palette.text_muted),
                         Space::with_width(Length::Fill),
                         button(
-                            text(icons::CLOSE).size(12).font(fonts::FONT_REGULAR).color(palette.danger),
+                            fonts::centered_icon_colored(icons::CLOSE, 12.0, palette.danger),
                         )
                         .padding([4, 8])
                         .style(move |_theme, status| match status {
@@ -1256,7 +1244,7 @@ fn entry_form(
 
         let add_attachment_btn = button(
             row![
-                text(icons::PLUS).size(12).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::PLUS, 12.0),
                 Space::with_width(6),
                 text("Add Attachment").size(13),
             ]
@@ -1313,7 +1301,7 @@ fn entry_form(
 
     let save_btn = button(
         row![
-            text(icons::CHECK).size(14).font(fonts::FONT_REGULAR),
+            fonts::centered_icon(icons::CHECK, 14.0),
             Space::with_width(6),
             text(if edit_mode { "Update" } else { "Save" }).size(14),
         ]

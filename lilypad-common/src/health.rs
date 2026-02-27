@@ -229,6 +229,39 @@ pub struct VaultStats {
 }
 
 /// Analyzes vault health and generates a report.
+///
+/// Examines every entry for weak passwords, reuse, expiry, missing 2FA,
+/// and other security concerns. Returns a [`HealthReport`] containing an
+/// overall score, a list of issues, and vault statistics.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::health::{analyze_vault_health, EntryHealthData};
+/// use lilypad_common::HealthGrade;
+///
+/// // An empty vault gets a perfect score.
+/// let report = analyze_vault_health(&[]);
+/// assert_eq!(report.score.score, 100);
+/// assert_eq!(report.score.grade, HealthGrade::A);
+/// assert!(report.issues.is_empty());
+///
+/// // A vault with a very weak password produces issues.
+/// let entries = vec![EntryHealthData {
+///     label: "test".to_string(),
+///     password: "weak".to_string(),
+///     has_username: true,
+///     has_url: false,
+///     has_totp: true,
+///     password_age_days: 5,
+///     days_until_expiry: None,
+///     is_expired: false,
+///     is_compromised: false,
+/// }];
+/// let report = analyze_vault_health(&entries);
+/// assert!(!report.issues.is_empty());
+/// assert!(report.stats.weak_passwords > 0);
+/// ```
 pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
     let mut issues = Vec::new();
     let mut stats = VaultStats {
@@ -566,7 +599,43 @@ fn calculate_2fa_score(stats: &VaultStats) -> u8 {
 }
 
 /// Detects duplicate passwords across entries.
-/// Returns a map of password hash to list of entry labels using that password.
+///
+/// Returns a map of password to the list of entry labels sharing that
+/// password. Only passwords used by two or more entries are included.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::health::{detect_duplicates, EntryHealthData};
+///
+/// let entries = vec![
+///     EntryHealthData {
+///         label: "Site A".to_string(),
+///         password: "shared_pw".to_string(),
+///         has_username: true, has_url: true, has_totp: false,
+///         password_age_days: 10, days_until_expiry: None,
+///         is_expired: false, is_compromised: false,
+///     },
+///     EntryHealthData {
+///         label: "Site B".to_string(),
+///         password: "shared_pw".to_string(),
+///         has_username: true, has_url: true, has_totp: false,
+///         password_age_days: 10, days_until_expiry: None,
+///         is_expired: false, is_compromised: false,
+///     },
+///     EntryHealthData {
+///         label: "Site C".to_string(),
+///         password: "unique_pw".to_string(),
+///         has_username: true, has_url: true, has_totp: false,
+///         password_age_days: 10, days_until_expiry: None,
+///         is_expired: false, is_compromised: false,
+///     },
+/// ];
+///
+/// let dupes = detect_duplicates(&entries);
+/// assert_eq!(dupes.len(), 1);
+/// assert_eq!(dupes["shared_pw"].len(), 2);
+/// ```
 pub fn detect_duplicates(entries: &[EntryHealthData]) -> HashMap<String, Vec<String>> {
     let mut password_map: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -579,6 +648,77 @@ pub fn detect_duplicates(entries: &[EntryHealthData]) -> HashMap<String, Vec<Str
 
     // Only return duplicates (2+ entries with same password)
     password_map.into_iter().filter(|(_, v)| v.len() > 1).collect()
+}
+
+/// Severity level for password expiry notifications.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExpirySeverity {
+    /// Password has already expired.
+    Expired,
+    /// Less than 3 days until expiry.
+    Critical,
+    /// 3 to 7 days until expiry.
+    Warning,
+    /// 7 to 30 days until expiry.
+    Info,
+}
+
+/// A notification about an entry whose password is expiring or has expired.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpiryNotification {
+    /// The entry label.
+    pub label: String,
+    /// Days remaining until expiry (negative means already expired).
+    pub days_remaining: i64,
+    /// The severity of the expiry.
+    pub severity: ExpirySeverity,
+}
+
+/// Returns expiry notifications for entries that are expired or expiring within
+/// the given number of days.
+///
+/// Entries without a `days_until_expiry` value are skipped. The returned list
+/// is sorted by urgency (expired first, then by fewest days remaining).
+pub fn get_expiring_entries(entries: &[EntryHealthData], within_days: u32) -> Vec<ExpiryNotification> {
+    let mut notifications: Vec<ExpiryNotification> = entries
+        .iter()
+        .filter_map(|entry| {
+            // If the entry is already expired, always include it
+            if entry.is_expired {
+                let days_remaining = entry.days_until_expiry.unwrap_or(-1);
+                return Some(ExpiryNotification {
+                    label: entry.label.clone(),
+                    days_remaining,
+                    severity: ExpirySeverity::Expired,
+                });
+            }
+
+            // Otherwise check if it's expiring within the window
+            if let Some(days) = entry.days_until_expiry {
+                if days >= 0 && days <= within_days as i64 {
+                    let severity = if days < 3 {
+                        ExpirySeverity::Critical
+                    } else if days <= 7 {
+                        ExpirySeverity::Warning
+                    } else {
+                        ExpirySeverity::Info
+                    };
+                    return Some(ExpiryNotification {
+                        label: entry.label.clone(),
+                        days_remaining: days,
+                        severity,
+                    });
+                }
+            }
+
+            None
+        })
+        .collect();
+
+    // Sort: expired first (most negative), then by days remaining ascending
+    notifications.sort_by_key(|n| n.days_remaining);
+
+    notifications
 }
 
 #[cfg(test)]
@@ -903,5 +1043,155 @@ mod tests {
         assert_eq!(report.stats.expired_passwords, 0);
         assert_eq!(report.stats.with_2fa, 3);
         assert_eq!(report.stats.unique_passwords, 3);
+    }
+
+    // ========================================================================
+    // Expiry notification tests
+    // ========================================================================
+
+    fn make_expiry_entry(label: &str, days_until_expiry: Option<i64>, is_expired: bool) -> EntryHealthData {
+        EntryHealthData {
+            label: label.to_string(),
+            password: "Str0ng!P@ssw0rd#2024".to_string(),
+            has_username: true,
+            has_url: true,
+            has_totp: true,
+            password_age_days: 30,
+            days_until_expiry,
+            is_expired,
+            is_compromised: false,
+        }
+    }
+
+    #[test]
+    fn test_get_expiring_entries_expired() {
+        let entries = vec![
+            make_expiry_entry("Expired Account", Some(-5), true),
+        ];
+        let notifications = get_expiring_entries(&entries, 30);
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].label, "Expired Account");
+        assert_eq!(notifications[0].days_remaining, -5);
+        assert_eq!(notifications[0].severity, ExpirySeverity::Expired);
+    }
+
+    #[test]
+    fn test_get_expiring_entries_critical() {
+        let entries = vec![
+            make_expiry_entry("Almost Gone", Some(1), false),
+        ];
+        let notifications = get_expiring_entries(&entries, 30);
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].label, "Almost Gone");
+        assert_eq!(notifications[0].days_remaining, 1);
+        assert_eq!(notifications[0].severity, ExpirySeverity::Critical);
+    }
+
+    #[test]
+    fn test_get_expiring_entries_warning() {
+        let entries = vec![
+            make_expiry_entry("Expiring Soon", Some(5), false),
+        ];
+        let notifications = get_expiring_entries(&entries, 30);
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].severity, ExpirySeverity::Warning);
+    }
+
+    #[test]
+    fn test_get_expiring_entries_info() {
+        let entries = vec![
+            make_expiry_entry("Expiring Later", Some(15), false),
+        ];
+        let notifications = get_expiring_entries(&entries, 30);
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].severity, ExpirySeverity::Info);
+    }
+
+    #[test]
+    fn test_get_expiring_entries_outside_window() {
+        let entries = vec![
+            make_expiry_entry("Far Away", Some(60), false),
+        ];
+        // within_days=30, so 60 days out should not be included
+        let notifications = get_expiring_entries(&entries, 30);
+        assert!(notifications.is_empty());
+    }
+
+    #[test]
+    fn test_get_expiring_entries_no_expiry() {
+        let entries = vec![
+            make_expiry_entry("No Expiry", None, false),
+        ];
+        let notifications = get_expiring_entries(&entries, 30);
+        assert!(notifications.is_empty());
+    }
+
+    #[test]
+    fn test_get_expiring_entries_sorted_by_urgency() {
+        let entries = vec![
+            make_expiry_entry("Info Entry", Some(10), false),
+            make_expiry_entry("Expired Entry", Some(-3), true),
+            make_expiry_entry("Critical Entry", Some(1), false),
+            make_expiry_entry("Warning Entry", Some(5), false),
+        ];
+        let notifications = get_expiring_entries(&entries, 30);
+        assert_eq!(notifications.len(), 4);
+        // Should be sorted by days_remaining ascending: -3, 1, 5, 10
+        assert_eq!(notifications[0].label, "Expired Entry");
+        assert_eq!(notifications[1].label, "Critical Entry");
+        assert_eq!(notifications[2].label, "Warning Entry");
+        assert_eq!(notifications[3].label, "Info Entry");
+    }
+
+    #[test]
+    fn test_get_expiring_entries_empty_input() {
+        let notifications = get_expiring_entries(&[], 30);
+        assert!(notifications.is_empty());
+    }
+
+    #[test]
+    fn test_get_expiring_entries_mixed() {
+        let entries = vec![
+            make_expiry_entry("Healthy", Some(90), false),
+            make_expiry_entry("Expiring", Some(2), false),
+            make_expiry_entry("No Expiry Set", None, false),
+            make_expiry_entry("Dead", Some(-10), true),
+        ];
+        let notifications = get_expiring_entries(&entries, 7);
+        // "Healthy" is 90 days out (beyond 7-day window), "No Expiry Set" has no expiry
+        // Only "Dead" (expired) and "Expiring" (2 days, critical) should match
+        assert_eq!(notifications.len(), 2);
+        assert_eq!(notifications[0].label, "Dead");
+        assert_eq!(notifications[0].severity, ExpirySeverity::Expired);
+        assert_eq!(notifications[1].label, "Expiring");
+        assert_eq!(notifications[1].severity, ExpirySeverity::Critical);
+    }
+
+    #[test]
+    fn test_get_expiring_entries_boundary_values() {
+        let entries = vec![
+            make_expiry_entry("At Zero", Some(0), false),
+            make_expiry_entry("At Three", Some(3), false),
+            make_expiry_entry("At Seven", Some(7), false),
+            make_expiry_entry("At Eight", Some(8), false),
+        ];
+        let notifications = get_expiring_entries(&entries, 30);
+        assert_eq!(notifications.len(), 4);
+
+        // 0 days: Critical (< 3)
+        let at_zero = notifications.iter().find(|n| n.label == "At Zero").unwrap();
+        assert_eq!(at_zero.severity, ExpirySeverity::Critical);
+
+        // 3 days: Warning (3..=7)
+        let at_three = notifications.iter().find(|n| n.label == "At Three").unwrap();
+        assert_eq!(at_three.severity, ExpirySeverity::Warning);
+
+        // 7 days: Warning (3..=7)
+        let at_seven = notifications.iter().find(|n| n.label == "At Seven").unwrap();
+        assert_eq!(at_seven.severity, ExpirySeverity::Warning);
+
+        // 8 days: Info (> 7)
+        let at_eight = notifications.iter().find(|n| n.label == "At Eight").unwrap();
+        assert_eq!(at_eight.severity, ExpirySeverity::Info);
     }
 }

@@ -1,9 +1,11 @@
 {
   "name": "Lilypad",
   "category": "Security",
-  "platforms": ["windows", "linux"],
+  "platforms": ["windows", "linux", "macos"],
   "releaseFiles": {
     "windows": { "asset": "lilypad-desktop-windows.exe" },
-    "linux": { "asset": "lilypad-desktop-linux" }
+    "linux": { "asset": "lilypad-desktop-linux" },
+    "macos-x86_64": { "asset": "lilypad-desktop-macos-x86_64" },
+    "macos-aarch64": { "asset": "lilypad-desktop-macos-aarch64" }
   }
 }

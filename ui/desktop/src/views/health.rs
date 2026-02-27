@@ -143,10 +143,7 @@ pub fn view(
         {
             container(
                 column![
-                    text(icons::CIRCLE_CHECK)
-                        .size(32)
-                        .font(fonts::FONT_REGULAR)
-                        .color(palette.success),
+                    fonts::centered_icon_colored(icons::CIRCLE_CHECK, 32.0, palette.success),
                     Space::with_height(12),
                     text("All passwords are healthy!")
                         .size(14)
@@ -212,7 +209,7 @@ pub fn view(
         // Refresh button
         let refresh_btn = button(
             row![
-                text(icons::REFRESH).size(14).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::REFRESH, 14.0),
                 Space::with_width(8),
                 text("Refresh").size(14),
             ]
@@ -228,7 +225,7 @@ pub fn view(
         // Breach check button
         let breach_btn = button(
             row![
-                text(icons::SHIELD).size(14).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::SHIELD, 14.0),
                 Space::with_width(8),
                 text("Check Breaches").size(14),
             ]
@@ -262,10 +259,7 @@ pub fn view(
                     let label = entry_label.clone();
                     container(
                         row![
-                            text(icons::TRIANGLE_EXCLAMATION)
-                                .size(14)
-                                .font(fonts::FONT_REGULAR)
-                                .color(palette.danger),
+                            fonts::centered_icon_colored(icons::TRIANGLE_EXCLAMATION, 14.0, palette.danger),
                             Space::with_width(12),
                             text(label).size(14).color(palette.text_primary),
                             Space::with_width(Length::Fill),
@@ -340,7 +334,7 @@ pub fn view(
         // No report yet
         let analyze_btn = button(
             row![
-                text(icons::HEART_PULSE).size(16).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icons::HEART_PULSE, 16.0),
                 Space::with_width(8),
                 text("Analyze Passwords").size(15),
             ]
@@ -360,7 +354,7 @@ pub fn view(
             Space::with_height(48),
             container(
                 column![
-                    text(icons::HEART_PULSE).size(64).font(fonts::FONT_REGULAR),
+                    fonts::centered_icon(icons::HEART_PULSE, 64.0),
                     Space::with_height(24),
                     text("Analyze Your Passwords")
                         .size(18)
@@ -422,7 +416,7 @@ fn stat_card(
     container(
         column![
             row![
-                text(icon).size(20).font(fonts::FONT_REGULAR),
+                fonts::centered_icon(icon, 20.0),
                 Space::with_width(Length::Fill),
             ],
             Space::with_height(12),

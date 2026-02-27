@@ -62,6 +62,28 @@ pub type ValidationResult<T> = Result<T, ValidationError>;
 ///
 /// # Returns
 /// Ok(()) if valid, or a ValidationError describing the issue.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::validate_vault_name;
+///
+/// // Valid vault names
+/// assert!(validate_vault_name("my-vault").is_ok());
+/// assert!(validate_vault_name("vault_2024").is_ok());
+///
+/// // Empty names are rejected
+/// assert!(validate_vault_name("").is_err());
+///
+/// // Path traversal is rejected
+/// assert!(validate_vault_name("../etc").is_err());
+///
+/// // Hidden files (starting with dot) are rejected
+/// assert!(validate_vault_name(".hidden").is_err());
+///
+/// // Special characters are rejected
+/// assert!(validate_vault_name("vault@home").is_err());
+/// ```
 pub fn validate_vault_name(name: &str) -> ValidationResult<()> {
     let name = name.trim();
 
@@ -117,6 +139,21 @@ pub fn validate_vault_name(name: &str) -> ValidationResult<()> {
 ///
 /// # Returns
 /// Ok(()) if all sizes are within limits, or a ValidationError.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::validate_entry_size;
+///
+/// // Normal sizes pass validation
+/// assert!(validate_entry_size(100, 500, 1024).is_ok());
+///
+/// // Zero sizes are fine
+/// assert!(validate_entry_size(0, 0, 0).is_ok());
+///
+/// // An oversized password is rejected
+/// assert!(validate_entry_size(11 * 1024, 0, 0).is_err());
+/// ```
 pub fn validate_entry_size(
     password_len: usize,
     notes_len: usize,
@@ -346,6 +383,20 @@ pub fn validate_password_strength(password: &str) -> PasswordStrength {
 }
 
 /// Checks if a password has weak patterns without full strength evaluation.
+///
+/// Detects keyboard patterns (e.g. "qwerty"), sequential characters
+/// (e.g. "abcd"), and repeated characters (e.g. "aaaa").
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::has_weak_patterns;
+///
+/// assert!(has_weak_patterns("qwerty123"));
+/// assert!(has_weak_patterns("abcdefgh"));
+/// assert!(has_weak_patterns("aaaa1234"));
+/// assert!(!has_weak_patterns("xK9#mP2$vL"));
+/// ```
 pub fn has_weak_patterns(password: &str) -> bool {
     contains_keyboard_pattern(password)
         || has_sequential_chars(password, 4)
@@ -361,6 +412,21 @@ pub fn has_weak_patterns(password: &str) -> bool {
 ///
 /// # Returns
 /// Ok(()) if valid, or a ValidationError.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::validation::validate_label;
+///
+/// // A valid label within the length limit
+/// assert!(validate_label("My Entry", "entry name", 256).is_ok());
+///
+/// // Empty labels are rejected
+/// assert!(validate_label("", "tag", 64).is_err());
+///
+/// // Labels exceeding max_length are rejected
+/// assert!(validate_label("very-long-name", "tag", 5).is_err());
+/// ```
 pub fn validate_label(label: &str, field_name: &str, max_length: usize) -> ValidationResult<()> {
     let label = label.trim();
 

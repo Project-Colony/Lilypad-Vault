@@ -18,11 +18,12 @@ use lilypad_common::{
     EntryHealthData, HealthReport, PasswordStrength,
 };
 use lilypad_core::{
-    decrypt, default_config, derive_key, encrypt, AppConfig, CryptoAlgorithm, Entry,
+    decrypt, default_config, derive_key, encrypt, AppConfig, CryptoAlgorithm, CustomField, Entry,
     EntryMetadata, EntrySecret, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
 };
 use lilypad_storage::LocalStore;
 use rand::Rng;
+use totp_rs::{Algorithm, Secret, TOTP};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -46,11 +47,13 @@ struct TuiEntry {
     email: String,
     phone: String,
     totp_secret: Option<String>,
+    custom_fields: Vec<CustomField>,
     tags: Vec<String>,
     folder: Option<String>,
     updated_at: u64,
     is_favorite: bool,
     password_strength: PasswordStrength,
+    entry_type: String,
 }
 
 impl Drop for TuiEntry {
@@ -75,6 +78,8 @@ enum AppState {
     GeneratePassword,
     SelectVault,
     HealthDashboard,
+    FilterByFolder,
+    ExportVault,
 }
 
 /// Input field focus for add/edit forms
@@ -142,6 +147,14 @@ struct App {
     // Health
     health_report: Option<HealthReport>,
 
+    // Folder filter
+    folder_filter: Option<String>,
+    available_folders: Vec<String>,
+    folder_list_state: ListState,
+
+    // Export
+    export_path: String,
+
     // UI state
     show_password: bool,
     should_quit: bool,
@@ -203,6 +216,10 @@ impl App {
             clipboard_timeout: None,
             clipboard_value: None,
             health_report: None,
+            folder_filter: None,
+            available_folders: Vec::new(),
+            folder_list_state: ListState::default(),
+            export_path: String::new(),
             show_password: false,
             should_quit: false,
             vault_list_state: ListState::default(),
@@ -287,6 +304,7 @@ impl App {
         self.vault_key = Some(key);
         self.state = AppState::Unlocked;
         self.update_filtered_indices();
+        self.collect_folders();
         self.refresh_health();
         self.entry_list_state.select(if self.filtered_indices.is_empty() {
             None
@@ -316,6 +334,8 @@ impl App {
             let url = entry.metadata.url.clone().unwrap_or_default();
             let strength = validate_password_strength(&secret.password);
 
+            let entry_type = format!("{:?}", entry.metadata.entry_type);
+
             entries.push(TuiEntry {
                 label: entry.label.clone(),
                 username,
@@ -325,11 +345,13 @@ impl App {
                 email: secret.email.unwrap_or_default(),
                 phone: secret.phone.unwrap_or_default(),
                 totp_secret: secret.totp_secret,
+                custom_fields: secret.custom_fields,
                 tags: entry.metadata.tags.clone(),
                 folder: entry.metadata.folder.clone(),
                 updated_at: entry.updated_at,
                 is_favorite: entry.is_favorite,
                 password_strength: strength,
+                entry_type,
             });
         }
 
@@ -338,23 +360,121 @@ impl App {
     }
 
     fn update_filtered_indices(&mut self) {
-        if self.search_query.is_empty() {
-            self.filtered_indices = (0..self.entries.len()).collect();
-        } else {
-            let query = self.search_query.to_lowercase();
-            self.filtered_indices = self
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(_, e)| {
-                    e.label.to_lowercase().contains(&query)
+        self.filtered_indices = self
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| {
+                // Folder filter
+                if let Some(ref folder) = self.folder_filter {
+                    match &e.folder {
+                        Some(f) if f == folder => {}
+                        _ => return false,
+                    }
+                }
+                // Search query
+                if !self.search_query.is_empty() {
+                    let query = self.search_query.to_lowercase();
+                    if !(e.label.to_lowercase().contains(&query)
                         || e.username.to_lowercase().contains(&query)
                         || e.url.to_lowercase().contains(&query)
                         || e.tags.iter().any(|t| t.to_lowercase().contains(&query))
-                })
-                .map(|(i, _)| i)
-                .collect();
+                        || e.custom_fields.iter().any(|cf| {
+                            cf.name.to_lowercase().contains(&query)
+                                || cf.value.to_lowercase().contains(&query)
+                        }))
+                    {
+                        return false;
+                    }
+                }
+                true
+            })
+            .map(|(i, _)| i)
+            .collect();
+    }
+
+    fn collect_folders(&mut self) {
+        let mut folders: Vec<String> = self
+            .entries
+            .iter()
+            .filter_map(|e| e.folder.clone())
+            .collect();
+        folders.sort();
+        folders.dedup();
+        self.available_folders = folders;
+    }
+
+    fn generate_totp_code(secret: &str) -> Option<String> {
+        let decoded = Secret::Encoded(secret.to_string()).to_bytes();
+        if let Ok(bytes) = decoded {
+            let totp = TOTP::new(Algorithm::SHA1, 6, 1, 30, bytes);
+            if let Ok(t) = totp {
+                return t.generate_current().ok();
+            }
         }
+        None
+    }
+
+    fn export_vault_json(&self, path: &str) -> Result<()> {
+        let vault = self
+            .vault
+            .as_ref()
+            .ok_or_else(|| anyhow!("vault not loaded"))?;
+        let key = self
+            .vault_key
+            .as_ref()
+            .ok_or_else(|| anyhow!("vault not unlocked"))?;
+
+        let mut export_entries = Vec::new();
+        for entry in &vault.entries {
+            let plaintext = decrypt(key, &entry.ciphertext)?;
+            let secret: EntrySecret = serde_json::from_slice(&plaintext)?;
+            export_entries.push(serde_json::json!({
+                "label": entry.label,
+                "username": entry.metadata.username,
+                "password": secret.password,
+                "url": entry.metadata.url,
+                "notes": secret.notes,
+                "email": secret.email,
+                "phone": secret.phone,
+                "tags": entry.metadata.tags,
+                "folder": entry.metadata.folder,
+                "entry_type": format!("{:?}", entry.metadata.entry_type),
+                "custom_fields": secret.custom_fields.iter().map(|cf| {
+                    serde_json::json!({"name": cf.name, "value": cf.value})
+                }).collect::<Vec<_>>(),
+            }));
+        }
+
+        let json = serde_json::to_string_pretty(&serde_json::json!({
+            "vault_name": vault.name,
+            "exported_at": lilypad_common::current_timestamp(),
+            "entries": export_entries,
+        }))?;
+
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    fn export_vault_csv(&self, path: &str) -> Result<()> {
+        let mut wtr = csv::Writer::from_path(path)?;
+        wtr.write_record(["label", "username", "password", "url", "notes", "email", "tags", "folder"])?;
+
+        for entry in &self.entries {
+            wtr.write_record([
+                &entry.label,
+                &entry.username,
+                &entry.password,
+                &entry.url,
+                &entry.notes,
+                &entry.email,
+                &entry.tags.join(";"),
+                entry.folder.as_deref().unwrap_or(""),
+            ])?;
+        }
+
+        wtr.flush()?;
+        Ok(())
     }
 
     fn selected_entry_index(&self) -> Option<usize> {
@@ -630,6 +750,8 @@ impl App {
             AppState::GeneratePassword => self.handle_generator_input(key),
             AppState::SelectVault => self.handle_vault_select_input(key),
             AppState::HealthDashboard => self.handle_health_input(key),
+            AppState::FilterByFolder => self.handle_folder_filter_input(key),
+            AppState::ExportVault => self.handle_export_input(key),
         }
     }
 
@@ -733,6 +855,36 @@ impl App {
                 self.refresh_health();
                 self.state = AppState::HealthDashboard;
             }
+            KeyCode::Char('F') => {
+                self.collect_folders();
+                if !self.available_folders.is_empty() {
+                    self.folder_list_state.select(Some(0));
+                    self.state = AppState::FilterByFolder;
+                } else {
+                    self.set_status("No folders defined");
+                }
+            }
+            KeyCode::Char('x') => {
+                self.export_path.clear();
+                self.state = AppState::ExportVault;
+            }
+            KeyCode::Char('t') => {
+                // Generate and copy TOTP code for selected entry
+                if let Some(idx) = self.selected_entry_index() {
+                    if let Some(entry) = self.entries.get(idx) {
+                        if let Some(ref secret) = entry.totp_secret {
+                            if let Some(code) = Self::generate_totp_code(secret) {
+                                self.copy_to_clipboard(&code);
+                                self.set_status(format!("TOTP code: {}", code));
+                            } else {
+                                self.set_status("Failed to generate TOTP code");
+                            }
+                        } else {
+                            self.set_status("No TOTP configured for this entry");
+                        }
+                    }
+                }
+            }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.select_previous();
             }
@@ -765,6 +917,18 @@ impl App {
                     if let Some(username) = username {
                         if !username.is_empty() {
                             self.copy_to_clipboard(&username);
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('t') => {
+                if let Some(idx) = self.selected_entry_index() {
+                    if let Some(entry) = self.entries.get(idx) {
+                        if let Some(ref secret) = entry.totp_secret {
+                            if let Some(code) = Self::generate_totp_code(secret) {
+                                self.copy_to_clipboard(&code);
+                                self.set_status(format!("TOTP code: {}", code));
+                            }
                         }
                     }
                 }
@@ -915,6 +1079,81 @@ impl App {
         }
     }
 
+    fn handle_folder_filter_input(&mut self, key: event::KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.state = AppState::Unlocked;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let i = self.folder_list_state.selected().unwrap_or(0);
+                if i > 0 {
+                    self.folder_list_state.select(Some(i - 1));
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let i = self.folder_list_state.selected().unwrap_or(0);
+                // +1 for the "All (no filter)" option
+                if i < self.available_folders.len() {
+                    self.folder_list_state.select(Some(i + 1));
+                }
+            }
+            KeyCode::Enter => {
+                if let Some(i) = self.folder_list_state.selected() {
+                    if i == 0 {
+                        // "All" option - remove filter
+                        self.folder_filter = None;
+                        self.set_status("Folder filter cleared");
+                    } else if let Some(folder) = self.available_folders.get(i - 1).cloned() {
+                        self.folder_filter = Some(folder.clone());
+                        self.set_status(format!("Filtering by folder: {}", folder));
+                    }
+                    self.update_filtered_indices();
+                    self.entry_list_state.select(if self.filtered_indices.is_empty() {
+                        None
+                    } else {
+                        Some(0)
+                    });
+                }
+                self.state = AppState::Unlocked;
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_export_input(&mut self, key: event::KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.state = AppState::Unlocked;
+            }
+            KeyCode::Enter => {
+                let path = self.export_path.trim().to_string();
+                if path.is_empty() {
+                    self.set_status("Export path cannot be empty");
+                } else if path.ends_with(".csv") {
+                    match self.export_vault_csv(&path) {
+                        Ok(()) => self.set_status(format!("Exported {} entries to {}", self.entries.len(), path)),
+                        Err(e) => self.set_status(format!("Export failed: {}", e)),
+                    }
+                    self.state = AppState::Unlocked;
+                } else {
+                    let path = if path.ends_with(".json") { path } else { format!("{}.json", path) };
+                    match self.export_vault_json(&path) {
+                        Ok(()) => self.set_status(format!("Exported {} entries to {}", self.entries.len(), path)),
+                        Err(e) => self.set_status(format!("Export failed: {}", e)),
+                    }
+                    self.state = AppState::Unlocked;
+                }
+            }
+            KeyCode::Char(c) => {
+                self.export_path.push(c);
+            }
+            KeyCode::Backspace => {
+                self.export_path.pop();
+            }
+            _ => {}
+        }
+    }
+
     fn handle_form_input(&mut self, key: event::KeyEvent) {
         match key.code {
             KeyCode::Esc => {
@@ -1032,6 +1271,14 @@ impl App {
                 self.draw_vault_select_popup(frame);
             }
             AppState::HealthDashboard => self.draw_health_screen(frame),
+            AppState::FilterByFolder => {
+                self.draw_unlocked_screen(frame);
+                self.draw_folder_filter_popup(frame);
+            }
+            AppState::ExportVault => {
+                self.draw_unlocked_screen(frame);
+                self.draw_export_popup(frame);
+            }
         }
     }
 
@@ -1085,17 +1332,24 @@ impl App {
             ])
             .split(area);
 
-        // Header with vault name and search indicator
+        // Header with vault name, search, and filter indicators
+        let folder_info = self
+            .folder_filter
+            .as_ref()
+            .map(|f| format!(" [folder: {}]", f))
+            .unwrap_or_default();
         let header_text = if self.search_query.is_empty() {
             format!(
-                "Lilypad - {} ({} entries)",
+                "Lilypad - {}{} ({} entries)",
                 self.active_vault,
-                self.entries.len()
+                folder_info,
+                self.filtered_indices.len()
             )
         } else {
             format!(
-                "Lilypad - {} (search: '{}', {} results)",
+                "Lilypad - {}{} (search: '{}', {} results)",
                 self.active_vault,
+                folder_info,
                 self.search_query,
                 self.filtered_indices.len()
             )
@@ -1172,7 +1426,7 @@ impl App {
 
         // Footer
         let help_text =
-            "a:Add e:Edit d:Del c:Copy u:User f:Fav /:Search g:PwGen v:Vault h:Health ?:Help q:Quit";
+            "a:Add e:Edit d:Del c:Copy u:User f:Fav t:TOTP /:Search g:Gen v:Vault F:Folder x:Export h:Health ?:Help";
         let status_text = self.status_message.as_deref().unwrap_or(help_text);
         let help = Paragraph::new(status_text)
             .style(Style::default().fg(Color::DarkGray))
@@ -1251,9 +1505,14 @@ impl App {
         frame.render_widget(Clear, popup_area);
 
         let fav_marker = if entry.is_favorite { " *" } else { "" };
+        let type_marker = if entry.entry_type != "Login" {
+            format!(" [{}]", entry.entry_type)
+        } else {
+            String::new()
+        };
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(format!(" {}{} ", entry.label, fav_marker))
+            .title(format!(" {}{}{} ", entry.label, fav_marker, type_marker))
             .style(Style::default().fg(Color::Cyan));
 
         let inner = block.inner(popup_area);
@@ -1311,14 +1570,36 @@ impl App {
             ]));
         }
 
-        lines.push(Line::from(vec![
-            Span::styled("TOTP: ", Style::default().add_modifier(Modifier::BOLD)),
-            if entry.totp_secret.is_some() {
-                Span::styled("Configured", Style::default().fg(Color::Green))
-            } else {
-                Span::styled("Not configured", Style::default().fg(Color::DarkGray))
-            },
-        ]));
+        // TOTP with live code
+        if let Some(ref secret) = entry.totp_secret {
+            let code_display = Self::generate_totp_code(secret)
+                .unwrap_or_else(|| "Error".to_string());
+            lines.push(Line::from(vec![
+                Span::styled("TOTP: ".to_string(), Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled(code_display, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(" (t to copy)".to_string(), Style::default().fg(Color::DarkGray)),
+            ]));
+        } else {
+            lines.push(Line::from(vec![
+                Span::styled("TOTP: ".to_string(), Style::default().add_modifier(Modifier::BOLD)),
+                Span::styled("Not configured".to_string(), Style::default().fg(Color::DarkGray)),
+            ]));
+        }
+
+        // Custom fields
+        if !entry.custom_fields.is_empty() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "Custom Fields:",
+                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+            )));
+            for cf in &entry.custom_fields {
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  {}: ", cf.name), Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(&cf.value),
+                ]));
+            }
+        }
 
         if !entry.notes.is_empty() {
             lines.push(Line::from(vec![
@@ -1348,7 +1629,7 @@ impl App {
         ]));
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "p:Toggle Password | c:Copy Password | u:Copy Username | e:Edit | Esc:Close",
+            "p:Toggle Password | c:Copy Password | u:Copy Username | t:Copy TOTP | e:Edit | Esc:Close",
             Style::default().fg(Color::DarkGray),
         )));
 
@@ -1447,9 +1728,12 @@ impl App {
             Line::from("  u       Copy username to clipboard"),
             Line::from("  f       Toggle favorite"),
             Line::from("  Enter   View entry details"),
+            Line::from("  t       Copy TOTP code"),
             Line::from("  /       Search entries"),
             Line::from("  g       Password generator"),
             Line::from("  v       Switch vault"),
+            Line::from("  F       Filter by folder"),
+            Line::from("  x       Export vault (JSON/CSV)"),
             Line::from("  h       Health dashboard"),
             Line::from("  ?       This help screen"),
             Line::from("  j/k     Navigate up/down"),
@@ -1462,6 +1746,7 @@ impl App {
             Line::from("  p       Toggle password visibility"),
             Line::from("  c       Copy password"),
             Line::from("  u       Copy username"),
+            Line::from("  t       Copy TOTP code"),
             Line::from("  e       Edit entry"),
             Line::from("  Esc     Close"),
             Line::from(""),
@@ -1776,6 +2061,83 @@ impl App {
         )));
 
         let paragraph = Paragraph::new(lines).wrap(Wrap { trim: false });
+        frame.render_widget(paragraph, inner);
+    }
+
+    fn draw_folder_filter_popup(&mut self, frame: &mut Frame) {
+        let area = frame.area();
+        let popup_area = centered_rect(40, 40, area);
+        frame.render_widget(Clear, popup_area);
+
+        let mut items: Vec<ListItem> = vec![ListItem::new(Line::from(vec![
+            Span::styled("All", Style::default().add_modifier(Modifier::BOLD)),
+            if self.folder_filter.is_none() {
+                Span::styled(" (active)", Style::default().fg(Color::Green))
+            } else {
+                Span::raw("")
+            },
+        ]))];
+
+        for folder in &self.available_folders {
+            let is_active = self.folder_filter.as_deref() == Some(folder);
+            items.push(ListItem::new(Line::from(vec![
+                Span::raw(format!("  {}", folder)),
+                if is_active {
+                    Span::styled(" (active)", Style::default().fg(Color::Green))
+                } else {
+                    Span::raw("")
+                },
+            ])));
+        }
+
+        let list = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Filter by Folder ")
+                    .style(Style::default().fg(Color::Cyan)),
+            )
+            .highlight_style(
+                Style::default()
+                    .bg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol("> ");
+        frame.render_stateful_widget(list, popup_area, &mut self.folder_list_state);
+    }
+
+    fn draw_export_popup(&self, frame: &mut Frame) {
+        let area = frame.area();
+        let popup_area = centered_rect(60, 25, area);
+        frame.render_widget(Clear, popup_area);
+
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Export Vault ")
+            .style(Style::default().fg(Color::Cyan));
+
+        let inner = block.inner(popup_area);
+        frame.render_widget(block, popup_area);
+
+        let lines = vec![
+            Line::from(""),
+            Line::from(Span::styled(
+                "Enter file path (.json or .csv):",
+                Style::default().add_modifier(Modifier::BOLD),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                &self.export_path,
+                Style::default().fg(Color::Yellow),
+            )),
+            Line::from(""),
+            Line::from(Span::styled(
+                "Enter: Export | Esc: Cancel",
+                Style::default().fg(Color::DarkGray),
+            )),
+        ];
+
+        let paragraph = Paragraph::new(lines);
         frame.render_widget(paragraph, inner);
     }
 }

@@ -17,7 +17,7 @@
 //!        ▼
 //! ┌─────────────────────────────────────────────┐
 //! │  Private Repo: lilypad-vault-{user}         │
-//! │  ├── vault.encrypted (encrypted data)       │
+//! │  ├── vault.lily (encrypted data)             │
 //! │  ├── .lilypad-meta (sync metadata)          │
 //! │  └── README.md (optional)                   │
 //! └─────────────────────────────────────────────┘
@@ -59,7 +59,7 @@ pub const DEFAULT_GITHUB_SCOPES: &[&str] = &["repo", "read:user"];
 pub const VAULT_REPO_PREFIX: &str = "lilypad-vault";
 
 /// Vault data filename in the repository.
-pub const VAULT_DATA_FILENAME: &str = "vault.encrypted";
+pub const VAULT_DATA_FILENAME: &str = "vault.lily";
 
 /// Sync metadata filename in the repository.
 pub const SYNC_META_FILENAME: &str = ".lilypad-meta";

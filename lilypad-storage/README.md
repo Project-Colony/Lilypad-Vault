@@ -1,20 +1,20 @@
 # lilypad-storage
 
-Abstraction de stockage pour Lilypad. Cette crate prépare les primitives pour
-brancher des backends (local, distant, etc.).
+Local and remote storage abstraction for Lilypad. This crate handles encrypted
+vault persistence on disk and exposes the interface consumed by sync backends.
 
-## Format de stockage
+## Storage Format
 
-Le stockage local est un fichier JSON chiffré. Le contenu du coffre (vault) est
-sérialisé en JSON, puis chiffré avec XChaCha20-Poly1305 avant d'être écrit sur
-disque. Le format est versionné pour permettre des migrations futures.
+Local storage uses an encrypted file format. Vault contents are serialized to
+JSON, encrypted with XChaCha20-Poly1305, and written to disk. The format is
+versioned to support future migrations.
 
-Structure d'un fichier de coffre (`<data_dir>/vaults/<nom>.lily`) :
+Vault file location: `<data_dir>/vaults/<name>.lily`
 
-Le fichier commence par un en-tête magique `LILYPAD_VAULT_V1` suivi d'une ligne
-lisible indiquant qu'il s'agit d'un coffre chiffré, puis du JSON chiffré. Les
-fichiers `.json` existants restent pris en charge pour compatibilité, mais les
-nouveaux coffres sont écrits en `.lily`.
+The file starts with a `LILYPAD_VAULT_V1` magic header followed by a
+human-readable marker indicating the file is an encrypted vault, then the
+encrypted JSON payload. Legacy `.json` files are still supported for backward
+compatibility, but new vaults are always written as `.lily`.
 
 ```json
 {
@@ -24,22 +24,22 @@ nouveaux coffres sont écrits en `.lily`.
     "algorithm": "XChaCha20-Poly1305"
   },
   "ciphertext": {
-    "nonce": [/* 24 octets */],
-    "data": [/* octets chiffrés */]
+    "nonce": [/* 24 bytes */],
+    "data": [/* encrypted bytes */]
   }
 }
 ```
 
-Le payload chiffré contient le vault complet (nom, entrées, etc.), donc aucune
-entrée n'est stockée en clair.
+The encrypted payload contains the full vault (name, entries, metadata), so no
+entry data is stored in plaintext.
 
-## Synchronisation
+## Remote Synchronization
 
-L'interface de synchronisation est exposée via le trait `SyncBackend`. Le
-backend GitHub est implémenté dans la crate `lilypad-oauth` et permet
-d'envoyer/récupérer les blobs de coffre chiffrés vers un dépôt privé GitHub.
-Voir `lilypad-oauth` pour les détails d'authentification OAuth et la gestion
-des conflits.
+Remote sync is fully implemented via the `lilypad-oauth` crate. The GitHub
+backend pushes and pulls encrypted vault blobs to a private repository
+(`lilypad-vault-<username>`), with SHA-based conflict detection, device
+tracking, and `--force` resolution. See `lilypad-oauth` for OAuth
+authentication details and conflict management.
 
 ## Usage
 

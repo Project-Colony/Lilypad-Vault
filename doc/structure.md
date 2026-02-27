@@ -7,17 +7,17 @@ Lilypad must be organized as a modular Rust codebase rather than a single monoli
 - **Module-first organization**: Group related code into clearly named modules and folders (e.g., `config/`, `storage/`, `crypto/`, `ui/`). Avoid mixing unrelated concerns in the same module.
 - **Concern separation**: Each major concern should live in its own folder or crate so teams can evolve features independently without creating tight coupling.
 
-## Suggested Layout
-- `config/`: Configuration loading, validation, and environment integration.
-- `storage/`: Persistence layers for vaults (file-based first, remote or sync backends later).
-- `crypto/`: Key derivation, encryption/decryption routines, secure random utilities, and integrity checks.
-- `ui/`: User-facing interfaces such as CLI, TUI, or desktop frontends that orchestrate core operations.
-- `core/` or `domain/`: Data models, vault domain logic, and shared services used across interfaces and storage.
-- `shared/` or `utils/`: Cross-cutting utilities (logging, telemetry, error handling) that should stay minimal to avoid dependency sprawl.
+## Current Layout
 
-Within the `ui/` area, subfolders exist per interface type:
-- `ui/tui/`: Terminal UI built with `ratatui` and `crossterm`.
-- `ui/desktop/`: Desktop GUI built with `iced`, including theming, multi-vault, GitHub sync, health dashboard, and password generator.
+The workspace contains seven crates:
+
+- `lilypad-core/`: Cryptographic workflows (XChaCha20-Poly1305, Argon2id key derivation), data models (Vault, Entry, EntryMetadata, EntrySecret), domain services, and error types.
+- `lilypad-storage/`: Encrypted local persistence with versioned `.lily` file format, backup/restore, and the storage interface consumed by sync backends.
+- `lilypad-common/`: Shared utilities — clipboard management, password health analysis (HIBP breach check, strength scoring), advanced search engine, input validation, timestamp formatting, and key file management.
+- `lilypad-oauth/`: GitHub OAuth (Device Flow and Authorization Code Flow), token management, and encrypted vault sync backend with conflict detection and multi-device support.
+- `lilypad-cli/`: Full-featured command-line interface with 40+ commands covering vault management, entry CRUD, import/export (8 formats), backup, audit, and sync operations.
+- `ui/tui/`: Terminal UI built with `ratatui` and `crossterm`, offering keyboard-driven vault management with multi-vault, search, password generation, health dashboard, and TOTP support.
+- `ui/desktop/`: Desktop GUI built with `iced` (~10k lines), featuring multi-step onboarding, multi-vault support, theme switching (3 themes), health dashboard with breach detection, password generator, GitHub OAuth sync, import/export, backup/restore, master password rotation, and entry history.
 
 ## Folder Documentation Convention
 Every folder must contain a short Markdown file named after the folder. Each of these files should:

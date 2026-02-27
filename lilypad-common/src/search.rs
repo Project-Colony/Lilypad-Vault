@@ -104,6 +104,23 @@ pub struct SearchFilter {
 
 impl SearchFilter {
     /// Creates a new empty search filter.
+    ///
+    /// The returned filter matches all entries and can be refined with
+    /// the builder methods.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lilypad_common::SearchFilter;
+    ///
+    /// let filter = SearchFilter::new()
+    ///     .with_query("github")
+    ///     .with_tag("dev")
+    ///     .favorites_only();
+    ///
+    /// assert_eq!(filter.query.as_deref(), Some("github"));
+    /// assert!(filter.favorites_only);
+    /// ```
     pub fn new() -> Self {
         Self::default()
     }
@@ -232,11 +249,141 @@ pub struct SearchResult {
     pub has_more: bool,
 }
 
+/// Result of a fuzzy match attempt.
+#[derive(Debug, Clone)]
+pub struct FuzzyMatchResult {
+    /// The label of the matched entry.
+    pub label: String,
+    /// Relevance score (higher = better match). 0 means no match.
+    pub score: u32,
+}
+
+/// Performs a fuzzy match of `query` against `text`.
+///
+/// Characters from the query must appear in `text` in order but not necessarily
+/// consecutively. Returns a relevance score (higher = better). A score of 0
+/// means the query does not match the text at all.
+///
+/// Scoring:
+/// - Base points for each matched character.
+/// - Bonus for consecutive character matches.
+/// - Bonus for matching at the start of the text.
+/// - Bonus for matching at the start of a word (after a non-alphanumeric char).
+/// - Penalty for large gaps between matched characters.
+pub fn fuzzy_match(query: &str, text: &str) -> u32 {
+    let query_lower: Vec<char> = query.to_lowercase().chars().collect();
+    let text_lower: Vec<char> = text.to_lowercase().chars().collect();
+
+    if query_lower.is_empty() {
+        return 0;
+    }
+
+    if text_lower.is_empty() {
+        return 0;
+    }
+
+    let mut query_idx = 0;
+    let mut score: u32 = 0;
+    let mut prev_match_idx: Option<usize> = None;
+    let mut first_match = true;
+
+    for (text_idx, &ch) in text_lower.iter().enumerate() {
+        if query_idx >= query_lower.len() {
+            break;
+        }
+
+        if ch == query_lower[query_idx] {
+            // Base score for each matched character
+            score += 10;
+
+            // Bonus for matching at start of text
+            if text_idx == 0 && first_match {
+                score += 15;
+            }
+
+            // Bonus for matching at start of a word (after space, hyphen, underscore, etc.)
+            if text_idx > 0 && !text_lower[text_idx - 1].is_alphanumeric() {
+                score += 10;
+            }
+
+            // Bonus for consecutive matches
+            if let Some(prev) = prev_match_idx {
+                if text_idx == prev + 1 {
+                    score += 15;
+                } else {
+                    // Penalty for gap between matches (larger gap = larger penalty)
+                    let gap = (text_idx - prev - 1) as u32;
+                    score = score.saturating_sub(gap.min(5));
+                }
+            }
+
+            prev_match_idx = Some(text_idx);
+            query_idx += 1;
+            first_match = false;
+        }
+    }
+
+    // If we did not match all query characters, no match
+    if query_idx < query_lower.len() {
+        return 0;
+    }
+
+    // Bonus for shorter texts (tighter match)
+    if text_lower.len() < 20 {
+        score += (20 - text_lower.len() as u32) / 2;
+    }
+
+    score
+}
+
 /// Advanced search engine for vault entries.
 pub struct AdvancedSearch;
 
 impl AdvancedSearch {
     /// Searches entries using the given filter.
+    ///
+    /// Applies every active predicate in the filter, sorts the results,
+    /// and returns a paginated [`SearchResult`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lilypad_common::search::{AdvancedSearch, SearchableEntry, SearchFilter};
+    ///
+    /// let entries = vec![
+    ///     SearchableEntry {
+    ///         label: "Gmail".to_string(),
+    ///         username: Some("user@gmail.com".to_string()),
+    ///         url: Some("https://mail.google.com".to_string()),
+    ///         entry_type: "Login".to_string(),
+    ///         tags: vec!["email".to_string()],
+    ///         folder: None, is_favorite: false, has_totp: false,
+    ///         has_attachments: false, notes: None,
+    ///         created_at: 1000, updated_at: 2000,
+    ///         last_accessed_at: None, access_count: 0,
+    ///         password_age_days: 10, days_until_expiry: None,
+    ///         is_expired: false, is_weak_password: false, color: None,
+    ///     },
+    ///     SearchableEntry {
+    ///         label: "GitHub".to_string(),
+    ///         username: Some("dev".to_string()),
+    ///         url: Some("https://github.com".to_string()),
+    ///         entry_type: "Login".to_string(),
+    ///         tags: vec!["dev".to_string()],
+    ///         folder: None, is_favorite: false, has_totp: false,
+    ///         has_attachments: false, notes: None,
+    ///         created_at: 1000, updated_at: 2000,
+    ///         last_accessed_at: None, access_count: 0,
+    ///         password_age_days: 10, days_until_expiry: None,
+    ///         is_expired: false, is_weak_password: false, color: None,
+    ///     },
+    /// ];
+    ///
+    /// let filter = SearchFilter::new().with_query("git");
+    /// let result = AdvancedSearch::search(&entries, &filter);
+    /// assert_eq!(result.total_count, 1);
+    /// assert_eq!(result.entries[0], "GitHub");
+    /// ```
     pub fn search(entries: &[SearchableEntry], filter: &SearchFilter) -> SearchResult {
         let mut matching: Vec<&SearchableEntry> = entries
             .iter()
@@ -454,6 +601,93 @@ impl AdvancedSearch {
                 SortOrder::Descending => cmp.reverse(),
             }
         });
+    }
+
+    /// Performs a fuzzy search as a fallback when substring matching yields no results.
+    ///
+    /// First attempts the standard substring search. If no results are found and a
+    /// text query is provided, falls back to fuzzy matching against the entry label,
+    /// username, and URL. Results are sorted by fuzzy relevance score (best first).
+    pub fn fuzzy_search(entries: &[SearchableEntry], filter: &SearchFilter) -> SearchResult {
+        // First try the normal search
+        let normal_result = Self::search(entries, filter);
+        if normal_result.total_count > 0 {
+            return normal_result;
+        }
+
+        // If there's no query, fuzzy search doesn't apply
+        let query = match &filter.query {
+            Some(q) if !q.is_empty() => q.clone(),
+            _ => return normal_result,
+        };
+
+        // Build a filter without the text query so we can apply all other filters
+        let mut filter_without_query = filter.clone();
+        filter_without_query.query = None;
+
+        // Collect entries that pass all non-query filters
+        let candidates: Vec<&SearchableEntry> = entries
+            .iter()
+            .filter(|entry| Self::matches_filter(entry, &filter_without_query))
+            .collect();
+
+        // Score each candidate with fuzzy match
+        let mut scored: Vec<(&SearchableEntry, u32)> = candidates
+            .into_iter()
+            .filter_map(|entry| {
+                // Try fuzzy match against label, username, and URL; take best score
+                let label_score = fuzzy_match(&query, &entry.label);
+                let username_score = entry
+                    .username
+                    .as_ref()
+                    .map(|u| fuzzy_match(&query, u))
+                    .unwrap_or(0);
+                let url_score = entry
+                    .url
+                    .as_ref()
+                    .map(|u| fuzzy_match(&query, u))
+                    .unwrap_or(0);
+
+                let best_score = label_score.max(username_score).max(url_score);
+                if best_score > 0 {
+                    Some((entry, best_score))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Sort by fuzzy score descending (best matches first)
+        scored.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let total_count = scored.len();
+
+        let has_more = if filter.limit > 0 {
+            filter.offset + filter.limit < total_count
+        } else {
+            false
+        };
+
+        let result_entries: Vec<String> = if filter.limit > 0 {
+            scored
+                .into_iter()
+                .skip(filter.offset)
+                .take(filter.limit)
+                .map(|(e, _)| e.label.clone())
+                .collect()
+        } else {
+            scored
+                .into_iter()
+                .skip(filter.offset)
+                .map(|(e, _)| e.label.clone())
+                .collect()
+        };
+
+        SearchResult {
+            entries: result_entries,
+            total_count,
+            has_more,
+        }
     }
 }
 
@@ -825,5 +1059,181 @@ mod tests {
         assert_eq!(result.total_count, 5);
         assert_eq!(result.entries.len(), 5);
         assert!(!result.has_more);
+    }
+
+    // ========================================================================
+    // Fuzzy match tests
+    // ========================================================================
+
+    #[test]
+    fn test_fuzzy_match_basic() {
+        // "gml" should match "Gmail" (g...m...l in order)
+        let score = fuzzy_match("gml", "Gmail");
+        assert!(score > 0, "gml should fuzzy-match Gmail, got score {}", score);
+    }
+
+    #[test]
+    fn test_fuzzy_match_exact_substring() {
+        // Exact substring should produce a high score
+        let score = fuzzy_match("mail", "Gmail");
+        assert!(score > 0);
+    }
+
+    #[test]
+    fn test_fuzzy_match_no_match() {
+        // Characters not in order should not match
+        let score = fuzzy_match("xyz", "Gmail");
+        assert_eq!(score, 0, "xyz should not match Gmail");
+    }
+
+    #[test]
+    fn test_fuzzy_match_empty_query() {
+        let score = fuzzy_match("", "Gmail");
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn test_fuzzy_match_empty_text() {
+        let score = fuzzy_match("gml", "");
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn test_fuzzy_match_case_insensitive() {
+        let score_lower = fuzzy_match("gml", "gmail");
+        let score_upper = fuzzy_match("GML", "Gmail");
+        assert!(score_lower > 0);
+        assert!(score_upper > 0);
+        // Both should produce the same score since matching is case-insensitive
+        assert_eq!(score_lower, score_upper);
+    }
+
+    #[test]
+    fn test_fuzzy_match_consecutive_bonus() {
+        // "git" in "GitHub" has consecutive g-i-t, should score higher than
+        // "gib" in "GitHub" which has g-i then skips to b (not present -> 0)
+        let score_consecutive = fuzzy_match("git", "GitHub");
+        let score_sparse = fuzzy_match("ghb", "GitHub");
+        assert!(score_consecutive > 0);
+        assert!(score_sparse > 0);
+        assert!(
+            score_consecutive > score_sparse,
+            "consecutive matches should score higher: {} vs {}",
+            score_consecutive,
+            score_sparse
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_match_start_bonus() {
+        // Matching at start of text should score higher
+        let score_start = fuzzy_match("gi", "GitHub");
+        let score_middle = fuzzy_match("hu", "GitHub");
+        assert!(score_start > 0);
+        assert!(score_middle > 0);
+        assert!(
+            score_start > score_middle,
+            "start match should score higher: {} vs {}",
+            score_start,
+            score_middle
+        );
+    }
+
+    #[test]
+    fn test_fuzzy_match_query_longer_than_text() {
+        let score = fuzzy_match("toolongquery", "Git");
+        assert_eq!(score, 0, "query longer than text should not match");
+    }
+
+    #[test]
+    fn test_fuzzy_search_fallback() {
+        let entries = vec![
+            create_test_entry("Gmail"),
+            create_test_entry("GitHub"),
+            create_test_entry("Facebook"),
+        ];
+
+        // "gml" does not substring-match anything, but fuzzy matches "Gmail"
+        let filter = SearchFilter::new().with_query("gml");
+        let result = AdvancedSearch::fuzzy_search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "Gmail");
+    }
+
+    #[test]
+    fn test_fuzzy_search_prefers_exact_when_available() {
+        let entries = vec![
+            create_test_entry("Gmail"),
+            create_test_entry("GitHub"),
+            create_test_entry("Facebook"),
+        ];
+
+        // "Git" substring-matches "GitHub", so normal search should be used
+        let filter = SearchFilter::new().with_query("Git");
+        let result = AdvancedSearch::fuzzy_search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "GitHub");
+    }
+
+    #[test]
+    fn test_fuzzy_search_no_match() {
+        let entries = vec![
+            create_test_entry("Gmail"),
+            create_test_entry("GitHub"),
+            create_test_entry("Facebook"),
+        ];
+
+        let filter = SearchFilter::new().with_query("zzzzz");
+        let result = AdvancedSearch::fuzzy_search(&entries, &filter);
+        assert_eq!(result.total_count, 0);
+        assert!(result.entries.is_empty());
+    }
+
+    #[test]
+    fn test_fuzzy_search_respects_other_filters() {
+        let mut entries = vec![
+            create_test_entry("Gmail"),
+            create_test_entry("GitHub"),
+        ];
+        entries[0].is_favorite = true;
+        entries[1].is_favorite = false;
+
+        // "gml" fuzzy-matches "Gmail" but we also require favorites
+        let filter = SearchFilter::new().with_query("gml").favorites_only();
+        let result = AdvancedSearch::fuzzy_search(&entries, &filter);
+        assert_eq!(result.total_count, 1);
+        assert_eq!(result.entries[0], "Gmail");
+
+        // "ghb" fuzzy-matches "GitHub" but GitHub is not a favorite
+        let filter = SearchFilter::new().with_query("ghb").favorites_only();
+        let result = AdvancedSearch::fuzzy_search(&entries, &filter);
+        assert_eq!(result.total_count, 0);
+    }
+
+    #[test]
+    fn test_fuzzy_search_sorted_by_relevance() {
+        let entries = vec![
+            create_test_entry("My Google Mail"),
+            create_test_entry("Gmail"),
+        ];
+
+        // "gml" should match both, but "Gmail" should score higher (tighter match)
+        let filter = SearchFilter::new().with_query("gml");
+        let result = AdvancedSearch::fuzzy_search(&entries, &filter);
+        assert_eq!(result.total_count, 2);
+        assert_eq!(result.entries[0], "Gmail", "Gmail should rank first due to tighter match");
+    }
+
+    #[test]
+    fn test_fuzzy_search_empty_query() {
+        let entries = vec![
+            create_test_entry("Gmail"),
+            create_test_entry("GitHub"),
+        ];
+
+        // No query means return all (via normal search path)
+        let filter = SearchFilter::new();
+        let result = AdvancedSearch::fuzzy_search(&entries, &filter);
+        assert_eq!(result.total_count, 2);
     }
 }

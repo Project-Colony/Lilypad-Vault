@@ -7,9 +7,7 @@ use crate::state::VaultViewMode;
 use crate::theme::LilypadTheme;
 
 /// Main application message enum
-/// Some variants are defined for future features
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum Message {
     // ========================================================================
     // Navigation
@@ -148,6 +146,12 @@ pub enum Message {
     ShowAuditLog,
     /// Close audit log
     CloseAuditLog,
+    /// Export audit log as JSON
+    ExportAuditLogJson,
+    /// Export audit log as CSV
+    ExportAuditLogCsv,
+    /// Export audit log as plaintext
+    ExportAuditLogText,
 
     // ========================================================================
     // Re-authentication Modal
@@ -200,6 +204,14 @@ pub enum Message {
     NewVaultNameChanged(String),
     /// Create a new vault
     CreateVault,
+    /// Start renaming a vault
+    StartRenameVault(String),
+    /// Rename vault input changed
+    RenameVaultNameChanged(String),
+    /// Confirm vault rename
+    ConfirmRenameVault,
+    /// Cancel vault rename
+    CancelRenameVault,
 
     // ========================================================================
     // Settings
@@ -210,6 +222,8 @@ pub enum Message {
     HideSettings,
     /// Change theme
     ChangeTheme(LilypadTheme),
+    /// Toggle theme sort order in settings
+    ToggleThemeSort,
     /// Change auto-lock minutes
     ChangeAutoLock(u32),
     /// Change clipboard timeout
@@ -292,6 +306,8 @@ pub enum Message {
     RestoreVault,
     /// Backup file selected for restore
     BackupFileSelected(Option<std::path::PathBuf>),
+    /// Prune old backups, keeping only the N most recent
+    PruneBackups,
 
     // ========================================================================
     // GitHub OAuth & Sync

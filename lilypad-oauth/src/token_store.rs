@@ -2,9 +2,9 @@
 //!
 //! Tokens are stored in a JSON file with restricted file permissions.
 //! The file location follows platform conventions:
-//! - Linux: ~/.config/lilypad/oauth_tokens.json
-//! - macOS: ~/Library/Application Support/lilypad/oauth_tokens.json
-//! - Windows: %APPDATA%\lilypad\oauth_tokens.json
+//! - Linux: ~/.config/Colony/Lilypad/oauth_tokens.json
+//! - macOS: ~/Library/Application Support/Colony/Lilypad/oauth_tokens.json
+//! - Windows: %APPDATA%\Colony\Lilypad\oauth_tokens.json
 
 use crate::config::OAuthProvider;
 use crate::error::{OAuthError, Result};
@@ -17,9 +17,6 @@ use zeroize::Zeroize;
 
 /// Token storage filename.
 const TOKEN_FILENAME: &str = "oauth_tokens.json";
-
-/// Application directory name.
-const APP_DIR: &str = "lilypad";
 
 /// Information about a stored OAuth token.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,11 +160,12 @@ impl TokenStoreManager {
 
     /// Returns the default token store path.
     pub fn default_path() -> Result<PathBuf> {
-        let config_dir = dirs::config_dir().ok_or_else(|| {
-            OAuthError::TokenStoreError("could not determine config directory".to_string())
-        })?;
+        let project_dirs = directories::ProjectDirs::from("", "Colony", "Lilypad")
+            .ok_or_else(|| {
+                OAuthError::TokenStoreError("could not determine config directory".to_string())
+            })?;
 
-        Ok(config_dir.join(APP_DIR).join(TOKEN_FILENAME))
+        Ok(project_dirs.config_dir().join(TOKEN_FILENAME))
     }
 
     /// Saves a token for a provider.

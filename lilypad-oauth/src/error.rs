@@ -212,7 +212,7 @@ mod tests {
             OAuthError::RepoAlreadyExists("my-repo".to_string()),
             OAuthError::FileNotFound {
                 repo: "my-repo".to_string(),
-                path: "vault.encrypted".to_string(),
+                path: "vault.lily".to_string(),
             },
             OAuthError::SyncConflict {
                 local_sha: "aaa".to_string(),

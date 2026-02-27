@@ -23,6 +23,15 @@ static CLIPBOARD_GENERATION: AtomicU64 = AtomicU64::new(0);
 ///
 /// # Returns
 /// Ok(()) on success, or an error if clipboard access fails.
+///
+/// # Examples
+///
+/// ```no_run
+/// use lilypad_common::copy_to_clipboard;
+///
+/// // Copy a secret to the system clipboard.
+/// copy_to_clipboard("my-secret-password").expect("clipboard should be available");
+/// ```
 pub fn copy_to_clipboard(value: &str) -> Result<()> {
     let mut clipboard = Clipboard::new().map_err(|err| anyhow!("clipboard unavailable: {err}"))?;
     clipboard

@@ -6,6 +6,16 @@ use chrono::{DateTime, Local, TimeZone, Utc};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Returns the current Unix timestamp in seconds.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::current_timestamp;
+///
+/// let ts = current_timestamp();
+/// // Should be a reasonable recent timestamp (after 2023).
+/// assert!(ts > 1_700_000_000);
+/// ```
 pub fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -21,6 +31,19 @@ pub fn current_timestamp() -> u64 {
 /// # Returns
 /// A formatted string like "2024-01-15 14:30:45" in local time,
 /// or "Unknown" if the timestamp is 0 or invalid.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::format_timestamp;
+///
+/// // A zero timestamp returns "Unknown".
+/// assert_eq!(format_timestamp(0), "Unknown");
+///
+/// // A known timestamp contains the expected date parts.
+/// let s = format_timestamp(1705320645); // 2024-01-15 in UTC
+/// assert!(s.contains("2024"));
+/// ```
 pub fn format_timestamp(timestamp: u64) -> String {
     if timestamp == 0 {
         return "Unknown".to_string();
@@ -43,6 +66,22 @@ pub fn format_timestamp(timestamp: u64) -> String {
 /// # Returns
 /// A human-readable relative time like "just now", "5 minutes ago",
 /// "2 hours ago", "yesterday", or a date if older than a week.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::{current_timestamp, format_timestamp_relative};
+///
+/// // A zero timestamp returns "Never".
+/// assert_eq!(format_timestamp_relative(0), "Never");
+///
+/// // The current moment returns "Just now".
+/// let now = current_timestamp();
+/// assert_eq!(format_timestamp_relative(now), "Just now");
+///
+/// // Five minutes ago.
+/// assert_eq!(format_timestamp_relative(now - 300), "5 minutes ago");
+/// ```
 pub fn format_timestamp_relative(timestamp: u64) -> String {
     if timestamp == 0 {
         return "Never".to_string();
