@@ -4,7 +4,7 @@
 //! Iced uses a message-based architecture for state management.
 
 use crate::state::VaultViewMode;
-use crate::theme::LilypadTheme;
+use crate::theme::{LilypadTheme, UiVariation};
 
 /// Main application message enum
 #[derive(Debug, Clone)]
@@ -222,6 +222,8 @@ pub enum Message {
     HideSettings,
     /// Change theme
     ChangeTheme(LilypadTheme),
+    /// Change UI variation
+    ChangeUiVariation(UiVariation),
     /// Toggle theme sort order in settings
     ToggleThemeSort,
     /// Change auto-lock minutes

@@ -9,11 +9,12 @@ use iced::{Element, Length, Padding};
 use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::state::{VaultEntry, VaultViewMode};
-use crate::theme::{self, LilypadTheme};
+use crate::theme::{self, LilypadTheme, UiVariation};
 
 /// Parameters for the vault view.
 pub struct VaultViewParams<'a> {
     pub theme: LilypadTheme,
+    pub variation: UiVariation,
     pub entries: &'a [VaultEntry],
     pub search_query: &'a str,
     pub view_mode: VaultViewMode,
@@ -41,6 +42,7 @@ pub struct VaultViewParams<'a> {
 pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
     let VaultViewParams {
         theme,
+        variation: v,
         entries,
         search_query,
         view_mode,
@@ -118,7 +120,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
             .padding([8, 16])
             .style(move |_theme, status| {
                 if is_active {
-                    let mut style = theme::ghost_button(theme);
+                    let mut style = theme::ghost_button(theme, v);
                     style.text_color = palette.primary;
                     style.border.color = palette.primary;
                     style.border.width = 0.0;
@@ -127,8 +129,8 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
                     style
                 } else {
                     match status {
-                        button::Status::Hovered => theme::ghost_button_hovered(theme),
-                        _ => theme::ghost_button(theme),
+                        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                        _ => theme::ghost_button(theme, v),
                     }
                 }
             })
@@ -174,14 +176,14 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
             .padding([4, 10])
             .style(move |_theme, status| {
                 if no_filter {
-                    let mut style = theme::ghost_button(theme);
+                    let mut style = theme::ghost_button(theme, v);
                     style.background = Some(iced::Background::Color(palette.hover));
                     style.text_color = palette.primary;
                     style
                 } else {
                     match status {
-                        button::Status::Hovered => theme::ghost_button_hovered(theme),
-                        _ => theme::ghost_button(theme),
+                        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                        _ => theme::ghost_button(theme, v),
                     }
                 }
             })
@@ -205,14 +207,14 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
                 .padding([4, 10])
                 .style(move |_theme, status| {
                     if is_active {
-                        let mut style = theme::ghost_button(theme);
+                        let mut style = theme::ghost_button(theme, v);
                         style.background = Some(iced::Background::Color(palette.hover));
                         style.text_color = palette.primary;
                         style
                     } else {
                         match status {
-                            button::Status::Hovered => theme::ghost_button_hovered(theme),
-                            _ => theme::ghost_button(theme),
+                            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                            _ => theme::ghost_button(theme, v),
                         }
                     }
                 })
@@ -272,7 +274,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
     } else {
         let entry_cards: Vec<Element<'static, Message>> = filtered_entries
             .iter()
-            .map(|(index, entry)| entry_card(theme, *index, entry))
+            .map(|(index, entry)| entry_card(theme, v, *index, entry))
             .collect();
 
         column(entry_cards).spacing(12).into()
@@ -282,6 +284,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
     let form_content = if show_add_entry {
         Some(entry_form(
             theme,
+            v,
             edit_mode,
             entry_title,
             entry_username,
@@ -323,7 +326,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
 
     let main_content: Element<'static, Message> = scrollable(main_column)
         .height(Length::Fill)
-        .style(move |_theme, _status| theme::scrollable_style(theme))
+        .style(move |_theme, _status| theme::scrollable_style(theme, v))
         .into();
 
     container(main_content)
@@ -334,7 +337,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
 }
 
 /// Render a single entry card
-fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<'static, Message> {
+fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEntry) -> Element<'static, Message> {
     let palette = theme.palette();
 
     // Color indicator
@@ -360,8 +363,8 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     )
     .padding([4, 8])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme),
-        _ => theme::icon_button(theme),
+        button::Status::Hovered => theme::icon_button_hovered(theme, v),
+        _ => theme::icon_button(theme, v),
     })
     .on_press(Message::ToggleFavorite(index));
 
@@ -538,8 +541,8 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     )
     .padding([6, 10])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme),
-        _ => theme::icon_button(theme),
+        button::Status::Hovered => theme::icon_button_hovered(theme, v),
+        _ => theme::icon_button(theme, v),
     })
     .on_press(Message::CopyUsername(index));
 
@@ -548,8 +551,8 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     )
     .padding([6, 10])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme),
-        _ => theme::icon_button(theme),
+        button::Status::Hovered => theme::icon_button_hovered(theme, v),
+        _ => theme::icon_button(theme, v),
     })
     .on_press(Message::CopyPassword(index));
 
@@ -561,8 +564,8 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
             )
             .padding([6, 10])
             .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::icon_button_hovered(theme),
-                _ => theme::icon_button(theme),
+                button::Status::Hovered => theme::icon_button_hovered(theme, v),
+                _ => theme::icon_button(theme, v),
             })
             .on_press(Message::OpenUrl(index))
             .into(),
@@ -576,8 +579,8 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     )
     .padding([6, 10])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme),
-        _ => theme::icon_button(theme),
+        button::Status::Hovered => theme::icon_button_hovered(theme, v),
+        _ => theme::icon_button(theme, v),
     })
     .on_press(Message::ViewEntryHistory(index));
 
@@ -586,8 +589,8 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
     )
     .padding([6, 10])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme),
-        _ => theme::icon_button(theme),
+        button::Status::Hovered => theme::icon_button_hovered(theme, v),
+        _ => theme::icon_button(theme, v),
     })
     .on_press(Message::EditEntry(index));
 
@@ -597,11 +600,11 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
         .padding([6, 10])
         .style(move |_theme, status| match status {
             button::Status::Hovered => {
-                let mut style = theme::icon_button_hovered(theme);
+                let mut style = theme::icon_button_hovered(theme, v);
                 style.text_color = palette.danger;
                 style
             }
-            _ => theme::icon_button(theme),
+            _ => theme::icon_button(theme, v),
         })
         .on_press(Message::DeleteEntry(index));
 
@@ -639,7 +642,7 @@ fn entry_card(theme: LilypadTheme, index: usize, entry: &VaultEntry) -> Element<
 
     container(card_row)
         .width(Length::Fill)
-        .style(move |_| theme::card_container(theme))
+        .style(move |_| theme::card_container(theme, v))
         .into()
 }
 
@@ -721,6 +724,7 @@ fn type_icon(entry_type: &str) -> &'static str {
 /// Helper to build a form section with title and icon (no card, just a labeled group)
 fn form_section<'a>(
     theme: LilypadTheme,
+    _v: UiVariation,
     icon: &'static str,
     title: &'static str,
     content: Element<'a, Message>,
@@ -748,6 +752,7 @@ fn form_section<'a>(
 #[allow(clippy::too_many_arguments)]
 fn entry_form(
     theme: LilypadTheme,
+    v: UiVariation,
     edit_mode: bool,
     entry_title: &str,
     entry_username: &str,
@@ -782,8 +787,8 @@ fn entry_form(
         )
         .padding([6, 10])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::icon_button_hovered(theme),
-            _ => theme::icon_button(theme),
+            button::Status::Hovered => theme::icon_button_hovered(theme, v),
+            _ => theme::icon_button(theme, v),
         })
         .on_press(Message::HideAddEntry),
     ]
@@ -822,14 +827,14 @@ fn entry_form(
             .padding([6, 10])
             .style(move |_theme, status| {
                 if is_active {
-                    let mut style = theme::ghost_button(theme);
+                    let mut style = theme::ghost_button(theme, v);
                     style.background = Some(iced::Background::Color(palette.hover));
                     style.text_color = palette.primary;
                     style
                 } else {
                     match status {
-                        button::Status::Hovered => theme::ghost_button_hovered(theme),
-                        _ => theme::ghost_button(theme),
+                        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                        _ => theme::ghost_button(theme, v),
                     }
                 }
             })
@@ -841,11 +846,11 @@ fn entry_form(
     let type_row = row(type_buttons).spacing(4);
 
     // ── Section 1: General ──────────────────────────────────────────────
-    let title_input = labeled_input(theme, "Title", "e.g., GitHub", entry_title.to_string(), |s| {
+    let title_input = labeled_input(theme, v, "Title", "e.g., GitHub", entry_title.to_string(), |s| {
         Message::EntryTitleChanged(s)
     });
 
-    let general_section = form_section(theme, icons::INFO, "General", title_input);
+    let general_section = form_section(theme, v, icons::INFO, "General", title_input);
 
     // ── Section 2: Credentials ──────────────────────────────────────────
     let has_credentials = vis.username || vis.email || vis.password;
@@ -857,13 +862,13 @@ fn entry_form(
             creds_col = creds_col.push(
                 row![
                     column![labeled_input(
-                        theme, username_label, username_placeholder,
+                        theme, v, username_label, username_placeholder,
                         entry_username.to_string(), Message::EntryUsernameChanged,
                     )]
                     .width(Length::Fill),
                     Space::with_width(12),
                     column![labeled_input(
-                        theme, "Email", "e.g., john@example.com",
+                        theme, v, "Email", "e.g., john@example.com",
                         entry_email.to_string(), Message::EntryEmailChanged,
                     )]
                     .width(Length::Fill),
@@ -871,12 +876,12 @@ fn entry_form(
             );
         } else if vis.username {
             creds_col = creds_col.push(labeled_input(
-                theme, username_label, username_placeholder,
+                theme, v, username_label, username_placeholder,
                 entry_username.to_string(), Message::EntryUsernameChanged,
             ));
         } else if vis.email {
             creds_col = creds_col.push(labeled_input(
-                theme, "Email", "e.g., john@example.com",
+                theme, v, "Email", "e.g., john@example.com",
                 entry_email.to_string(), Message::EntryEmailChanged,
             ));
         }
@@ -895,8 +900,8 @@ fn entry_form(
                             .secure(true)
                             .on_input(Message::EntryPasswordChanged)
                             .style(move |_theme, status| match status {
-                                text_input::Status::Focused => theme::text_input_focused(theme),
-                                _ => theme::text_input_style(theme),
+                                text_input::Status::Focused => theme::text_input_focused(theme, v),
+                                _ => theme::text_input_style(theme, v),
                             }),
                     ]
                     .width(Length::Fill),
@@ -914,8 +919,8 @@ fn entry_form(
                         )
                         .padding([12, 16])
                         .style(move |_theme, status| match status {
-                            button::Status::Hovered => theme::secondary_button_hovered(theme),
-                            _ => theme::secondary_button(theme),
+                            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+                            _ => theme::secondary_button(theme, v),
                         })
                         .on_press(Message::UseGeneratedPassword),
                     ],
@@ -924,7 +929,7 @@ fn entry_form(
             );
         }
 
-        Some(form_section(theme, icons::KEY, "Credentials", creds_col.into()))
+        Some(form_section(theme, v, icons::KEY, "Credentials", creds_col.into()))
     } else {
         None
     };
@@ -940,13 +945,13 @@ fn entry_form(
             details_col = details_col.push(
                 row![
                     column![labeled_input(
-                        theme, url_lbl, "e.g., https://github.com",
+                        theme, v, url_lbl, "e.g., https://github.com",
                         entry_url.to_string(), Message::EntryUrlChanged,
                     )]
                     .width(Length::Fill),
                     Space::with_width(12),
                     column![labeled_input(
-                        theme, "Phone", "e.g., +33 6 12 34 56 78",
+                        theme, v, "Phone", "e.g., +33 6 12 34 56 78",
                         entry_phone.to_string(), Message::EntryPhoneChanged,
                     )]
                     .width(Length::Fill),
@@ -955,24 +960,24 @@ fn entry_form(
         } else if vis.url {
             let url_lbl = if url_label.is_empty() { "URL" } else { url_label };
             details_col = details_col.push(labeled_input(
-                theme, url_lbl, "e.g., https://github.com",
+                theme, v, url_lbl, "e.g., https://github.com",
                 entry_url.to_string(), Message::EntryUrlChanged,
             ));
         } else if vis.phone {
             details_col = details_col.push(labeled_input(
-                theme, "Phone", "e.g., +33 6 12 34 56 78",
+                theme, v, "Phone", "e.g., +33 6 12 34 56 78",
                 entry_phone.to_string(), Message::EntryPhoneChanged,
             ));
         }
 
         if vis.totp {
             details_col = details_col.push(labeled_input(
-                theme, "TOTP Secret", "e.g., JBSWY3DPEHPK3PXP",
+                theme, v, "TOTP Secret", "e.g., JBSWY3DPEHPK3PXP",
                 entry_totp_secret.to_string(), Message::EntryTotpSecretChanged,
             ));
         }
 
-        Some(form_section(theme, icons::GLOBE, "Details", details_col.into()))
+        Some(form_section(theme, v, icons::GLOBE, "Details", details_col.into()))
     } else {
         None
     };
@@ -980,7 +985,7 @@ fn entry_form(
     // ── Organization + Notes content (moved into Advanced) ────────────
     let mut org_col = column![].spacing(12);
     org_col = org_col.push(labeled_input(
-        theme, "Folder", "e.g., Work/Email",
+        theme, v, "Folder", "e.g., Work/Email",
         entry_folder.to_string(), Message::EntryFolderChanged,
     ));
 
@@ -996,8 +1001,8 @@ fn entry_form(
                     button(fonts::centered_icon_colored(icons::CLOSE, 9.0, palette.text_muted))
                         .padding([2, 4])
                         .style(move |_theme, status| match status {
-                            button::Status::Hovered => theme::icon_button_hovered(theme),
-                            _ => theme::icon_button(theme),
+                            button::Status::Hovered => theme::icon_button_hovered(theme, v),
+                            _ => theme::icon_button(theme, v),
                         })
                         .on_press(Message::RemoveEntryTag(i)),
                 ]
@@ -1019,8 +1024,8 @@ fn entry_form(
             .on_input(Message::EntryNewTagChanged)
             .on_submit(Message::AddEntryTag)
             .style(move |_theme, status| match status {
-                text_input::Status::Focused => theme::text_input_focused(theme),
-                _ => theme::text_input_style(theme),
+                text_input::Status::Focused => theme::text_input_focused(theme, v),
+                _ => theme::text_input_style(theme, v),
             }),
         Space::with_width(8),
         button(
@@ -1033,8 +1038,8 @@ fn entry_form(
         )
         .padding([8, 12])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::secondary_button_hovered(theme),
-            _ => theme::secondary_button(theme),
+            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+            _ => theme::secondary_button(theme, v),
         })
         .on_press(Message::AddEntryTag),
     ]
@@ -1081,12 +1086,12 @@ fn entry_form(
     .padding([12, 16])
     .style(move |_theme, status| match status {
         button::Status::Hovered => {
-            let mut s = theme::ghost_button_hovered(theme);
+            let mut s = theme::ghost_button_hovered(theme, v);
             s.border.radius = 8.0.into();
             s
         }
         _ => {
-            let mut s = theme::ghost_button(theme);
+            let mut s = theme::ghost_button(theme, v);
             s.border.radius = 8.0.into();
             s
         }
@@ -1103,8 +1108,8 @@ fn entry_form(
                 .size(14)
                 .on_input(Message::EntryNotesChanged)
                 .style(move |_theme, status| match status {
-                    text_input::Status::Focused => theme::text_input_focused(theme),
-                    _ => theme::text_input_style(theme),
+                    text_input::Status::Focused => theme::text_input_focused(theme, v),
+                    _ => theme::text_input_style(theme, v),
                 });
             advanced_col = advanced_col.push(
                 column![
@@ -1147,8 +1152,8 @@ fn entry_form(
                         .size(13)
                         .on_input(move |s| Message::CustomFieldNameChanged(idx, s))
                         .style(move |_theme, status| match status {
-                            text_input::Status::Focused => theme::text_input_focused(theme),
-                            _ => theme::text_input_style(theme),
+                            text_input::Status::Focused => theme::text_input_focused(theme, v),
+                            _ => theme::text_input_style(theme, v),
                         }),
                     Space::with_width(8),
                     text_input("Value", &value_owned)
@@ -1156,8 +1161,8 @@ fn entry_form(
                         .size(13)
                         .on_input(move |s| Message::CustomFieldValueChanged(idx, s))
                         .style(move |_theme, status| match status {
-                            text_input::Status::Focused => theme::text_input_focused(theme),
-                            _ => theme::text_input_style(theme),
+                            text_input::Status::Focused => theme::text_input_focused(theme, v),
+                            _ => theme::text_input_style(theme, v),
                         }),
                     Space::with_width(8),
                     button(
@@ -1165,8 +1170,8 @@ fn entry_form(
                     )
                     .padding([6, 10])
                     .style(move |_theme, status| match status {
-                        button::Status::Hovered => theme::icon_button_hovered(theme),
-                        _ => theme::icon_button(theme),
+                        button::Status::Hovered => theme::icon_button_hovered(theme, v),
+                        _ => theme::icon_button(theme, v),
                     })
                     .on_press(Message::RemoveCustomField(i)),
                 ]
@@ -1184,8 +1189,8 @@ fn entry_form(
         )
         .padding([8, 14])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::secondary_button_hovered(theme),
-            _ => theme::secondary_button(theme),
+            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+            _ => theme::secondary_button(theme, v),
         })
         .on_press(Message::AddCustomField);
 
@@ -1226,8 +1231,8 @@ fn entry_form(
                         )
                         .padding([4, 8])
                         .style(move |_theme, status| match status {
-                            button::Status::Hovered => theme::icon_button_hovered(theme),
-                            _ => theme::icon_button(theme),
+                            button::Status::Hovered => theme::icon_button_hovered(theme, v),
+                            _ => theme::icon_button(theme, v),
                         })
                         .on_press(Message::RemoveAttachment(i)),
                     ]
@@ -1252,8 +1257,8 @@ fn entry_form(
         )
         .padding([8, 14])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::secondary_button_hovered(theme),
-            _ => theme::secondary_button(theme),
+            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+            _ => theme::secondary_button(theme, v),
         })
         .on_press(Message::AddAttachment);
 
@@ -1294,8 +1299,8 @@ fn entry_form(
     let cancel_btn = button(text("Cancel").size(14).color(palette.text_secondary))
         .padding([12, 24])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme),
-            _ => theme::ghost_button(theme),
+            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+            _ => theme::ghost_button(theme, v),
         })
         .on_press(Message::HideAddEntry);
 
@@ -1309,8 +1314,8 @@ fn entry_form(
     )
     .padding([12, 24])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme),
-        _ => theme::primary_button(theme),
+        button::Status::Hovered => theme::primary_button_hovered(theme, v),
+        _ => theme::primary_button(theme, v),
     })
     .on_press(Message::SaveEntry);
 
@@ -1347,13 +1352,14 @@ fn entry_form(
 
     container(form_col.padding(24))
         .width(Length::Fill)
-        .style(move |_| theme::card_container(theme))
+        .style(move |_| theme::card_container(theme, v))
         .into()
 }
 
 /// Helper to create a labeled text input
 fn labeled_input<F>(
     theme: LilypadTheme,
+    v: UiVariation,
     label: &'static str,
     placeholder: &'static str,
     value: String,
@@ -1372,8 +1378,8 @@ where
             .size(14)
             .on_input(on_change)
             .style(move |_theme, status| match status {
-                text_input::Status::Focused => theme::text_input_focused(theme),
-                _ => theme::text_input_style(theme),
+                text_input::Status::Focused => theme::text_input_focused(theme, v),
+                _ => theme::text_input_style(theme, v),
             }),
     ]
     .into()

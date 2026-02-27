@@ -9,7 +9,7 @@ use iced::{Element, Length};
 use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::state::Category;
-use crate::theme::{self, LilypadTheme};
+use crate::theme::{self, LilypadTheme, UiVariation};
 
 /// Navigation item data
 struct NavItem {
@@ -52,7 +52,7 @@ const NAV_ITEMS: [NavItem; 6] = [
 ];
 
 /// Render the navigation bar
-pub fn view(theme: LilypadTheme, selected_category: usize) -> Element<'static, Message> {
+pub fn view(theme: LilypadTheme, v: UiVariation, selected_category: usize) -> Element<'static, Message> {
     let palette = theme.palette();
 
     let nav_buttons: Vec<Element<'static, Message>> = NAV_ITEMS
@@ -84,15 +84,15 @@ pub fn view(theme: LilypadTheme, selected_category: usize) -> Element<'static, M
 
             let style_fn = move |_theme: &iced::Theme, status: button::Status| {
                 if is_active {
-                    theme::nav_button_active(theme)
+                    theme::nav_button_active(theme, v)
                 } else {
                     match status {
                         button::Status::Hovered => {
-                            let mut style = theme::nav_button(theme);
+                            let mut style = theme::nav_button(theme, v);
                             style.text_color = palette.text_secondary;
                             style
                         }
-                        _ => theme::nav_button(theme),
+                        _ => theme::nav_button(theme, v),
                     }
                 }
             };
@@ -113,6 +113,6 @@ pub fn view(theme: LilypadTheme, selected_category: usize) -> Element<'static, M
 
     container(nav_row)
         .width(Length::Fill)
-        .style(move |_| theme::nav_container(theme))
+        .style(move |_| theme::nav_container(theme, v))
         .into()
 }

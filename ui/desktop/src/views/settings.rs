@@ -8,11 +8,12 @@ use iced::{Element, Length};
 
 use crate::fonts::{self, icons};
 use crate::message::Message;
-use crate::theme::{self, LilypadTheme};
+use crate::theme::{self, LilypadTheme, UiVariation};
 
 /// Render the account settings section
 pub fn account_view(
     theme: LilypadTheme,
+    v: UiVariation,
     github_authenticated: bool,
     github_username: Option<&str>,
     sync_in_progress: bool,
@@ -34,6 +35,7 @@ pub fn account_view(
     // GitHub Account section
     let github_section = github_auth_section(
         theme,
+        v,
         github_authenticated,
         github_username,
         sync_in_progress,
@@ -66,7 +68,7 @@ pub fn account_view(
         .padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme));
+    .style(move |_| theme::card_container(theme, v));
 
     // Preferences
     let prefs_title = text("Preferences")
@@ -82,7 +84,7 @@ pub fn account_view(
         column![prefs_title, Space::with_height(16), marketing_check,].padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme));
+    .style(move |_| theme::card_container(theme, v));
 
     let content = column![
         title,
@@ -100,7 +102,7 @@ pub fn account_view(
     container(
         scrollable(content)
             .height(Length::Fill)
-            .style(move |_theme, _status| theme::scrollable_style(theme)),
+            .style(move |_theme, _status| theme::scrollable_style(theme, v)),
     )
     .width(Length::Fill)
     .height(Length::Fill)
@@ -112,6 +114,7 @@ pub fn account_view(
 /// GitHub authentication card
 fn github_auth_section(
     theme: LilypadTheme,
+    v: UiVariation,
     authenticated: bool,
     username: Option<&str>,
     in_progress: bool,
@@ -153,11 +156,11 @@ fn github_auth_section(
             .padding([10, 16])
             .style(move |_theme, status| match status {
                 button::Status::Hovered => {
-                    let mut style = theme::secondary_button(theme);
+                    let mut style = theme::secondary_button(theme, v);
                     style.text_color = palette.danger;
                     style
                 }
-                _ => theme::secondary_button(theme),
+                _ => theme::secondary_button(theme, v),
             })
             .on_press(Message::GitHubLogout),
         ]
@@ -200,11 +203,11 @@ fn github_auth_section(
                         .padding([8, 16])
                         .style(move |_theme, status| match status {
                             button::Status::Hovered => {
-                                let mut style = theme::ghost_button_hovered(theme);
+                                let mut style = theme::ghost_button_hovered(theme, v);
                                 style.background = Some(iced::Background::Color(palette.hover));
                                 style
                             }
-                            _ => theme::ghost_button(theme),
+                            _ => theme::ghost_button(theme, v),
                         })
                         .on_press(Message::CopyToClipboard(code_for_copy)),
                         Space::with_height(4),
@@ -217,8 +220,8 @@ fn github_auth_section(
                         )
                         .padding([4, 8])
                         .style(move |_theme, status| match status {
-                            button::Status::Hovered => theme::ghost_button_hovered(theme),
-                            _ => theme::ghost_button(theme),
+                            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                            _ => theme::ghost_button(theme, v),
                         })
                         .on_press(Message::OpenExternalLink(
                             "https://github.com/login/device".to_string()
@@ -228,7 +231,7 @@ fn github_auth_section(
                 )
                 .width(Length::Fill)
                 .padding(16)
-                .style(move |_| theme::elevated_container(theme))
+                .style(move |_| theme::elevated_container(theme, v))
                 .into(),
             );
         }
@@ -264,8 +267,8 @@ fn github_auth_section(
             .width(Length::Fill)
             .padding([12, 16])
             .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::primary_button_hovered(theme),
-                _ => theme::primary_button(theme),
+                button::Status::Hovered => theme::primary_button_hovered(theme, v),
+                _ => theme::primary_button(theme, v),
             })
             .on_press(Message::GitHubLogin),
         ]
@@ -276,13 +279,14 @@ fn github_auth_section(
         column![section_title, Space::with_height(16), content,].padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme))
+    .style(move |_| theme::card_container(theme, v))
     .into()
 }
 
 /// Render the security settings section
 pub fn security_view(
     theme: LilypadTheme,
+    v: UiVariation,
     recovery_email: &str,
     trusted_devices: &[String],
     auto_lock_minutes: u32,
@@ -332,7 +336,7 @@ pub fn security_view(
         .padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme));
+    .style(move |_| theme::card_container(theme, v));
 
     // Clipboard section
     let clipboard_title = text("Clipboard Security")
@@ -377,7 +381,7 @@ pub fn security_view(
         .padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme));
+    .style(move |_| theme::card_container(theme, v));
 
     // Recovery section
     let recovery_title = text("Account Recovery")
@@ -386,6 +390,7 @@ pub fn security_view(
 
     let recovery_input = labeled_input(
         theme,
+        v,
         "Recovery Email",
         "recovery@email.com",
         recovery_email_owned,
@@ -396,7 +401,7 @@ pub fn security_view(
         column![recovery_title, Space::with_height(16), recovery_input,].padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme));
+    .style(move |_| theme::card_container(theme, v));
 
     // Master password section
     let master_pw_title = text("Master Password")
@@ -418,8 +423,8 @@ pub fn security_view(
     .width(Length::Fill)
     .padding([12, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::danger_button_hovered(theme),
-        _ => theme::danger_button(theme),
+        button::Status::Hovered => theme::danger_button_hovered(theme, v),
+        _ => theme::danger_button(theme, v),
     })
     .on_press(Message::ChangeMasterPassword);
 
@@ -438,7 +443,7 @@ pub fn security_view(
         .padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme));
+    .style(move |_| theme::card_container(theme, v));
 
     // Audit log section
     let audit_title = text("Audit Log")
@@ -460,8 +465,8 @@ pub fn security_view(
     .width(Length::Fill)
     .padding([12, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme),
-        _ => theme::secondary_button(theme),
+        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+        _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::ShowAuditLog);
 
@@ -480,7 +485,7 @@ pub fn security_view(
         .padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme));
+    .style(move |_| theme::card_container(theme, v));
 
     // Backup management section
     let backup_title = text("Backup Management")
@@ -502,8 +507,8 @@ pub fn security_view(
     .width(Length::FillPortion(1))
     .padding([12, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme),
-        _ => theme::secondary_button(theme),
+        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+        _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::BackupVault);
 
@@ -522,8 +527,8 @@ pub fn security_view(
     .width(Length::FillPortion(1))
     .padding([12, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme),
-        _ => theme::secondary_button(theme),
+        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+        _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::RestoreVault);
 
@@ -542,8 +547,8 @@ pub fn security_view(
     .width(Length::FillPortion(1))
     .padding([12, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::danger_button_hovered(theme),
-        _ => theme::danger_button(theme),
+        button::Status::Hovered => theme::danger_button_hovered(theme, v),
+        _ => theme::danger_button(theme, v),
     })
     .on_press(Message::PruneBackups);
 
@@ -570,7 +575,7 @@ pub fn security_view(
         .padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme));
+    .style(move |_| theme::card_container(theme, v));
 
     // Trusted devices section
     let devices_title = text("Trusted Devices")
@@ -591,11 +596,11 @@ pub fn security_view(
                     .padding([6, 12])
                     .style(move |_theme, status| match status {
                         button::Status::Hovered => {
-                            let mut style = theme::ghost_button_hovered(theme);
+                            let mut style = theme::ghost_button_hovered(theme, v);
                             style.text_color = palette.danger;
                             style
                         }
-                        _ => theme::ghost_button(theme),
+                        _ => theme::ghost_button(theme, v),
                     })
                     .on_press(Message::RemoveTrustedDevice(index)),
             ]
@@ -618,7 +623,7 @@ pub fn security_view(
         column![devices_title, Space::with_height(16), devices_content,].padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme));
+    .style(move |_| theme::card_container(theme, v));
 
     let content = column![
         title,
@@ -648,13 +653,14 @@ pub fn security_view(
             .align_x(Horizontal::Center),
     )
     .height(Length::Fill)
-    .style(move |_theme, _status| theme::scrollable_style(theme))
+    .style(move |_theme, _status| theme::scrollable_style(theme, v))
     .into()
 }
 
 /// Helper to create a labeled text input
 fn labeled_input<F>(
     theme: LilypadTheme,
+    v: UiVariation,
     label: &'static str,
     placeholder: &'static str,
     value: String,
@@ -673,8 +679,8 @@ where
             .size(14)
             .on_input(on_change)
             .style(move |_theme, status| match status {
-                text_input::Status::Focused => theme::text_input_focused(theme),
-                _ => theme::text_input_style(theme),
+                text_input::Status::Focused => theme::text_input_focused(theme, v),
+                _ => theme::text_input_style(theme, v),
             }),
     ]
     .into()

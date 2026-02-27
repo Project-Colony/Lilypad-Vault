@@ -89,6 +89,8 @@ pub struct AppSettings {
     pub security_recovery_email: String,
     #[serde(default)]
     pub active_vault: String,
+    #[serde(default)]
+    pub ui_variation_index: usize,
 }
 
 impl Default for AppSettings {
@@ -108,6 +110,7 @@ impl Default for AppSettings {
             account_marketing_opt_in: false,
             security_recovery_email: String::new(),
             active_vault: String::new(),
+            ui_variation_index: 0,
         }
     }
 }

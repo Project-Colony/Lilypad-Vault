@@ -8,11 +8,12 @@ use iced::{Element, Length};
 
 use crate::fonts::{self, icons};
 use crate::message::Message;
-use crate::theme::{self, LilypadTheme};
+use crate::theme::{self, LilypadTheme, UiVariation};
 
 /// Render the header bar
 pub fn view(
     theme: LilypadTheme,
+    v: UiVariation,
     active_vault: &str,
     _available_vaults: &[String], // Dropdown uses vault_dropdown_overlay instead
     search_query: &str,
@@ -36,8 +37,8 @@ pub fn view(
     )
     .padding([8, 12])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::ghost_button_hovered(theme),
-        _ => theme::ghost_button(theme),
+        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+        _ => theme::ghost_button(theme, v),
     })
     .on_press(if show_vault_selector {
         Message::HideVaultSelector
@@ -51,8 +52,8 @@ pub fn view(
         .size(14)
         .on_input(Message::SearchChanged)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme),
-            _ => theme::text_input_style(theme),
+            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            _ => theme::text_input_style(theme, v),
         })
         .width(Length::Fixed(280.0));
 
@@ -62,8 +63,8 @@ pub fn view(
             button(fonts::centered_icon_colored(icons::CLOSE, 12.0, palette.text_muted))
                 .padding([8, 10])
                 .style(move |_theme, status| match status {
-                    button::Status::Hovered => theme::icon_button_hovered(theme),
-                    _ => theme::icon_button(theme),
+                    button::Status::Hovered => theme::icon_button_hovered(theme, v),
+                    _ => theme::icon_button(theme, v),
                 })
                 .on_press(Message::ClearSearch)
                 .into(),
@@ -91,8 +92,8 @@ pub fn view(
     )
     .padding([10, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme),
-        _ => theme::primary_button(theme),
+        button::Status::Hovered => theme::primary_button_hovered(theme, v),
+        _ => theme::primary_button(theme, v),
     })
     .on_press(Message::ShowAddEntry);
 
@@ -106,16 +107,16 @@ pub fn view(
     let settings_btn = button(fonts::centered_icon_colored(icons::COG, 16.0, palette.text_secondary))
         .padding([10, 12])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::icon_button_hovered(theme),
-            _ => theme::icon_button(theme),
+            button::Status::Hovered => theme::icon_button_hovered(theme, v),
+            _ => theme::icon_button(theme, v),
         })
         .on_press(Message::ShowSettings);
 
     let lock_btn = button(fonts::centered_icon_colored(icons::LOCK, 16.0, palette.text_secondary))
         .padding([10, 12])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::icon_button_hovered(theme),
-            _ => theme::icon_button(theme),
+            button::Status::Hovered => theme::icon_button_hovered(theme, v),
+            _ => theme::icon_button(theme, v),
         })
         .on_press(Message::LockVault);
 
@@ -138,13 +139,14 @@ pub fn view(
 
     container(header_content)
         .width(Length::Fill)
-        .style(move |_| theme::header_container(theme))
+        .style(move |_| theme::header_container(theme, v))
         .into()
 }
 
 /// Render the vault selector dropdown as an overlay
 pub fn vault_dropdown_overlay(
     theme: LilypadTheme,
+    v: UiVariation,
     active_vault: &str,
     available_vaults: &[String],
 ) -> Element<'static, Message> {
@@ -171,8 +173,8 @@ pub fn vault_dropdown_overlay(
                     )
                     .padding([4, 6])
                     .style(move |_theme, status| match status {
-                        button::Status::Hovered => theme::icon_button_hovered(theme),
-                        _ => theme::icon_button(theme),
+                        button::Status::Hovered => theme::icon_button_hovered(theme, v),
+                        _ => theme::icon_button(theme, v),
                     })
                     .on_press(Message::StartRenameVault(name_for_rename)),
                 ]
@@ -181,8 +183,8 @@ pub fn vault_dropdown_overlay(
             .width(Length::Fill)
             .padding([10, 12])
             .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::ghost_button_hovered(theme),
-                _ => theme::ghost_button(theme),
+                button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                _ => theme::ghost_button(theme, v),
             })
             .on_press(Message::SelectVault(name_for_select))
             .into()
@@ -222,8 +224,8 @@ pub fn vault_dropdown_overlay(
         .width(Length::Fill)
         .padding([10, 12])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme),
-            _ => theme::ghost_button(theme),
+            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+            _ => theme::ghost_button(theme, v),
         })
         .on_press(Message::ShowNewVaultModal)
         .into(),
@@ -232,7 +234,7 @@ pub fn vault_dropdown_overlay(
     let dropdown_content = column(items).spacing(0);
 
     let dropdown_card = container(dropdown_content)
-        .style(move |_| theme::card_container(theme))
+        .style(move |_| theme::card_container(theme, v))
         .width(Length::Fixed(200.0));
 
     // Position the dropdown at the top-left below the header button

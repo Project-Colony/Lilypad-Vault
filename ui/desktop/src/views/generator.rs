@@ -8,11 +8,12 @@ use iced::{Element, Length};
 
 use crate::fonts::{self, icons};
 use crate::message::Message;
-use crate::theme::{self, LilypadTheme};
+use crate::theme::{self, LilypadTheme, UiVariation};
 
 /// Parameters for the password generator view.
 pub struct GeneratorViewParams<'a> {
     pub theme: LilypadTheme,
+    pub variation: UiVariation,
     pub generated_password: &'a str,
     pub generator_length: usize,
     pub generator_lowercase: bool,
@@ -27,6 +28,7 @@ pub struct GeneratorViewParams<'a> {
 pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     let GeneratorViewParams {
         theme,
+        variation: v,
         generated_password,
         generator_length,
         generator_lowercase,
@@ -55,7 +57,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
         )
         .width(Length::Fill)
         .padding(20)
-        .style(move |_| theme::elevated_container(theme))
+        .style(move |_| theme::elevated_container(theme, v))
     } else {
         container(
             row![
@@ -66,8 +68,8 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
                 button(fonts::centered_icon(icons::COPY, 16.0))
                     .padding([8, 12])
                     .style(move |_theme, status| match status {
-                        button::Status::Hovered => theme::icon_button_hovered(theme),
-                        _ => theme::icon_button(theme),
+                        button::Status::Hovered => theme::icon_button_hovered(theme, v),
+                        _ => theme::icon_button(theme, v),
                     })
                     .on_press(Message::CopyGeneratedPassword),
             ]
@@ -75,7 +77,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
         )
         .width(Length::Fill)
         .padding(20)
-        .style(move |_| theme::elevated_container(theme))
+        .style(move |_| theme::elevated_container(theme, v))
     };
 
     // Generate button
@@ -94,8 +96,8 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     .width(Length::Fill)
     .padding([14, 24])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme),
-        _ => theme::primary_button(theme),
+        button::Status::Hovered => theme::primary_button_hovered(theme, v),
+        _ => theme::primary_button(theme, v),
     })
     .on_press(Message::GeneratePassword);
 
@@ -264,10 +266,10 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
         scrollable(
             container(content)
                 .padding(32)
-                .style(move |_| theme::card_container(theme)),
+                .style(move |_| theme::card_container(theme, v)),
         )
         .height(Length::Fill)
-        .style(move |_theme, _status| theme::scrollable_style(theme)),
+        .style(move |_theme, _status| theme::scrollable_style(theme, v)),
     )
     .width(Length::Fill)
     .height(Length::Fill)

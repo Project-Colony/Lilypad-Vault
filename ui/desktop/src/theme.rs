@@ -418,6 +418,226 @@ impl LilypadTheme {
     }
 }
 
+// ============================================================================
+// UI Variations
+// ============================================================================
+
+/// UI variation that changes the visual feel (radius, shadows, borders)
+/// independently of the color theme.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UiVariation {
+    #[default]
+    Default,
+    Sharp,
+    Rounded,
+    Compact,
+    Spacious,
+}
+
+impl UiVariation {
+    pub const ALL: [UiVariation; 5] = [
+        UiVariation::Default,
+        UiVariation::Sharp,
+        UiVariation::Rounded,
+        UiVariation::Compact,
+        UiVariation::Spacious,
+    ];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            UiVariation::Default => "Default",
+            UiVariation::Sharp => "Sharp",
+            UiVariation::Rounded => "Rounded",
+            UiVariation::Compact => "Compact",
+            UiVariation::Spacious => "Spacious",
+        }
+    }
+
+    pub fn description(&self) -> &'static str {
+        match self {
+            UiVariation::Default => "Balanced, modern look",
+            UiVariation::Sharp => "Clean, brutalist edges",
+            UiVariation::Rounded => "Soft, friendly bubbles",
+            UiVariation::Compact => "Tight, efficient UI",
+            UiVariation::Spacious => "Airy, luxurious feel",
+        }
+    }
+
+    pub fn from_index(index: usize) -> Self {
+        *Self::ALL.get(index).unwrap_or(&UiVariation::Default)
+    }
+
+    pub fn to_index(self) -> usize {
+        Self::ALL.iter().position(|v| *v == self).unwrap_or(0)
+    }
+
+    // --- Radius helpers ---
+
+    pub fn card_radius(&self) -> f32 {
+        match self {
+            UiVariation::Default => 12.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 20.0,
+            UiVariation::Compact => 4.0,
+            UiVariation::Spacious => 16.0,
+        }
+    }
+
+    pub fn button_radius(&self) -> f32 {
+        match self {
+            UiVariation::Default => 8.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 16.0,
+            UiVariation::Compact => 4.0,
+            UiVariation::Spacious => 14.0,
+        }
+    }
+
+    pub fn input_radius(&self) -> f32 {
+        match self {
+            UiVariation::Default => 8.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 16.0,
+            UiVariation::Compact => 4.0,
+            UiVariation::Spacious => 14.0,
+        }
+    }
+
+    pub fn modal_radius(&self) -> f32 {
+        match self {
+            UiVariation::Default => 16.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 24.0,
+            UiVariation::Compact => 8.0,
+            UiVariation::Spacious => 20.0,
+        }
+    }
+
+    pub fn elevated_radius(&self) -> f32 {
+        match self {
+            UiVariation::Default => 8.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 14.0,
+            UiVariation::Compact => 3.0,
+            UiVariation::Spacious => 12.0,
+        }
+    }
+
+    pub fn ghost_radius(&self) -> f32 {
+        match self {
+            UiVariation::Default => 6.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 12.0,
+            UiVariation::Compact => 3.0,
+            UiVariation::Spacious => 10.0,
+        }
+    }
+
+    pub fn scroller_radius(&self) -> f32 {
+        match self {
+            UiVariation::Default => 4.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 8.0,
+            UiVariation::Compact => 2.0,
+            UiVariation::Spacious => 6.0,
+        }
+    }
+
+    pub fn toast_radius(&self) -> f32 {
+        match self {
+            UiVariation::Default => 12.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 20.0,
+            UiVariation::Compact => 4.0,
+            UiVariation::Spacious => 16.0,
+        }
+    }
+
+    // --- Shadow helpers ---
+
+    pub fn card_shadow_blur(&self) -> f32 {
+        match self {
+            UiVariation::Default => 8.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 12.0,
+            UiVariation::Compact => 2.0,
+            UiVariation::Spacious => 16.0,
+        }
+    }
+
+    pub fn card_shadow_offset(&self) -> f32 {
+        match self {
+            UiVariation::Default => 2.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 4.0,
+            UiVariation::Compact => 1.0,
+            UiVariation::Spacious => 4.0,
+        }
+    }
+
+    pub fn card_shadow_alpha(&self) -> f32 {
+        match self {
+            UiVariation::Default => 0.1,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 0.08,
+            UiVariation::Compact => 0.05,
+            UiVariation::Spacious => 0.12,
+        }
+    }
+
+    pub fn button_shadow_blur(&self) -> f32 {
+        match self {
+            UiVariation::Default => 4.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 6.0,
+            UiVariation::Compact => 1.0,
+            UiVariation::Spacious => 8.0,
+        }
+    }
+
+    pub fn modal_shadow_blur(&self) -> f32 {
+        match self {
+            UiVariation::Default => 24.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 32.0,
+            UiVariation::Compact => 12.0,
+            UiVariation::Spacious => 40.0,
+        }
+    }
+
+    pub fn header_shadow_blur(&self) -> f32 {
+        match self {
+            UiVariation::Default => 10.0,
+            UiVariation::Sharp => 0.0,
+            UiVariation::Rounded => 14.0,
+            UiVariation::Compact => 4.0,
+            UiVariation::Spacious => 18.0,
+        }
+    }
+
+    // --- Border helpers ---
+
+    pub fn border_width(&self) -> f32 {
+        match self {
+            UiVariation::Default => 1.0,
+            UiVariation::Sharp => 1.0,
+            UiVariation::Rounded => 0.0,
+            UiVariation::Compact => 1.0,
+            UiVariation::Spacious => 0.5,
+        }
+    }
+
+    pub fn secondary_border_width(&self) -> f32 {
+        match self {
+            UiVariation::Default => 1.5,
+            UiVariation::Sharp => 2.0,
+            UiVariation::Rounded => 0.0,
+            UiVariation::Compact => 1.0,
+            UiVariation::Spacious => 1.0,
+        }
+    }
+}
+
 /// Health grade colors (used when health view renders grade badges)
 pub fn health_grade_color(grade: &str, palette: &LilypadPalette) -> Color {
     match grade {
@@ -460,7 +680,7 @@ pub fn entry_color_to_iced(color: &lilypad_core::EntryColor) -> Color {
 // ============================================================================
 
 /// Style for the main application container
-pub fn app_container(theme: LilypadTheme) -> container::Style {
+pub fn app_container(theme: LilypadTheme, _v: UiVariation) -> container::Style {
     let palette = theme.palette();
     container::Style {
         background: Some(Background::Color(palette.background)),
@@ -470,41 +690,41 @@ pub fn app_container(theme: LilypadTheme) -> container::Style {
 }
 
 /// Style for card/panel containers
-pub fn card_container(theme: LilypadTheme) -> container::Style {
+pub fn card_container(theme: LilypadTheme, v: UiVariation) -> container::Style {
     let palette = theme.palette();
     container::Style {
         background: Some(Background::Color(palette.surface)),
         text_color: Some(palette.text_primary),
         border: Border {
             color: palette.border,
-            width: 1.0,
-            radius: 12.0.into(),
+            width: v.border_width(),
+            radius: v.card_radius().into(),
         },
         shadow: Shadow {
-            color: Color::from_rgba8(0, 0, 0, 0.1),
-            offset: Vector::new(0.0, 2.0),
-            blur_radius: 8.0,
+            color: Color::from_rgba(0.0, 0.0, 0.0, v.card_shadow_alpha()),
+            offset: Vector::new(0.0, v.card_shadow_offset()),
+            blur_radius: v.card_shadow_blur(),
         },
     }
 }
 
 /// Style for elevated surface containers
-pub fn elevated_container(theme: LilypadTheme) -> container::Style {
+pub fn elevated_container(theme: LilypadTheme, v: UiVariation) -> container::Style {
     let palette = theme.palette();
     container::Style {
         background: Some(Background::Color(palette.surface_variant)),
         text_color: Some(palette.text_primary),
         border: Border {
             color: palette.border,
-            width: 1.0,
-            radius: 8.0.into(),
+            width: v.border_width(),
+            radius: v.elevated_radius().into(),
         },
         ..Default::default()
     }
 }
 
 /// Style for header container
-pub fn header_container(theme: LilypadTheme) -> container::Style {
+pub fn header_container(theme: LilypadTheme, v: UiVariation) -> container::Style {
     let palette = theme.palette();
     container::Style {
         background: Some(Background::Color(palette.surface)),
@@ -515,22 +735,22 @@ pub fn header_container(theme: LilypadTheme) -> container::Style {
             radius: 0.0.into(),
         },
         shadow: Shadow {
-            color: Color::from_rgba8(0, 0, 0, 0.15),
+            color: Color::from_rgba(0.0, 0.0, 0.0, if v == UiVariation::Sharp { 0.0 } else { 0.15 }),
             offset: Vector::new(0.0, 2.0),
-            blur_radius: 10.0,
+            blur_radius: v.header_shadow_blur(),
         },
     }
 }
 
 /// Style for navigation bar container
-pub fn nav_container(theme: LilypadTheme) -> container::Style {
+pub fn nav_container(theme: LilypadTheme, v: UiVariation) -> container::Style {
     let palette = theme.palette();
     container::Style {
         background: Some(Background::Color(palette.surface)),
         text_color: Some(palette.text_primary),
         border: Border {
             color: palette.border,
-            width: 1.0,
+            width: v.border_width(),
             radius: 0.0.into(),
         },
         ..Default::default()
@@ -538,14 +758,14 @@ pub fn nav_container(theme: LilypadTheme) -> container::Style {
 }
 
 /// Style for sidebar container
-pub fn sidebar_container(theme: LilypadTheme) -> container::Style {
+pub fn sidebar_container(theme: LilypadTheme, v: UiVariation) -> container::Style {
     let palette = theme.palette();
     container::Style {
         background: Some(Background::Color(palette.surface_variant)),
         text_color: Some(palette.text_primary),
         border: Border {
             color: palette.border,
-            width: 1.0,
+            width: v.border_width(),
             radius: 0.0.into(),
         },
         ..Default::default()
@@ -553,7 +773,7 @@ pub fn sidebar_container(theme: LilypadTheme) -> container::Style {
 }
 
 /// Modal overlay background
-pub fn modal_overlay(_theme: LilypadTheme) -> container::Style {
+pub fn modal_overlay(_theme: LilypadTheme, _v: UiVariation) -> container::Style {
     container::Style {
         background: Some(Background::Color(Color::from_rgba8(0, 0, 0, 0.6))),
         ..Default::default()
@@ -561,20 +781,20 @@ pub fn modal_overlay(_theme: LilypadTheme) -> container::Style {
 }
 
 /// Modal content container
-pub fn modal_container(theme: LilypadTheme) -> container::Style {
+pub fn modal_container(theme: LilypadTheme, v: UiVariation) -> container::Style {
     let palette = theme.palette();
     container::Style {
         background: Some(Background::Color(palette.surface)),
         text_color: Some(palette.text_primary),
         border: Border {
             color: palette.border,
-            width: 1.0,
-            radius: 16.0.into(),
+            width: v.border_width(),
+            radius: v.modal_radius().into(),
         },
         shadow: Shadow {
-            color: Color::from_rgba8(0, 0, 0, 0.25),
+            color: Color::from_rgba(0.0, 0.0, 0.0, if v == UiVariation::Sharp { 0.0 } else { 0.25 }),
             offset: Vector::new(0.0, 8.0),
-            blur_radius: 24.0,
+            blur_radius: v.modal_shadow_blur(),
         },
     }
 }
@@ -584,7 +804,7 @@ pub fn modal_container(theme: LilypadTheme) -> container::Style {
 // ============================================================================
 
 /// Primary action button style
-pub fn primary_button(theme: LilypadTheme) -> button::Style {
+pub fn primary_button(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
     button::Style {
         background: Some(Background::Color(palette.primary)),
@@ -592,50 +812,50 @@ pub fn primary_button(theme: LilypadTheme) -> button::Style {
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
-            radius: 8.0.into(),
+            radius: v.button_radius().into(),
         },
         shadow: Shadow {
-            color: Color::from_rgba8(0, 0, 0, 0.2),
+            color: Color::from_rgba(0.0, 0.0, 0.0, v.card_shadow_alpha() * 2.0),
             offset: Vector::new(0.0, 2.0),
-            blur_radius: 4.0,
+            blur_radius: v.button_shadow_blur(),
         },
     }
 }
 
 /// Primary button hovered
-pub fn primary_button_hovered(theme: LilypadTheme) -> button::Style {
+pub fn primary_button_hovered(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
-    let mut style = primary_button(theme);
+    let mut style = primary_button(theme, v);
     style.background = Some(Background::Color(lighten_color(palette.primary, 0.1)));
-    style.shadow.blur_radius = 8.0;
+    style.shadow.blur_radius = v.button_shadow_blur() * 2.0;
     style
 }
 
 /// Secondary/outline button style
-pub fn secondary_button(theme: LilypadTheme) -> button::Style {
+pub fn secondary_button(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
     button::Style {
         background: Some(Background::Color(Color::TRANSPARENT)),
         text_color: palette.primary,
         border: Border {
             color: palette.primary,
-            width: 1.5,
-            radius: 8.0.into(),
+            width: v.secondary_border_width(),
+            radius: v.button_radius().into(),
         },
         ..Default::default()
     }
 }
 
 /// Secondary button hovered
-pub fn secondary_button_hovered(theme: LilypadTheme) -> button::Style {
+pub fn secondary_button_hovered(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
-    let mut style = secondary_button(theme);
+    let mut style = secondary_button(theme, v);
     style.background = Some(Background::Color(palette.hover));
     style
 }
 
 /// Ghost/text button style
-pub fn ghost_button(theme: LilypadTheme) -> button::Style {
+pub fn ghost_button(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
     button::Style {
         background: Some(Background::Color(Color::TRANSPARENT)),
@@ -643,23 +863,23 @@ pub fn ghost_button(theme: LilypadTheme) -> button::Style {
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
-            radius: 6.0.into(),
+            radius: v.ghost_radius().into(),
         },
         ..Default::default()
     }
 }
 
 /// Ghost button hovered
-pub fn ghost_button_hovered(theme: LilypadTheme) -> button::Style {
+pub fn ghost_button_hovered(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
-    let mut style = ghost_button(theme);
+    let mut style = ghost_button(theme, v);
     style.background = Some(Background::Color(palette.hover));
     style.text_color = palette.text_primary;
     style
 }
 
 /// Danger button style
-pub fn danger_button(theme: LilypadTheme) -> button::Style {
+pub fn danger_button(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
     button::Style {
         background: Some(Background::Color(palette.danger)),
@@ -667,26 +887,26 @@ pub fn danger_button(theme: LilypadTheme) -> button::Style {
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
-            radius: 8.0.into(),
+            radius: v.button_radius().into(),
         },
         shadow: Shadow {
-            color: Color::from_rgba8(0, 0, 0, 0.2),
+            color: Color::from_rgba(0.0, 0.0, 0.0, v.card_shadow_alpha() * 2.0),
             offset: Vector::new(0.0, 2.0),
-            blur_radius: 4.0,
+            blur_radius: v.button_shadow_blur(),
         },
     }
 }
 
 /// Danger button hovered
-pub fn danger_button_hovered(theme: LilypadTheme) -> button::Style {
+pub fn danger_button_hovered(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
-    let mut style = danger_button(theme);
+    let mut style = danger_button(theme, v);
     style.background = Some(Background::Color(lighten_color(palette.danger, 0.1)));
     style
 }
 
 /// Navigation tab button (inactive)
-pub fn nav_button(theme: LilypadTheme) -> button::Style {
+pub fn nav_button(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
     button::Style {
         background: Some(Background::Color(Color::TRANSPARENT)),
@@ -694,14 +914,14 @@ pub fn nav_button(theme: LilypadTheme) -> button::Style {
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
-            radius: 8.0.into(),
+            radius: v.button_radius().into(),
         },
         ..Default::default()
     }
 }
 
 /// Navigation tab button (active)
-pub fn nav_button_active(theme: LilypadTheme) -> button::Style {
+pub fn nav_button_active(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
     button::Style {
         background: Some(Background::Color(palette.hover)),
@@ -709,14 +929,14 @@ pub fn nav_button_active(theme: LilypadTheme) -> button::Style {
         border: Border {
             color: palette.primary,
             width: 0.0,
-            radius: 8.0.into(),
+            radius: v.button_radius().into(),
         },
         ..Default::default()
     }
 }
 
 /// Icon button style
-pub fn icon_button(theme: LilypadTheme) -> button::Style {
+pub fn icon_button(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
     button::Style {
         background: Some(Background::Color(Color::TRANSPARENT)),
@@ -724,16 +944,16 @@ pub fn icon_button(theme: LilypadTheme) -> button::Style {
         border: Border {
             color: Color::TRANSPARENT,
             width: 0.0,
-            radius: 6.0.into(),
+            radius: v.ghost_radius().into(),
         },
         ..Default::default()
     }
 }
 
 /// Icon button hovered
-pub fn icon_button_hovered(theme: LilypadTheme) -> button::Style {
+pub fn icon_button_hovered(theme: LilypadTheme, v: UiVariation) -> button::Style {
     let palette = theme.palette();
-    let mut style = icon_button(theme);
+    let mut style = icon_button(theme, v);
     style.background = Some(Background::Color(palette.surface_variant));
     style.text_color = palette.primary;
     style
@@ -744,14 +964,14 @@ pub fn icon_button_hovered(theme: LilypadTheme) -> button::Style {
 // ============================================================================
 
 /// Standard text input style
-pub fn text_input_style(theme: LilypadTheme) -> text_input::Style {
+pub fn text_input_style(theme: LilypadTheme, v: UiVariation) -> text_input::Style {
     let palette = theme.palette();
     text_input::Style {
         background: Background::Color(palette.surface_variant),
         border: Border {
             color: palette.border,
-            width: 1.0,
-            radius: 8.0.into(),
+            width: v.border_width(),
+            radius: v.input_radius().into(),
         },
         icon: palette.text_muted,
         placeholder: palette.text_muted,
@@ -761,18 +981,18 @@ pub fn text_input_style(theme: LilypadTheme) -> text_input::Style {
 }
 
 /// Focused text input style
-pub fn text_input_focused(theme: LilypadTheme) -> text_input::Style {
+pub fn text_input_focused(theme: LilypadTheme, v: UiVariation) -> text_input::Style {
     let palette = theme.palette();
-    let mut style = text_input_style(theme);
+    let mut style = text_input_style(theme, v);
     style.border.color = palette.primary;
     style.border.width = 2.0;
     style
 }
 
 /// Error text input style (for form validation feedback)
-pub fn text_input_error(theme: LilypadTheme) -> text_input::Style {
+pub fn text_input_error(theme: LilypadTheme, v: UiVariation) -> text_input::Style {
     let palette = theme.palette();
-    let mut style = text_input_style(theme);
+    let mut style = text_input_style(theme, v);
     style.border.color = palette.danger;
     style.border.width = 2.0;
     style
@@ -783,7 +1003,7 @@ pub fn text_input_error(theme: LilypadTheme) -> text_input::Style {
 // ============================================================================
 
 /// Scrollable style
-pub fn scrollable_style(theme: LilypadTheme) -> scrollable::Style {
+pub fn scrollable_style(theme: LilypadTheme, v: UiVariation) -> scrollable::Style {
     let palette = theme.palette();
     scrollable::Style {
         container: container::Style::default(),
@@ -795,7 +1015,7 @@ pub fn scrollable_style(theme: LilypadTheme) -> scrollable::Style {
                 border: Border {
                     color: Color::TRANSPARENT,
                     width: 0.0,
-                    radius: 4.0.into(),
+                    radius: v.scroller_radius().into(),
                 },
             },
         },
@@ -807,7 +1027,7 @@ pub fn scrollable_style(theme: LilypadTheme) -> scrollable::Style {
                 border: Border {
                     color: Color::TRANSPARENT,
                     width: 0.0,
-                    radius: 4.0.into(),
+                    radius: v.scroller_radius().into(),
                 },
             },
         },
@@ -840,19 +1060,19 @@ pub fn darken_color(color: Color, factor: f32) -> Color {
 }
 
 /// Toast notification container (floating)
-pub fn toast_container(_theme: LilypadTheme) -> container::Style {
+pub fn toast_container(_theme: LilypadTheme, v: UiVariation) -> container::Style {
     container::Style {
         background: Some(Background::Color(Color::from_rgba8(30, 30, 30, 0.92))),
         text_color: Some(Color::WHITE),
         border: Border {
             color: Color::from_rgba8(255, 255, 255, 0.1),
-            width: 1.0,
-            radius: 12.0.into(),
+            width: v.border_width(),
+            radius: v.toast_radius().into(),
         },
         shadow: Shadow {
-            color: Color::from_rgba8(0, 0, 0, 0.4),
+            color: Color::from_rgba(0.0, 0.0, 0.0, if v == UiVariation::Sharp { 0.0 } else { 0.4 }),
             offset: iced::Vector::new(0.0, 4.0),
-            blur_radius: 12.0,
+            blur_radius: v.card_shadow_blur(),
         },
         ..Default::default()
     }

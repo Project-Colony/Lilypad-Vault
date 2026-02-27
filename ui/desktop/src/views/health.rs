@@ -10,11 +10,12 @@ use lilypad_common::{HealthGrade, HealthReport};
 
 use crate::fonts::{self, icons};
 use crate::message::Message;
-use crate::theme::{self, LilypadTheme};
+use crate::theme::{self, LilypadTheme, UiVariation};
 
 /// Render the health dashboard
 pub fn view(
     theme: LilypadTheme,
+    v: UiVariation,
     health_report: Option<&HealthReport>,
     breached_entries: &[String],
 ) -> Element<'static, Message> {
@@ -77,7 +78,7 @@ pub fn view(
             .padding(24),
         )
         .width(Length::Fill)
-        .style(move |_| theme::card_container(theme));
+        .style(move |_| theme::card_container(theme, v));
 
         // Get stats
         let total_entries = report.stats.total_entries;
@@ -89,6 +90,7 @@ pub fn view(
         let stats_row = row![
             stat_card(
                 theme,
+                v,
                 "Total Entries",
                 total_entries,
                 icons::VAULT,
@@ -97,6 +99,7 @@ pub fn view(
             Space::with_width(16),
             stat_card(
                 theme,
+                v,
                 "Weak Passwords",
                 weak_passwords,
                 icons::TRIANGLE_EXCLAMATION,
@@ -109,6 +112,7 @@ pub fn view(
             Space::with_width(16),
             stat_card(
                 theme,
+                v,
                 "Reused Passwords",
                 reused_passwords,
                 icons::REFRESH,
@@ -121,6 +125,7 @@ pub fn view(
             Space::with_width(16),
             stat_card(
                 theme,
+                v,
                 "Expired",
                 expired_passwords,
                 icons::CLOCK,
@@ -161,6 +166,7 @@ pub fn view(
             if weak_passwords > 0 {
                 issues.push(issue_item(
                     theme,
+                    v,
                     "Weak Passwords",
                     format!(
                         "{} password{} need{} to be strengthened",
@@ -175,6 +181,7 @@ pub fn view(
             if reused_passwords > 0 {
                 issues.push(issue_item(
                     theme,
+                    v,
                     "Reused Passwords",
                     format!(
                         "{} password{} {} being reused across accounts",
@@ -189,6 +196,7 @@ pub fn view(
             if expired_passwords > 0 {
                 issues.push(issue_item(
                     theme,
+                    v,
                     "Expired Passwords",
                     format!(
                         "{} password{} {} older than recommended",
@@ -202,7 +210,7 @@ pub fn view(
 
             scrollable(column(issues).spacing(12))
                 .height(Length::Fill)
-                .style(move |_theme, _status| theme::scrollable_style(theme))
+                .style(move |_theme, _status| theme::scrollable_style(theme, v))
                 .into()
         };
 
@@ -217,8 +225,8 @@ pub fn view(
         )
         .padding([10, 16])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::secondary_button_hovered(theme),
-            _ => theme::secondary_button(theme),
+            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+            _ => theme::secondary_button(theme, v),
         })
         .on_press(Message::RefreshHealthReport);
 
@@ -233,8 +241,8 @@ pub fn view(
         )
         .padding([10, 16])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::primary_button_hovered(theme),
-            _ => theme::primary_button(theme),
+            button::Status::Hovered => theme::primary_button_hovered(theme, v),
+            _ => theme::primary_button(theme, v),
         })
         .on_press(Message::CheckBreaches);
 
@@ -269,7 +277,7 @@ pub fn view(
                         .padding(12),
                     )
                     .width(Length::Fill)
-                    .style(move |_| theme::elevated_container(theme))
+                    .style(move |_| theme::elevated_container(theme, v))
                     .into()
                 })
                 .collect();
@@ -342,8 +350,8 @@ pub fn view(
         )
         .padding([14, 24])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::primary_button_hovered(theme),
-            _ => theme::primary_button(theme),
+            button::Status::Hovered => theme::primary_button_hovered(theme, v),
+            _ => theme::primary_button(theme, v),
         })
         .on_press(Message::RefreshHealthReport);
 
@@ -406,6 +414,7 @@ fn grade_description(grade: &HealthGrade) -> &'static str {
 /// Render a statistics card
 fn stat_card(
     theme: LilypadTheme,
+    v: UiVariation,
     label: &'static str,
     value: usize,
     icon: &'static str,
@@ -427,13 +436,14 @@ fn stat_card(
         .padding(16),
     )
     .width(Length::FillPortion(1))
-    .style(move |_| theme::card_container(theme))
+    .style(move |_| theme::card_container(theme, v))
     .into()
 }
 
 /// Render an issue item
 fn issue_item(
     theme: LilypadTheme,
+    v: UiVariation,
     title: &'static str,
     description: String,
     accent_color: iced::Color,
@@ -462,6 +472,6 @@ fn issue_item(
         .padding(16),
     )
     .width(Length::Fill)
-    .style(move |_| theme::elevated_container(theme))
+    .style(move |_| theme::elevated_container(theme, v))
     .into()
 }

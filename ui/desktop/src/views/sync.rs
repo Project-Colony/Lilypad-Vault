@@ -8,11 +8,12 @@ use iced::{Element, Length};
 
 use crate::fonts::{self, icons};
 use crate::message::Message;
-use crate::theme::{self, LilypadTheme};
+use crate::theme::{self, LilypadTheme, UiVariation};
 
 /// Render the sync & data management section
 pub fn view(
     theme: LilypadTheme,
+    v: UiVariation,
     github_authenticated: bool,
     sync_in_progress: bool,
     sync_conflict: bool,
@@ -29,7 +30,7 @@ pub fn view(
 
     // Sync Actions (only if authenticated)
     let sync_section: Element<'static, Message> = if github_authenticated {
-        sync_actions_section(theme, sync_in_progress)
+        sync_actions_section(theme, v, sync_in_progress)
     } else {
         let connect_hint = container(
             column![
@@ -44,22 +45,22 @@ pub fn view(
         .width(Length::Fill)
         .padding(32)
         .align_x(Horizontal::Center)
-        .style(move |_| theme::card_container(theme));
+        .style(move |_| theme::card_container(theme, v));
         connect_hint.into()
     };
 
     // Conflict resolution
     let conflict_section: Element<'static, Message> = if sync_conflict {
-        conflict_resolution_section(theme)
+        conflict_resolution_section(theme, v)
     } else {
         Space::new(0, 0).into()
     };
 
     // Export/Import Section
-    let data_section = data_management_section(theme);
+    let data_section = data_management_section(theme, v);
 
     // Backup & Restore Section
-    let backup = backup_section(theme);
+    let backup = backup_section(theme, v);
 
     let content = column![
         title,
@@ -83,13 +84,14 @@ pub fn view(
             .align_x(Horizontal::Center),
     )
     .height(Length::Fill)
-    .style(move |_theme, _status| theme::scrollable_style(theme))
+    .style(move |_theme, _status| theme::scrollable_style(theme, v))
     .into()
 }
 
 /// Sync actions card (push/pull/status)
 fn sync_actions_section(
     theme: LilypadTheme,
+    v: UiVariation,
     in_progress: bool,
 ) -> Element<'static, Message> {
     let palette = theme.palette();
@@ -117,8 +119,8 @@ fn sync_actions_section(
     .width(Length::FillPortion(1))
     .padding([12, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme),
-        _ => theme::primary_button(theme),
+        button::Status::Hovered => theme::primary_button_hovered(theme, v),
+        _ => theme::primary_button(theme, v),
     });
 
     let push_btn = if in_progress {
@@ -142,8 +144,8 @@ fn sync_actions_section(
     .width(Length::FillPortion(1))
     .padding([12, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button(theme),
-        _ => theme::secondary_button(theme),
+        button::Status::Hovered => theme::secondary_button(theme, v),
+        _ => theme::secondary_button(theme, v),
     });
 
     let pull_btn = if in_progress {
@@ -162,8 +164,8 @@ fn sync_actions_section(
     .width(Length::Fill)
     .padding([8, 12])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::ghost_button_hovered(theme),
-        _ => theme::ghost_button(theme),
+        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+        _ => theme::ghost_button(theme, v),
     });
 
     let status_btn = if in_progress {
@@ -197,12 +199,12 @@ fn sync_actions_section(
         .padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme))
+    .style(move |_| theme::card_container(theme, v))
     .into()
 }
 
 /// Export/Import data management card
-fn data_management_section(theme: LilypadTheme) -> Element<'static, Message> {
+fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'static, Message> {
     let palette = theme.palette();
 
     let section_title = text("Data Management")
@@ -228,8 +230,8 @@ fn data_management_section(theme: LilypadTheme) -> Element<'static, Message> {
     .width(Length::Fill)
     .padding([10, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme),
-        _ => theme::secondary_button(theme),
+        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+        _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::ExportVault);
 
@@ -249,11 +251,11 @@ fn data_management_section(theme: LilypadTheme) -> Element<'static, Message> {
     .padding([10, 16])
     .style(move |_theme, status| match status {
         button::Status::Hovered => {
-            let mut style = theme::secondary_button_hovered(theme);
+            let mut style = theme::secondary_button_hovered(theme, v);
             style.text_color = palette.warning;
             style
         }
-        _ => theme::secondary_button(theme),
+        _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::ExportVaultJson);
 
@@ -273,11 +275,11 @@ fn data_management_section(theme: LilypadTheme) -> Element<'static, Message> {
     .padding([10, 16])
     .style(move |_theme, status| match status {
         button::Status::Hovered => {
-            let mut style = theme::secondary_button_hovered(theme);
+            let mut style = theme::secondary_button_hovered(theme, v);
             style.text_color = palette.warning;
             style
         }
-        _ => theme::secondary_button(theme),
+        _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::ExportVaultCsv);
 
@@ -314,8 +316,8 @@ fn data_management_section(theme: LilypadTheme) -> Element<'static, Message> {
     .width(Length::Fill)
     .padding([10, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme),
-        _ => theme::secondary_button(theme),
+        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+        _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::ImportVault);
 
@@ -334,8 +336,8 @@ fn data_management_section(theme: LilypadTheme) -> Element<'static, Message> {
     .width(Length::Fill)
     .padding([10, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme),
-        _ => theme::secondary_button(theme),
+        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+        _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::ImportBrowserCsv);
 
@@ -367,12 +369,12 @@ fn data_management_section(theme: LilypadTheme) -> Element<'static, Message> {
         .padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme))
+    .style(move |_| theme::card_container(theme, v))
     .into()
 }
 
 /// Sync conflict resolution section
-fn conflict_resolution_section(theme: LilypadTheme) -> Element<'static, Message> {
+fn conflict_resolution_section(theme: LilypadTheme, v: UiVariation) -> Element<'static, Message> {
     let palette = theme.palette();
 
     let icon = fonts::centered_icon_colored(icons::TRIANGLE_EXCLAMATION, 24.0, palette.warning);
@@ -403,8 +405,8 @@ fn conflict_resolution_section(theme: LilypadTheme) -> Element<'static, Message>
     .width(Length::FillPortion(1))
     .padding([12, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme),
-        _ => theme::primary_button(theme),
+        button::Status::Hovered => theme::primary_button_hovered(theme, v),
+        _ => theme::primary_button(theme, v),
     })
     .on_press(Message::SyncResolveKeepLocal);
 
@@ -424,8 +426,8 @@ fn conflict_resolution_section(theme: LilypadTheme) -> Element<'static, Message>
     .width(Length::FillPortion(1))
     .padding([12, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme),
-        _ => theme::secondary_button(theme),
+        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+        _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::SyncResolveKeepRemote);
 
@@ -456,7 +458,7 @@ fn conflict_resolution_section(theme: LilypadTheme) -> Element<'static, Message>
 }
 
 /// Backup & Restore section
-fn backup_section(theme: LilypadTheme) -> Element<'static, Message> {
+fn backup_section(theme: LilypadTheme, v: UiVariation) -> Element<'static, Message> {
     let palette = theme.palette();
 
     let section_title = text("Backup & Restore")
@@ -482,8 +484,8 @@ fn backup_section(theme: LilypadTheme) -> Element<'static, Message> {
     .width(Length::FillPortion(1))
     .padding([12, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme),
-        _ => theme::primary_button(theme),
+        button::Status::Hovered => theme::primary_button_hovered(theme, v),
+        _ => theme::primary_button(theme, v),
     })
     .on_press(Message::BackupVault);
 
@@ -502,8 +504,8 @@ fn backup_section(theme: LilypadTheme) -> Element<'static, Message> {
     .width(Length::FillPortion(1))
     .padding([12, 16])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme),
-        _ => theme::secondary_button(theme),
+        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+        _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::RestoreVault);
 
@@ -518,6 +520,6 @@ fn backup_section(theme: LilypadTheme) -> Element<'static, Message> {
         .padding(24),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme))
+    .style(move |_| theme::card_container(theme, v))
     .into()
 }

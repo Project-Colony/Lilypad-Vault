@@ -14,11 +14,12 @@ use lilypad_common::validation::{validate_password_strength, PasswordStrength};
 use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::state::{OnboardingStep, TutorialPhase};
-use crate::theme::{self, LilypadPalette, LilypadTheme};
+use crate::theme::{self, LilypadPalette, LilypadTheme, UiVariation};
 
 /// Parameters passed from the main app to render the onboarding flow.
 pub struct OnboardingParams<'a> {
     pub theme: LilypadTheme,
+    pub variation: UiVariation,
     pub step: OnboardingStep,
     pub tutorial_phase: TutorialPhase,
     pub tutorial_generated_pw: &'a str,
@@ -39,6 +40,7 @@ pub struct OnboardingParams<'a> {
 pub fn view(params: OnboardingParams<'_>) -> Element<'static, Message> {
     let OnboardingParams {
         theme,
+        variation: v,
         step,
         tutorial_phase,
         tutorial_generated_pw,
@@ -55,11 +57,12 @@ pub fn view(params: OnboardingParams<'_>) -> Element<'static, Message> {
     let palette = theme.palette();
 
     let page_content: Element<'static, Message> = match step {
-        OnboardingStep::Welcome => welcome_page(theme, &palette),
-        OnboardingStep::Features => features_page(theme, &palette),
-        OnboardingStep::Colony => colony_page(theme, &palette),
+        OnboardingStep::Welcome => welcome_page(theme, v, &palette),
+        OnboardingStep::Features => features_page(theme, v, &palette),
+        OnboardingStep::Colony => colony_page(theme, v, &palette),
         OnboardingStep::Tutorial => tutorial_page(
             theme,
+            v,
             &palette,
             tutorial_phase,
             tutorial_generated_pw,
@@ -67,6 +70,7 @@ pub fn view(params: OnboardingParams<'_>) -> Element<'static, Message> {
         ),
         OnboardingStep::GitHubConnect => github_connect_page(
             theme,
+            v,
             &palette,
             github_authenticated,
             github_username,
@@ -76,6 +80,7 @@ pub fn view(params: OnboardingParams<'_>) -> Element<'static, Message> {
         ),
         OnboardingStep::CreateVault => create_vault_page(
             theme,
+            v,
             &palette,
             master_password,
             confirm_password,
@@ -85,7 +90,7 @@ pub fn view(params: OnboardingParams<'_>) -> Element<'static, Message> {
 
     let is_create_vault = step == OnboardingStep::CreateVault;
 
-    let dots = progress_dots(theme, &palette, step);
+    let dots = progress_dots(theme, v, &palette, step);
 
     let layout = if is_create_vault {
         // No navigation row on CreateVault — the "Create Vault" button handles it
@@ -99,7 +104,7 @@ pub fn view(params: OnboardingParams<'_>) -> Element<'static, Message> {
         .align_x(Horizontal::Center)
         .width(Length::Fixed(520.0))
     } else {
-        let nav = navigation_row(theme, &palette, step);
+        let nav = navigation_row(theme, v, &palette, step);
         column![
             Space::with_height(Length::FillPortion(2)),
             page_content,
@@ -122,7 +127,7 @@ pub fn view(params: OnboardingParams<'_>) -> Element<'static, Message> {
     )
     .width(Length::Fill)
     .height(Length::Fill)
-    .style(move |_| theme::app_container(theme))
+    .style(move |_| theme::app_container(theme, v))
     .into()
 }
 
@@ -130,7 +135,7 @@ pub fn view(params: OnboardingParams<'_>) -> Element<'static, Message> {
 // Page 1 — Welcome
 // ============================================================================
 
-fn welcome_page(_theme: LilypadTheme, palette: &LilypadPalette) -> Element<'static, Message> {
+fn welcome_page(_theme: LilypadTheme, _v: UiVariation, palette: &LilypadPalette) -> Element<'static, Message> {
     let logo = fonts::centered_icon_colored(icons::FLOWER, 64.0, palette.primary);
 
     let title = text("Welcome to Lilypad")
@@ -165,7 +170,7 @@ fn welcome_page(_theme: LilypadTheme, palette: &LilypadPalette) -> Element<'stat
 // Page 2 — Features
 // ============================================================================
 
-fn features_page(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'static, Message> {
+fn features_page(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) -> Element<'static, Message> {
     let title = text("What Lilypad Does")
         .size(24)
         .font(fonts::FONT_BOLD)
@@ -179,6 +184,7 @@ fn features_page(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'stat
     let features = column![
         feature_item(
             theme,
+            v,
             palette,
             icons::VAULT,
             "Encrypted Vault",
@@ -188,6 +194,7 @@ fn features_page(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'stat
         Space::with_height(16),
         feature_item(
             theme,
+            v,
             palette,
             icons::DICE,
             "Password Generator",
@@ -197,6 +204,7 @@ fn features_page(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'stat
         Space::with_height(16),
         feature_item(
             theme,
+            v,
             palette,
             icons::HEART_PULSE,
             "Health Dashboard",
@@ -206,6 +214,7 @@ fn features_page(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'stat
         Space::with_height(16),
         feature_item(
             theme,
+            v,
             palette,
             icons::SYNC,
             "Secure Sync",
@@ -227,6 +236,7 @@ fn features_page(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'stat
 
 fn feature_item(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: &LilypadPalette,
     icon: &'static str,
     title_text: &'static str,
@@ -239,7 +249,7 @@ fn feature_item(
     .height(Length::Fixed(40.0))
     .align_x(Horizontal::Center)
     .align_y(Vertical::Center)
-    .style(move |_| theme::elevated_container(theme));
+    .style(move |_| theme::elevated_container(theme, v));
 
     let text_col = column![
         text(title_text)
@@ -262,7 +272,7 @@ fn feature_item(
 // Page 3 — Colony
 // ============================================================================
 
-fn colony_page(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'static, Message> {
+fn colony_page(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) -> Element<'static, Message> {
     let globe = fonts::centered_icon_colored(icons::GLOBE, 48.0, palette.primary);
 
     let title = text("Part of Colony")
@@ -301,8 +311,8 @@ fn colony_page(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'static
     )
     .padding([10, 20])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme),
-        _ => theme::secondary_button(theme),
+        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
+        _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::OpenExternalLink(
         "https://github.com/MotherSphere/Colony".to_string(),
@@ -329,6 +339,7 @@ fn colony_page(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'static
 
 fn tutorial_page(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: &LilypadPalette,
     phase: TutorialPhase,
     generated_pw: &str,
@@ -347,9 +358,9 @@ fn tutorial_page(
         .color(palette.text_secondary);
 
     let phase_content: Element<'static, Message> = match phase {
-        TutorialPhase::GeneratePassword => tutorial_generate(theme, palette),
-        TutorialPhase::ViewVault => tutorial_view_vault(theme, palette, &generated_pw_owned),
-        TutorialPhase::CopyPassword => tutorial_copy(theme, palette, pw_copied),
+        TutorialPhase::GeneratePassword => tutorial_generate(theme, v, palette),
+        TutorialPhase::ViewVault => tutorial_view_vault(theme, v, palette, &generated_pw_owned),
+        TutorialPhase::CopyPassword => tutorial_copy(theme, v, palette, pw_copied),
     };
 
     let phase_indicator = tutorial_phase_dots(palette, phase);
@@ -367,7 +378,7 @@ fn tutorial_page(
     .into()
 }
 
-fn tutorial_generate(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'static, Message> {
+fn tutorial_generate(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) -> Element<'static, Message> {
     let instruction = text("Step 1 of 3 — Generate a password")
         .size(14)
         .font(fonts::FONT_MEDIUM)
@@ -396,8 +407,8 @@ fn tutorial_generate(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'
     .width(Length::Fill)
     .padding([14, 24])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme),
-        _ => theme::primary_button(theme),
+        button::Status::Hovered => theme::primary_button_hovered(theme, v),
+        _ => theme::primary_button(theme, v),
     })
     .on_press(Message::OnboardingTutorialGenerate);
 
@@ -413,6 +424,7 @@ fn tutorial_generate(theme: LilypadTheme, palette: &LilypadPalette) -> Element<'
 
 fn tutorial_view_vault(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: &LilypadPalette,
     generated_pw: &str,
 ) -> Element<'static, Message> {
@@ -462,13 +474,13 @@ fn tutorial_view_vault(
         .padding(16),
     )
     .width(Length::Fill)
-    .style(move |_| theme::card_container(theme));
+    .style(move |_| theme::card_container(theme, v));
 
     let next_btn = button(text("Got it").size(14))
         .padding([10, 24])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::primary_button_hovered(theme),
-            _ => theme::primary_button(theme),
+            button::Status::Hovered => theme::primary_button_hovered(theme, v),
+            _ => theme::primary_button(theme, v),
         })
         .on_press(Message::OnboardingTutorialNext);
 
@@ -486,6 +498,7 @@ fn tutorial_view_vault(
 
 fn tutorial_copy(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: &LilypadPalette,
     pw_copied: bool,
 ) -> Element<'static, Message> {
@@ -515,7 +528,7 @@ fn tutorial_copy(
         )
         .padding([10, 24])
         .style(move |_theme, _status| {
-            let mut style = theme::primary_button(theme);
+            let mut style = theme::primary_button(theme, v);
             style.background = Some(iced::Background::Color(success_color));
             style
         })
@@ -531,8 +544,8 @@ fn tutorial_copy(
         )
         .padding([10, 24])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::primary_button_hovered(theme),
-            _ => theme::primary_button(theme),
+            button::Status::Hovered => theme::primary_button_hovered(theme, v),
+            _ => theme::primary_button(theme, v),
         })
         .on_press(Message::OnboardingTutorialCopy)
         .into()
@@ -594,6 +607,7 @@ fn tutorial_phase_dots(
 
 fn github_connect_page(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: &LilypadPalette,
     authenticated: bool,
     username: Option<&str>,
@@ -616,13 +630,13 @@ fn github_connect_page(
 
     let content: Element<'static, Message> = if authenticated {
         // Connected — show success
-        github_connected(theme, palette, username)
+        github_connected(theme, v, palette, username)
     } else if in_progress {
         // Device flow in progress
-        github_in_progress(theme, palette, device_flow_code, device_flow_uri)
+        github_in_progress(theme, v, palette, device_flow_code, device_flow_uri)
     } else {
         // Not connected — show connect button
-        github_not_connected(theme, palette)
+        github_not_connected(theme, v, palette)
     };
 
     column![
@@ -638,6 +652,7 @@ fn github_connect_page(
 
 fn github_not_connected(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: &LilypadPalette,
 ) -> Element<'static, Message> {
     let icon = fonts::centered_icon_colored(icons::GITHUB, 48.0, palette.text_muted);
@@ -666,8 +681,8 @@ fn github_not_connected(
     .width(Length::Fill)
     .padding([14, 24])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme),
-        _ => theme::primary_button(theme),
+        button::Status::Hovered => theme::primary_button_hovered(theme, v),
+        _ => theme::primary_button(theme, v),
     })
     .on_press(Message::GitHubLogin);
 
@@ -691,6 +706,7 @@ fn github_not_connected(
 
 fn github_in_progress(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: &LilypadPalette,
     device_flow_code: Option<&str>,
     device_flow_uri: Option<&str>,
@@ -727,8 +743,8 @@ fn github_in_progress(
                 )
                 .padding([8, 16])
                 .style(move |_theme, status| match status {
-                    button::Status::Hovered => theme::ghost_button_hovered(theme),
-                    _ => theme::ghost_button(theme),
+                    button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                    _ => theme::ghost_button(theme, v),
                 })
                 .on_press(Message::CopyToClipboard(code_for_copy)),
                 Space::with_height(4),
@@ -739,8 +755,8 @@ fn github_in_progress(
                 button(text(uri_owned).size(12).color(palette.primary))
                     .padding([4, 8])
                     .style(move |_theme, status| match status {
-                        button::Status::Hovered => theme::ghost_button_hovered(theme),
-                        _ => theme::ghost_button(theme),
+                        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                        _ => theme::ghost_button(theme, v),
                     })
                     .on_press(Message::OpenExternalLink(
                         "https://github.com/login/device".to_string(),
@@ -750,7 +766,7 @@ fn github_in_progress(
         )
         .width(Length::Fill)
         .padding(16)
-        .style(move |_| theme::elevated_container(theme));
+        .style(move |_| theme::elevated_container(theme, v));
 
         items.push(Space::with_height(16).into());
         items.push(code_card.into());
@@ -761,6 +777,7 @@ fn github_in_progress(
 
 fn github_connected(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: &LilypadPalette,
     username: Option<&str>,
 ) -> Element<'static, Message> {
@@ -798,8 +815,8 @@ fn github_connected(
     .width(Length::Fixed(200.0))
     .padding([12, 24])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme),
-        _ => theme::primary_button(theme),
+        button::Status::Hovered => theme::primary_button_hovered(theme, v),
+        _ => theme::primary_button(theme, v),
     })
     .on_press(Message::OnboardingNext);
 
@@ -824,6 +841,7 @@ fn github_connected(
 
 fn create_vault_page(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: &LilypadPalette,
     master_password: &str,
     confirm_password: &str,
@@ -867,8 +885,8 @@ fn create_vault_page(
         .secure(true)
         .on_input(Message::MasterPasswordChanged)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme),
-            _ => theme::text_input_style(theme),
+            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            _ => theme::text_input_style(theme, v),
         });
 
     // Password strength indicator
@@ -915,8 +933,8 @@ fn create_vault_page(
         .on_input(Message::ConfirmPasswordChanged)
         .on_submit(Message::CreateVaultWithPassword)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme),
-            _ => theme::text_input_style(theme),
+            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            _ => theme::text_input_style(theme, v),
         });
 
     // Mismatch indicator
@@ -974,10 +992,10 @@ fn create_vault_page(
     .width(Length::Fill)
     .padding([14, 32])
     .style(move |_theme, status| match status {
-        button::Status::Hovered if can_create => theme::primary_button_hovered(theme),
-        _ if can_create => theme::primary_button(theme),
+        button::Status::Hovered if can_create => theme::primary_button_hovered(theme, v),
+        _ if can_create => theme::primary_button(theme, v),
         _ => {
-            let mut style = theme::primary_button(theme);
+            let mut style = theme::primary_button(theme, v);
             style.background = Some(iced::Background::Color(muted_color));
             style
         }
@@ -1020,6 +1038,7 @@ fn create_vault_page(
 
 fn progress_dots(
     _theme: LilypadTheme,
+    _v: UiVariation,
     palette: &LilypadPalette,
     current: OnboardingStep,
 ) -> Element<'static, Message> {
@@ -1062,6 +1081,7 @@ fn progress_dots(
 
 fn navigation_row(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: &LilypadPalette,
     step: OnboardingStep,
 ) -> Element<'static, Message> {
@@ -1080,8 +1100,8 @@ fn navigation_row(
         )
         .padding([8, 16])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme),
-            _ => theme::ghost_button(theme),
+            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+            _ => theme::ghost_button(theme, v),
         })
         .on_press(Message::OnboardingNext)
         .into()
@@ -1094,8 +1114,8 @@ fn navigation_row(
         )
         .padding([8, 16])
         .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme),
-            _ => theme::ghost_button(theme),
+            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+            _ => theme::ghost_button(theme, v),
         })
         .on_press(Message::OnboardingSkip)
         .into()
@@ -1105,8 +1125,8 @@ fn navigation_row(
         button(text("Back").size(13).font(fonts::FONT_REGULAR))
             .padding([8, 16])
             .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::ghost_button_hovered(theme),
-                _ => theme::ghost_button(theme),
+                button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                _ => theme::ghost_button(theme, v),
             })
             .on_press(Message::OnboardingPrev)
             .into()
@@ -1118,8 +1138,8 @@ fn navigation_row(
         button(text("Next").size(14).font(fonts::FONT_SEMIBOLD))
             .padding([10, 24])
             .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::primary_button_hovered(theme),
-                _ => theme::primary_button(theme),
+                button::Status::Hovered => theme::primary_button_hovered(theme, v),
+                _ => theme::primary_button(theme, v),
             })
             .on_press(Message::OnboardingNext)
             .into()

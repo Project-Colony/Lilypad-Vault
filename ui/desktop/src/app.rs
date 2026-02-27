@@ -5,7 +5,6 @@
 use std::fs;
 use std::time::{Duration, Instant};
 
-use arboard::Clipboard;
 use directories::ProjectDirs;
 use iced::widget::{column, container};
 use iced::alignment::{Horizontal, Vertical};
@@ -31,7 +30,7 @@ use crate::state::{
     AppSettings, Category, LockoutState, OnboardingStep, TutorialPhase, UnlockMode, VaultEntry,
     VaultViewMode, DEFAULT_VAULT_NAME, SETTINGS_VERSION,
 };
-use crate::theme::{self, LilypadTheme};
+use crate::theme::{self, LilypadTheme, UiVariation};
 use crate::views;
 
 /// Main Lilypad application
@@ -104,6 +103,7 @@ pub struct LilypadApp {
     pub settings: AppSettings,
     pub show_settings: bool,
     pub theme: LilypadTheme,
+    pub ui_variation: UiVariation,
     pub theme_sort_by_color: bool,
 
     // Security
@@ -111,7 +111,6 @@ pub struct LilypadApp {
     pub last_activity: Instant,
 
     // Clipboard management
-    pub clipboard: Option<Clipboard>,
     pub clipboard_clear_time: Option<Instant>,
     pub clipboard_value: Option<String>,
 
@@ -275,11 +274,11 @@ impl LilypadApp {
             settings: AppSettings::default(),
             show_settings: false,
             theme: LilypadTheme::ClassicGreen,
+            ui_variation: UiVariation::Default,
             theme_sort_by_color: false,
             lockout_state: LockoutState::default(),
             last_activity: now,
-            clipboard: Clipboard::new().ok(),
-            clipboard_clear_time: None,
+                    clipboard_clear_time: None,
             clipboard_value: None,
             show_reauth_modal: false,
             reauth_password: String::new(),
@@ -362,6 +361,7 @@ impl LilypadApp {
                         settings.version = SETTINGS_VERSION;
                     }
                     app.theme = LilypadTheme::from_index(settings.theme_index);
+                    app.ui_variation = UiVariation::from_index(settings.ui_variation_index);
                     // Restore account settings from persisted state
                     app.account_display_name = settings.account_display_name.clone();
                     app.account_email = settings.account_email.clone();
@@ -464,9 +464,7 @@ impl LilypadApp {
                 self.tutorial_phase = TutorialPhase::ViewVault;
             }
             Message::OnboardingTutorialCopy => {
-                if let Some(ref mut clipboard) = self.clipboard {
-                    let _ = clipboard.set_text(&self.tutorial_generated_pw);
-                }
+                self.copy_to_clipboard(&self.tutorial_generated_pw.clone());
                 self.tutorial_pw_copied = true;
             }
             Message::OnboardingTutorialNext => {
@@ -789,6 +787,11 @@ impl LilypadApp {
                 self.settings.theme_index = theme.to_index();
                 self.save_settings();
             }
+            Message::ChangeUiVariation(variation) => {
+                self.ui_variation = variation;
+                self.settings.ui_variation_index = variation.to_index();
+                self.save_settings();
+            }
             Message::ToggleThemeSort => {
                 self.theme_sort_by_color = !self.theme_sort_by_color;
             }
@@ -1094,9 +1097,12 @@ impl LilypadApp {
 
     /// Create the view
     pub fn view(&self) -> Element<'_, Message> {
+        let v = self.ui_variation;
+
         if self.show_welcome {
             return views::welcome::view(views::welcome::OnboardingParams {
                 theme: self.theme,
+                variation: v,
                 step: self.onboarding_step,
                 tutorial_phase: self.tutorial_phase,
                 tutorial_generated_pw: &self.tutorial_generated_pw,
@@ -1115,6 +1121,7 @@ impl LilypadApp {
         if !self.vault_unlocked {
             return views::unlock::view(
                 self.theme,
+                v,
                 &self.master_password,
                 &self.confirm_password,
                 &self.lockout_state,
@@ -1126,6 +1133,7 @@ impl LilypadApp {
         // Main application layout
         let header = views::header::view(
             self.theme,
+            v,
             &self.active_vault,
             &self.available_vaults,
             &self.search_query,
@@ -1136,6 +1144,7 @@ impl LilypadApp {
         let main_content: Element<Message> = match Category::from_index(self.selected_category) {
             Category::Credentials => views::vault::view(views::vault::VaultViewParams {
                 theme: self.theme,
+                variation: v,
                 entries: &self.vault_entries,
                 search_query: &self.search_query,
                 view_mode: self.vault_view_mode,
@@ -1158,9 +1167,10 @@ impl LilypadApp {
                 entry_attachments: &self.entry_attachments,
                 show_advanced_fields: self.show_advanced_fields,
             }),
-            Category::Health => views::health::view(self.theme, self.health_report.as_ref(), &self.breached_entries),
+            Category::Health => views::health::view(self.theme, v, self.health_report.as_ref(), &self.breached_entries),
             Category::Generator => views::generator::view(views::generator::GeneratorViewParams {
                 theme: self.theme,
+                variation: v,
                 generated_password: &self.generated_password,
                 generator_length: self.generator_length,
                 generator_lowercase: self.generator_lowercase,
@@ -1171,12 +1181,14 @@ impl LilypadApp {
             }),
             Category::Sync => views::sync::view(
                 self.theme,
+                v,
                 self.github_authenticated,
                 self.sync_in_progress,
                 self.sync_conflict,
             ),
             Category::Account => views::settings::account_view(
                 self.theme,
+                v,
                 self.github_authenticated,
                 self.github_username.as_deref(),
                 self.sync_in_progress,
@@ -1187,6 +1199,7 @@ impl LilypadApp {
             ),
             Category::Security => views::settings::security_view(
                 self.theme,
+                v,
                 &self.security_recovery_email,
                 &self.security_trusted_devices,
                 self.settings.auto_lock_minutes,
@@ -1195,7 +1208,7 @@ impl LilypadApp {
             ),
         };
 
-        let navigation = views::navigation::view(self.theme, self.selected_category);
+        let navigation = views::navigation::view(self.theme, v, self.selected_category);
 
         // Status bar
         let layout = column![header, main_content, navigation];
@@ -1204,7 +1217,7 @@ impl LilypadApp {
         let content: Element<Message> = container(layout)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(move |_| theme::app_container(self.theme))
+            .style(move |_| theme::app_container(self.theme, v))
             .into();
 
         // Add vault selector dropdown overlay
@@ -1213,6 +1226,7 @@ impl LilypadApp {
                 content,
                 views::header::vault_dropdown_overlay(
                     self.theme,
+                    v,
                     &self.active_vault,
                     &self.available_vaults,
                 ),
@@ -1221,19 +1235,19 @@ impl LilypadApp {
         } else if self.show_settings {
             iced::widget::stack![
                 content,
-                views::modals::settings_modal(self.theme, self.theme_sort_by_color),
+                views::modals::settings_modal(self.theme, v, self.theme_sort_by_color),
             ]
             .into()
         } else if self.show_new_vault_modal {
             iced::widget::stack![
                 content,
-                views::modals::new_vault_modal(self.theme, &self.new_vault_name),
+                views::modals::new_vault_modal(self.theme, v, &self.new_vault_name),
             ]
             .into()
         } else if self.renaming_vault.is_some() {
             iced::widget::stack![
                 content,
-                views::modals::rename_vault_modal(self.theme, &self.rename_vault_input),
+                views::modals::rename_vault_modal(self.theme, v, &self.rename_vault_input),
             ]
             .into()
         } else if self.show_delete_confirm {
@@ -1244,31 +1258,31 @@ impl LilypadApp {
                 .unwrap_or("this entry");
             iced::widget::stack![
                 content,
-                views::modals::delete_confirm_modal(self.theme, title),
+                views::modals::delete_confirm_modal(self.theme, v, title),
             ]
             .into()
         } else if self.show_reauth_modal {
             iced::widget::stack![
                 content,
-                views::modals::reauth_modal(self.theme, &self.reauth_password),
+                views::modals::reauth_modal(self.theme, v, &self.reauth_password),
             ]
             .into()
         } else if self.show_change_password {
             iced::widget::stack![
                 content,
-                views::modals::change_password_modal(self.theme, &self.new_master_password),
+                views::modals::change_password_modal(self.theme, v, &self.new_master_password),
             ]
             .into()
         } else if self.show_entry_history {
             iced::widget::stack![
                 content,
-                views::modals::entry_history_modal(self.theme, &self.history_entries),
+                views::modals::entry_history_modal(self.theme, v, &self.history_entries),
             ]
             .into()
         } else if self.show_audit_log {
             iced::widget::stack![
                 content,
-                views::modals::audit_log_modal(self.theme, &self.audit_events),
+                views::modals::audit_log_modal(self.theme, v, &self.audit_events),
             ]
             .into()
         } else {
@@ -1283,7 +1297,7 @@ impl LilypadApp {
                     .color(Color::WHITE),
             )
             .padding([10, 20])
-            .style(move |_| theme::toast_container(self.theme))
+            .style(move |_| theme::toast_container(self.theme, v))
             .into();
 
             let toast_overlay: Element<Message> = container(toast_pill)
@@ -1348,14 +1362,15 @@ impl LilypadApp {
     }
 
     fn check_clipboard_clear(&mut self) {
-        if let (Some(clear_time), Some(value)) = (&self.clipboard_clear_time, &self.clipboard_value)
+        if let (Some(clear_time), Some(ref value)) =
+            (&self.clipboard_clear_time, &self.clipboard_value)
         {
             if Instant::now() >= *clear_time {
-                if let Ok(mut clipboard) = Clipboard::new() {
-                    if clipboard.get_text().ok().as_deref() == Some(value) {
-                        let _ = clipboard.set_text(String::new());
-                    }
+                // Use common clipboard module (arboard + Linux shell fallback)
+                if let Err(e) = lilypad_common::clipboard::copy_to_clipboard("") {
+                    eprintln!("[clipboard] failed to clear: {e}");
                 }
+                let _ = value; // suppress unused warning
                 self.clipboard_clear_time = None;
                 self.clipboard_value = None;
             }
@@ -1363,11 +1378,13 @@ impl LilypadApp {
     }
 
     fn copy_to_clipboard(&mut self, value: &str) {
-        if let Some(ref mut clipboard) = self.clipboard {
-            let _ = clipboard.set_text(value.to_string());
-        } else if let Ok(mut clipboard) = Clipboard::new() {
-            let _ = clipboard.set_text(value.to_string());
-            self.clipboard = Some(clipboard);
+        match lilypad_common::clipboard::copy_to_clipboard(value) {
+            Ok(()) => {}
+            Err(e) => {
+                eprintln!("[clipboard] copy failed: {e}");
+                self.set_status("Clipboard error — install wl-copy or xclip");
+                return;
+            }
         }
         if self.settings.clipboard_timeout_seconds > 0 {
             self.clipboard_value = Some(value.to_string());

@@ -9,11 +9,12 @@ use iced::{Element, Length};
 use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::state::{LockoutState, UnlockMode};
-use crate::theme::{self, LilypadTheme};
+use crate::theme::{self, LilypadTheme, UiVariation};
 
 /// Render the unlock/create screen
 pub fn view(
     theme: LilypadTheme,
+    v: UiVariation,
     master_password: &str,
     confirm_password: &str,
     lockout_state: &LockoutState,
@@ -81,6 +82,7 @@ pub fn view(
         match unlock_mode {
             UnlockMode::Create => build_create_form(
                 theme,
+                v,
                 palette,
                 logo,
                 title,
@@ -90,6 +92,7 @@ pub fn view(
             ),
             UnlockMode::Unlock => build_unlock_form(
                 theme,
+                v,
                 palette,
                 logo,
                 title,
@@ -142,13 +145,14 @@ pub fn view(
         .height(Length::Fill)
         .center_x(Length::Fill)
         .center_y(Length::Fill)
-        .style(move |_| theme::app_container(theme))
+        .style(move |_| theme::app_container(theme, v))
         .into()
 }
 
 /// Build the "Create Your Vault" form.
 fn build_create_form(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: crate::theme::LilypadPalette,
     logo: Element<'static, Message>,
     title: iced::widget::Text<'static>,
@@ -176,8 +180,8 @@ fn build_create_form(
         .secure(true)
         .on_input(Message::MasterPasswordChanged)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme),
-            _ => theme::text_input_style(theme),
+            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            _ => theme::text_input_style(theme, v),
         });
 
     let confirm_label = text("Confirm Password")
@@ -194,8 +198,8 @@ fn build_create_form(
         .on_input(Message::ConfirmPasswordChanged)
         .on_submit(Message::CreateVaultWithPassword)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme),
-            _ => theme::text_input_style(theme),
+            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            _ => theme::text_input_style(theme, v),
         });
 
     // Password strength indicator
@@ -232,13 +236,13 @@ fn build_create_form(
     .width(Length::Fill)
     .padding([14, 24])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme),
+        button::Status::Hovered => theme::primary_button_hovered(theme, v),
         button::Status::Disabled => {
-            let mut style = theme::primary_button(theme);
+            let mut style = theme::primary_button(theme, v);
             style.background = Some(iced::Background::Color(palette.border));
             style
         }
-        _ => theme::primary_button(theme),
+        _ => theme::primary_button(theme, v),
     })
     .on_press_maybe(if can_create {
         Some(Message::CreateVaultWithPassword)
@@ -290,6 +294,7 @@ fn build_create_form(
 /// Build the "Unlock Vault" form.
 fn build_unlock_form(
     theme: LilypadTheme,
+    v: UiVariation,
     palette: crate::theme::LilypadPalette,
     logo: Element<'static, Message>,
     title: iced::widget::Text<'static>,
@@ -319,8 +324,8 @@ fn build_unlock_form(
         .on_input(Message::MasterPasswordChanged)
         .on_submit(Message::UnlockVault)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme),
-            _ => theme::text_input_style(theme),
+            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            _ => theme::text_input_style(theme, v),
         });
 
     let unlock_btn = button(
@@ -335,13 +340,13 @@ fn build_unlock_form(
     .width(Length::Fill)
     .padding([14, 24])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme),
+        button::Status::Hovered => theme::primary_button_hovered(theme, v),
         button::Status::Disabled => {
-            let mut style = theme::primary_button(theme);
+            let mut style = theme::primary_button(theme, v);
             style.background = Some(iced::Background::Color(palette.border));
             style
         }
-        _ => theme::primary_button(theme),
+        _ => theme::primary_button(theme, v),
     })
     .on_press_maybe(if is_empty {
         None
