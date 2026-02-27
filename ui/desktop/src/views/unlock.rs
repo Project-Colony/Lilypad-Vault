@@ -66,13 +66,13 @@ pub fn view(
 
         column![
             logo,
-            Space::with_height(16),
+            Space::new().height(16),
             title,
-            Space::with_height(48),
+            Space::new().height(48),
             lockout_title,
-            Space::with_height(8),
+            Space::new().height(8),
             lockout_msg,
-            Space::with_height(8),
+            Space::new().height(8),
             attempts_info,
         ]
         .align_x(Horizontal::Center)
@@ -111,7 +111,7 @@ pub fn view(
                     .size(13)
                     .font(fonts::FONT_REGULAR)
                     .color(palette.text_muted),
-                Space::with_width(4),
+                Space::new().width(4),
                 button(
                     text("Create a vault")
                         .size(13)
@@ -132,11 +132,11 @@ pub fn view(
     };
 
     let full_content = column![
-        Space::with_height(Length::FillPortion(1)),
+        Space::new().height(Length::FillPortion(1)),
         content,
-        Space::with_height(32),
+        Space::new().height(32),
         footer,
-        Space::with_height(Length::FillPortion(1)),
+        Space::new().height(Length::FillPortion(1)),
     ]
     .align_x(Horizontal::Center);
 
@@ -173,14 +173,14 @@ fn build_create_form(
         .color(palette.text_secondary);
 
     let password_input = text_input("Choose a strong password...", master_password)
-        .id(text_input::Id::new("master_password"))
+        .id(iced::widget::Id::new("master_password"))
         .padding(14)
         .size(16)
         .font(fonts::FONT_REGULAR)
         .secure(true)
         .on_input(Message::MasterPasswordChanged)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
             _ => theme::text_input_style(theme, v),
         });
 
@@ -190,7 +190,7 @@ fn build_create_form(
         .color(palette.text_secondary);
 
     let confirm_input = text_input("Re-enter your password...", confirm_password)
-        .id(text_input::Id::new("confirm_password"))
+        .id(iced::widget::Id::new("confirm_password"))
         .padding(14)
         .size(16)
         .font(fonts::FONT_REGULAR)
@@ -198,7 +198,7 @@ fn build_create_form(
         .on_input(Message::ConfirmPasswordChanged)
         .on_submit(Message::CreateVaultWithPassword)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
             _ => theme::text_input_style(theme, v),
         });
 
@@ -252,13 +252,13 @@ fn build_create_form(
 
     let mut form = column![
         logo,
-        Space::with_height(16),
+        Space::new().height(16),
         title,
-        Space::with_height(4),
+        Space::new().height(4),
         subtitle,
-        Space::with_height(48),
+        Space::new().height(48),
         password_label,
-        Space::with_height(8),
+        Space::new().height(8),
         password_input,
     ]
     .align_x(Horizontal::Center)
@@ -267,15 +267,15 @@ fn build_create_form(
 
     // Strength indicator
     if let Some(strength) = strength_text {
-        form = form.push(Space::with_height(4));
+        form = form.push(Space::new().height(4));
         form = form.push(strength);
     }
 
-    form = form.push(Space::with_height(16));
+    form = form.push(Space::new().height(16));
     form = form.push(confirm_label);
-    form = form.push(Space::with_height(8));
+    form = form.push(Space::new().height(8));
     form = form.push(confirm_input);
-    form = form.push(Space::with_height(24));
+    form = form.push(Space::new().height(24));
     form = form.push(create_btn);
 
     // Error message
@@ -284,7 +284,7 @@ fn build_create_form(
             .size(13)
             .font(fonts::FONT_REGULAR)
             .color(palette.danger);
-        form = form.push(Space::with_height(16));
+        form = form.push(Space::new().height(16));
         form = form.push(error_text);
     }
 
@@ -316,7 +316,7 @@ fn build_unlock_form(
 
     let is_empty = master_password.is_empty();
     let password_input = text_input("Enter your master password...", master_password)
-        .id(text_input::Id::new("master_password"))
+        .id(iced::widget::Id::new("master_password"))
         .padding(14)
         .size(16)
         .font(fonts::FONT_REGULAR)
@@ -324,7 +324,7 @@ fn build_unlock_form(
         .on_input(Message::MasterPasswordChanged)
         .on_submit(Message::UnlockVault)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
             _ => theme::text_input_style(theme, v),
         });
 
@@ -356,15 +356,15 @@ fn build_unlock_form(
 
     let mut form = column![
         logo,
-        Space::with_height(16),
+        Space::new().height(16),
         title,
-        Space::with_height(4),
+        Space::new().height(4),
         subtitle,
-        Space::with_height(48),
+        Space::new().height(48),
         password_label,
-        Space::with_height(8),
+        Space::new().height(8),
         password_input,
-        Space::with_height(24),
+        Space::new().height(24),
         unlock_btn,
     ]
     .align_x(Horizontal::Center)
@@ -377,7 +377,7 @@ fn build_unlock_form(
             .size(13)
             .font(fonts::FONT_REGULAR)
             .color(palette.danger);
-        form = form.push(Space::with_height(16));
+        form = form.push(Space::new().height(16));
         form = form.push(error_text);
     }
 
@@ -393,7 +393,7 @@ fn build_unlock_form(
         .font(fonts::FONT_REGULAR)
         .color(palette.warning);
 
-        form = form.push(Space::with_height(8));
+        form = form.push(Space::new().height(8));
         form = form.push(warning);
     }
 

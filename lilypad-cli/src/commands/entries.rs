@@ -8,7 +8,7 @@ use lilypad_common::{
 };
 use lilypad_core::{Entry, EntrySecret};
 use lilypad_storage::LocalStore;
-use rand::Rng;
+use rand::RngExt;
 use std::path::PathBuf;
 
 use super::utils::{
@@ -419,10 +419,10 @@ pub fn generate_password(
     }
 
     let charset_bytes = charset.as_bytes();
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let password: String = (0..length)
         .map(|_| {
-            let idx = rng.gen_range(0..charset_bytes.len());
+            let idx = rng.random_range(0..charset_bytes.len());
             charset_bytes[idx] as char
         })
         .collect();

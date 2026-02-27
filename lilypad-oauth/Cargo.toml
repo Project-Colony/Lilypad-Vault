@@ -18,9 +18,9 @@ sha2.workspace = true
 zeroize.workspace = true
 
 # OAuth specific dependencies
-rand = "0.8"
+rand = "0.10"
 url = "2.5"
-webbrowser = "1.0"
+webbrowser = "1.1"
 tiny_http = "0.12"
 directories = "6.0"
 

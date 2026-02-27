@@ -28,7 +28,8 @@ fn main() -> iced::Result {
         .init();
 
     // Run the application with custom fonts
-    iced::application("Lilypad", LilypadApp::update, LilypadApp::view)
+    iced::application(LilypadApp::new, LilypadApp::update, LilypadApp::view)
+        .title("Lilypad")
         .subscription(LilypadApp::subscription)
         .window_size(Size::new(1200.0, 800.0))
         .font(fonts::JETBRAINS_MONO_REGULAR)
@@ -37,7 +38,7 @@ fn main() -> iced::Result {
         .font(fonts::JETBRAINS_MONO_MEDIUM)
         .font(fonts::JETBRAINS_MONO_LIGHT)
         .default_font(fonts::FONT_REGULAR)
-        .run_with(LilypadApp::new)
+        .run()
 }
 
 /// Wrapper struct for the Iced application

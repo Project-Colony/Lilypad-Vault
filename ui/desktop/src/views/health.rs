@@ -63,12 +63,12 @@ pub fn view(
                     },
                     ..Default::default()
                 }),
-                Space::with_width(24),
+                Space::new().width(24),
                 column![
                     text("Overall Health Score").size(16).color(palette.text_primary),
-                    Space::with_height(4),
+                    Space::new().height(4),
                     text(format!("{} / 100", score_value)).size(28).color(grade_color),
-                    Space::with_height(4),
+                    Space::new().height(4),
                     text(grade_description(&report.score.grade))
                         .size(13)
                         .color(palette.text_secondary),
@@ -96,7 +96,7 @@ pub fn view(
                 icons::VAULT,
                 palette.primary,
             ),
-            Space::with_width(16),
+            Space::new().width(16),
             stat_card(
                 theme,
                 v,
@@ -109,7 +109,7 @@ pub fn view(
                     palette.success
                 },
             ),
-            Space::with_width(16),
+            Space::new().width(16),
             stat_card(
                 theme,
                 v,
@@ -122,7 +122,7 @@ pub fn view(
                     palette.success
                 },
             ),
-            Space::with_width(16),
+            Space::new().width(16),
             stat_card(
                 theme,
                 v,
@@ -149,7 +149,7 @@ pub fn view(
             container(
                 column![
                     fonts::centered_icon_colored(icons::CIRCLE_CHECK, 32.0, palette.success),
-                    Space::with_height(12),
+                    Space::new().height(12),
                     text("All passwords are healthy!")
                         .size(14)
                         .color(palette.text_secondary),
@@ -218,7 +218,7 @@ pub fn view(
         let refresh_btn = button(
             row![
                 fonts::centered_icon(icons::REFRESH, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Refresh").size(14),
             ]
             .align_y(Vertical::Center),
@@ -234,7 +234,7 @@ pub fn view(
         let breach_btn = button(
             row![
                 fonts::centered_icon(icons::SHIELD, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Check Breaches").size(14),
             ]
             .align_y(Vertical::Center),
@@ -268,9 +268,9 @@ pub fn view(
                     container(
                         row![
                             fonts::centered_icon_colored(icons::TRIANGLE_EXCLAMATION, 14.0, palette.danger),
-                            Space::with_width(12),
+                            Space::new().width(12),
                             text(label).size(14).color(palette.text_primary),
-                            Space::with_width(Length::Fill),
+                            Space::new().width(Length::Fill),
                             text("COMPROMISED").size(11).color(palette.danger),
                         ]
                         .align_y(Vertical::Center)
@@ -285,9 +285,9 @@ pub fn view(
             container(
                 column![
                     breach_title,
-                    Space::with_height(8),
+                    Space::new().height(8),
                     breach_hint,
-                    Space::with_height(12),
+                    Space::new().height(12),
                     column(breach_items).spacing(8),
                 ]
                 .padding(24),
@@ -307,33 +307,33 @@ pub fn view(
             })
             .into()
         } else {
-            Space::new(0, 0).into()
+            Space::new().width(0).height(0).into()
         };
 
         let mut content_col = column![
             title,
-            Space::with_height(4),
+            Space::new().height(4),
             subtitle,
-            Space::with_height(24),
+            Space::new().height(24),
             grade_card,
-            Space::with_height(24),
+            Space::new().height(24),
             stats_row,
-            Space::with_height(24),
+            Space::new().height(24),
             row![
                 issues_title,
-                Space::with_width(Length::Fill),
+                Space::new().width(Length::Fill),
                 breach_btn,
-                Space::with_width(8),
+                Space::new().width(8),
                 refresh_btn,
             ]
             .align_y(Vertical::Center),
-            Space::with_height(16),
+            Space::new().height(16),
             issues_content,
         ];
 
         if !breached_entries.is_empty() {
             content_col = content_col
-                .push(Space::with_height(24))
+                .push(Space::new().height(24))
                 .push(breach_section);
         }
 
@@ -343,7 +343,7 @@ pub fn view(
         let analyze_btn = button(
             row![
                 fonts::centered_icon(icons::HEART_PULSE, 16.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Analyze Passwords").size(15),
             ]
             .align_y(Vertical::Center),
@@ -357,21 +357,21 @@ pub fn view(
 
         column![
             title,
-            Space::with_height(4),
+            Space::new().height(4),
             subtitle,
-            Space::with_height(48),
+            Space::new().height(48),
             container(
                 column![
                     fonts::centered_icon(icons::HEART_PULSE, 64.0),
-                    Space::with_height(24),
+                    Space::new().height(24),
                     text("Analyze Your Passwords")
                         .size(18)
                         .color(palette.text_primary),
-                    Space::with_height(8),
+                    Space::new().height(8),
                     text("Check for weak, reused, or expired passwords")
                         .size(14)
                         .color(palette.text_secondary),
-                    Space::with_height(24),
+                    Space::new().height(24),
                     analyze_btn,
                 ]
                 .align_x(Horizontal::Center),
@@ -426,11 +426,11 @@ fn stat_card(
         column![
             row![
                 fonts::centered_icon(icon, 20.0),
-                Space::with_width(Length::Fill),
+                Space::new().width(Length::Fill),
             ],
-            Space::with_height(12),
+            Space::new().height(12),
             text(value.to_string()).size(28).color(accent_color),
-            Space::with_height(4),
+            Space::new().height(4),
             text(label).size(12).color(palette.text_muted),
         ]
         .padding(16),
@@ -452,7 +452,7 @@ fn issue_item(
 
     container(
         row![
-            container(Space::new(Length::Fixed(4.0), Length::Fixed(40.0)))
+            container(Space::new().width(Length::Fixed(4.0)).height(Length::Fixed(40.0)))
                 .style(move |_| container::Style {
                     background: Some(iced::Background::Color(accent_color)),
                     border: iced::Border {
@@ -461,10 +461,10 @@ fn issue_item(
                     },
                     ..Default::default()
                 }),
-            Space::with_width(16),
+            Space::new().width(16),
             column![
                 text(title).size(14).color(palette.text_primary),
-                Space::with_height(4),
+                Space::new().height(4),
                 text(description).size(13).color(palette.text_secondary),
             ],
         ]

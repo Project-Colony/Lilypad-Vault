@@ -705,6 +705,7 @@ pub fn card_container(theme: LilypadTheme, v: UiVariation) -> container::Style {
             offset: Vector::new(0.0, v.card_shadow_offset()),
             blur_radius: v.card_shadow_blur(),
         },
+        snap: false,
     }
 }
 
@@ -739,6 +740,7 @@ pub fn header_container(theme: LilypadTheme, v: UiVariation) -> container::Style
             offset: Vector::new(0.0, 2.0),
             blur_radius: v.header_shadow_blur(),
         },
+        snap: false,
     }
 }
 
@@ -796,6 +798,7 @@ pub fn modal_container(theme: LilypadTheme, v: UiVariation) -> container::Style 
             offset: Vector::new(0.0, 8.0),
             blur_radius: v.modal_shadow_blur(),
         },
+        snap: false,
     }
 }
 
@@ -819,6 +822,7 @@ pub fn primary_button(theme: LilypadTheme, v: UiVariation) -> button::Style {
             offset: Vector::new(0.0, 2.0),
             blur_radius: v.button_shadow_blur(),
         },
+        snap: false,
     }
 }
 
@@ -894,6 +898,7 @@ pub fn danger_button(theme: LilypadTheme, v: UiVariation) -> button::Style {
             offset: Vector::new(0.0, 2.0),
             blur_radius: v.button_shadow_blur(),
         },
+        snap: false,
     }
 }
 
@@ -1011,7 +1016,7 @@ pub fn scrollable_style(theme: LilypadTheme, v: UiVariation) -> scrollable::Styl
             background: Some(Background::Color(Color::TRANSPARENT)),
             border: Border::default(),
             scroller: scrollable::Scroller {
-                color: palette.border,
+                background: Background::Color(palette.border),
                 border: Border {
                     color: Color::TRANSPARENT,
                     width: 0.0,
@@ -1023,7 +1028,7 @@ pub fn scrollable_style(theme: LilypadTheme, v: UiVariation) -> scrollable::Styl
             background: Some(Background::Color(Color::TRANSPARENT)),
             border: Border::default(),
             scroller: scrollable::Scroller {
-                color: palette.border,
+                background: Background::Color(palette.border),
                 border: Border {
                     color: Color::TRANSPARENT,
                     width: 0.0,
@@ -1032,6 +1037,12 @@ pub fn scrollable_style(theme: LilypadTheme, v: UiVariation) -> scrollable::Styl
             },
         },
         gap: None,
+        auto_scroll: scrollable::AutoScroll {
+            background: Background::Color(Color::TRANSPARENT),
+            border: Border::default(),
+            shadow: Shadow::default(),
+            icon: palette.text_secondary,
+        },
     }
 }
 

@@ -95,24 +95,24 @@ pub fn view(params: OnboardingParams<'_>) -> Element<'static, Message> {
     let layout = if is_create_vault {
         // No navigation row on CreateVault — the "Create Vault" button handles it
         column![
-            Space::with_height(Length::FillPortion(2)),
+            Space::new().height(Length::FillPortion(2)),
             page_content,
-            Space::with_height(32),
+            Space::new().height(32),
             dots,
-            Space::with_height(Length::FillPortion(3)),
+            Space::new().height(Length::FillPortion(3)),
         ]
         .align_x(Horizontal::Center)
         .width(Length::Fixed(520.0))
     } else {
         let nav = navigation_row(theme, v, &palette, step);
         column![
-            Space::with_height(Length::FillPortion(2)),
+            Space::new().height(Length::FillPortion(2)),
             page_content,
-            Space::with_height(32),
+            Space::new().height(32),
             dots,
-            Space::with_height(16),
+            Space::new().height(16),
             nav,
-            Space::with_height(Length::FillPortion(3)),
+            Space::new().height(Length::FillPortion(3)),
         ]
         .align_x(Horizontal::Center)
         .width(Length::Fixed(520.0))
@@ -155,11 +155,11 @@ fn welcome_page(_theme: LilypadTheme, _v: UiVariation, palette: &LilypadPalette)
 
     column![
         logo,
-        Space::with_height(20),
+        Space::new().height(20),
         title,
-        Space::with_height(8),
+        Space::new().height(8),
         tagline,
-        Space::with_height(16),
+        Space::new().height(16),
         badge,
     ]
     .align_x(Horizontal::Center)
@@ -191,7 +191,7 @@ fn features_page(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) 
             "Your passwords are stored in a locally encrypted vault, \
              protected by your master password.",
         ),
-        Space::with_height(16),
+        Space::new().height(16),
         feature_item(
             theme,
             v,
@@ -201,7 +201,7 @@ fn features_page(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) 
             "Generate strong, unique passwords with customizable \
              length and character options.",
         ),
-        Space::with_height(16),
+        Space::new().height(16),
         feature_item(
             theme,
             v,
@@ -211,7 +211,7 @@ fn features_page(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) 
             "Identify weak, reused, or expired passwords across \
              all your accounts at a glance.",
         ),
-        Space::with_height(16),
+        Space::new().height(16),
         feature_item(
             theme,
             v,
@@ -225,9 +225,9 @@ fn features_page(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) 
 
     column![
         title,
-        Space::with_height(8),
+        Space::new().height(8),
         subtitle,
-        Space::with_height(32),
+        Space::new().height(32),
         features,
     ]
     .align_x(Horizontal::Center)
@@ -256,14 +256,14 @@ fn feature_item(
             .size(15)
             .font(fonts::FONT_SEMIBOLD)
             .color(palette.text_primary),
-        Space::with_height(4),
+        Space::new().height(4),
         text(description)
             .size(13)
             .font(fonts::FONT_REGULAR)
             .color(palette.text_secondary),
     ];
 
-    row![icon_el, Space::with_width(16), text_col]
+    row![icon_el, Space::new().width(16), text_col]
         .align_y(Vertical::Top)
         .into()
 }
@@ -302,7 +302,7 @@ fn colony_page(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) ->
     let github_btn = button(
         row![
             fonts::centered_icon_colored(icons::GITHUB, 16.0, palette.text_primary),
-            Space::with_width(8),
+            Space::new().width(8),
             text("Learn more on GitHub")
                 .size(13)
                 .color(palette.text_primary),
@@ -320,13 +320,13 @@ fn colony_page(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) ->
 
     column![
         globe,
-        Space::with_height(20),
+        Space::new().height(20),
         title,
-        Space::with_height(16),
+        Space::new().height(16),
         description,
-        Space::with_height(12),
+        Space::new().height(12),
         philosophy,
-        Space::with_height(24),
+        Space::new().height(24),
         github_btn,
     ]
     .align_x(Horizontal::Center)
@@ -367,11 +367,11 @@ fn tutorial_page(
 
     column![
         title,
-        Space::with_height(8),
+        Space::new().height(8),
         subtitle,
-        Space::with_height(28),
+        Space::new().height(28),
         phase_content,
-        Space::with_height(20),
+        Space::new().height(20),
         phase_indicator,
     ]
     .align_x(Horizontal::Center)
@@ -396,7 +396,7 @@ fn tutorial_generate(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalet
         container(
             row![
                 fonts::centered_icon(icons::DICE, 16.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Generate Password").size(14),
             ]
             .align_y(Vertical::Center),
@@ -414,9 +414,9 @@ fn tutorial_generate(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalet
 
     column![
         instruction,
-        Space::with_height(8),
+        Space::new().height(8),
         explanation,
-        Space::with_height(20),
+        Space::new().height(20),
         gen_btn,
     ]
     .into()
@@ -447,7 +447,7 @@ fn tutorial_view_vault(
         column![
             row![
                 fonts::centered_icon_colored(icons::GLOBE, 18.0, palette.primary),
-                Space::with_width(12),
+                Space::new().width(12),
                 column![
                     text("Example Account")
                         .size(15)
@@ -460,10 +460,10 @@ fn tutorial_view_vault(
                 ],
             ]
             .align_y(Vertical::Center),
-            Space::with_height(12),
+            Space::new().height(12),
             row![
                 fonts::centered_icon_colored(icons::KEY, 14.0, palette.text_muted),
-                Space::with_width(8),
+                Space::new().width(8),
                 text(generated_pw)
                     .size(13)
                     .font(fonts::FONT_REGULAR)
@@ -486,11 +486,11 @@ fn tutorial_view_vault(
 
     column![
         instruction,
-        Space::with_height(8),
+        Space::new().height(8),
         explanation,
-        Space::with_height(20),
+        Space::new().height(20),
         mock_card,
-        Space::with_height(16),
+        Space::new().height(16),
         next_btn,
     ]
     .into()
@@ -521,7 +521,7 @@ fn tutorial_copy(
         button(
             row![
                 fonts::centered_icon(icons::CHECK, 16.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Copied!").size(14),
             ]
             .align_y(Vertical::Center),
@@ -537,7 +537,7 @@ fn tutorial_copy(
         button(
             row![
                 fonts::centered_icon(icons::COPY, 16.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Copy Password").size(14),
             ]
             .align_y(Vertical::Center),
@@ -558,16 +558,16 @@ fn tutorial_copy(
             .color(palette.success)
             .into()
     } else {
-        Space::with_height(0).into()
+        Space::new().height(0).into()
     };
 
     column![
         instruction,
-        Space::with_height(8),
+        Space::new().height(8),
         explanation,
-        Space::with_height(20),
+        Space::new().height(20),
         copy_btn,
-        Space::with_height(12),
+        Space::new().height(12),
         feedback,
     ]
     .into()
@@ -641,9 +641,9 @@ fn github_connect_page(
 
     column![
         title,
-        Space::with_height(8),
+        Space::new().height(8),
         subtitle,
-        Space::with_height(28),
+        Space::new().height(28),
         content,
     ]
     .align_x(Horizontal::Center)
@@ -670,7 +670,7 @@ fn github_not_connected(
         container(
             row![
                 fonts::centered_icon(icons::GITHUB, 16.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Connect to GitHub").size(14),
             ]
             .align_y(Vertical::Center),
@@ -693,11 +693,11 @@ fn github_not_connected(
 
     column![
         icon,
-        Space::with_height(16),
+        Space::new().height(16),
         description,
-        Space::with_height(24),
+        Space::new().height(24),
         connect_btn,
-        Space::with_height(12),
+        Space::new().height(12),
         skip_hint,
     ]
     .align_x(Horizontal::Center)
@@ -713,7 +713,7 @@ fn github_in_progress(
 ) -> Element<'static, Message> {
     let status_row = row![
         fonts::centered_icon_colored(icons::CLOCK, 16.0, palette.primary),
-        Space::with_width(8),
+        Space::new().width(8),
         text("Authenticating with GitHub...")
             .size(14)
             .color(palette.text_primary),
@@ -732,11 +732,11 @@ fn github_in_progress(
                 text("Enter this code at GitHub:")
                     .size(13)
                     .color(palette.text_secondary),
-                Space::with_height(8),
+                Space::new().height(8),
                 button(
                     row![
                         text(code_owned).size(24).color(palette.primary),
-                        Space::with_width(12),
+                        Space::new().width(12),
                         fonts::centered_icon_colored(icons::COPY, 14.0, palette.text_muted),
                     ]
                     .align_y(Vertical::Center),
@@ -747,11 +747,11 @@ fn github_in_progress(
                     _ => theme::ghost_button(theme, v),
                 })
                 .on_press(Message::CopyToClipboard(code_for_copy)),
-                Space::with_height(4),
+                Space::new().height(4),
                 text("Click code to copy")
                     .size(11)
                     .color(palette.text_muted),
-                Space::with_height(8),
+                Space::new().height(8),
                 button(text(uri_owned).size(12).color(palette.primary))
                     .padding([4, 8])
                     .style(move |_theme, status| match status {
@@ -768,7 +768,7 @@ fn github_in_progress(
         .padding(16)
         .style(move |_| theme::elevated_container(theme, v));
 
-        items.push(Space::with_height(16).into());
+        items.push(Space::new().height(16).into());
         items.push(code_card.into());
     }
 
@@ -794,7 +794,7 @@ fn github_connected(
         text("Logged in as")
             .size(13)
             .color(palette.text_secondary),
-        Space::with_width(6),
+        Space::new().width(6),
         text(user_display)
             .size(13)
             .font(fonts::FONT_SEMIBOLD)
@@ -822,13 +822,13 @@ fn github_connected(
 
     column![
         success_icon,
-        Space::with_height(12),
+        Space::new().height(12),
         connected_text,
-        Space::with_height(8),
+        Space::new().height(8),
         username_row,
-        Space::with_height(4),
+        Space::new().height(4),
         repo_info,
-        Space::with_height(24),
+        Space::new().height(24),
         next_btn,
     ]
     .align_x(Horizontal::Center)
@@ -885,7 +885,7 @@ fn create_vault_page(
         .secure(true)
         .on_input(Message::MasterPasswordChanged)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
             _ => theme::text_input_style(theme, v),
         });
 
@@ -903,7 +903,7 @@ fn create_vault_page(
         let bar_width = bar_ratio * 480.0;
 
         column![
-            container(Space::new(bar_width, 3.0)).style(move |_| container::Style {
+            container(Space::new().width(bar_width).height(3.0)).style(move |_| container::Style {
                 background: Some(iced::Background::Color(color)),
                 border: iced::Border {
                     radius: 1.5.into(),
@@ -911,12 +911,12 @@ fn create_vault_page(
                 },
                 ..Default::default()
             }),
-            Space::with_height(4),
+            Space::new().height(4),
             text(label).size(11).font(fonts::FONT_MEDIUM).color(color),
         ]
         .into()
     } else {
-        Space::with_height(0).into()
+        Space::new().height(0).into()
     };
 
     // Confirm password input
@@ -933,7 +933,7 @@ fn create_vault_page(
         .on_input(Message::ConfirmPasswordChanged)
         .on_submit(Message::CreateVaultWithPassword)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
             _ => theme::text_input_style(theme, v),
         });
 
@@ -945,7 +945,7 @@ fn create_vault_page(
                 .color(danger_color)
                 .into()
         } else {
-            Space::with_height(0).into()
+            Space::new().height(0).into()
         };
 
     // Error message
@@ -970,7 +970,7 @@ fn create_vault_page(
         })
         .into()
     } else {
-        Space::with_height(0).into()
+        Space::new().height(0).into()
     };
 
     // Create vault button
@@ -981,7 +981,7 @@ fn create_vault_page(
         container(
             row![
                 fonts::centered_icon(icons::VAULT, 16.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Create Vault").size(16).font(fonts::FONT_SEMIBOLD),
             ]
             .align_y(Vertical::Center),
@@ -1008,25 +1008,25 @@ fn create_vault_page(
 
     column![
         icon,
-        Space::with_height(16),
+        Space::new().height(16),
         title,
-        Space::with_height(8),
+        Space::new().height(8),
         subtitle,
-        Space::with_height(24),
+        Space::new().height(24),
         pw_label,
-        Space::with_height(4),
+        Space::new().height(4),
         pw_input,
-        Space::with_height(4),
+        Space::new().height(4),
         strength_row,
-        Space::with_height(16),
+        Space::new().height(16),
         confirm_label,
-        Space::with_height(4),
+        Space::new().height(4),
         confirm_input,
-        Space::with_height(4),
+        Space::new().height(4),
         mismatch,
-        Space::with_height(8),
+        Space::new().height(8),
         error_el,
-        Space::with_height(16),
+        Space::new().height(16),
         create_btn,
     ]
     .into()
@@ -1053,7 +1053,7 @@ fn progress_dots(
             let size: f32 = if is_current { 10.0 } else { 8.0 };
 
             button(
-                container(Space::new(size, size)).style(move |_| container::Style {
+                container(Space::new().width(size).height(size)).style(move |_| container::Style {
                     background: Some(iced::Background::Color(color)),
                     border: iced::Border {
                         radius: (size / 2.0).into(),
@@ -1131,7 +1131,7 @@ fn navigation_row(
             .on_press(Message::OnboardingPrev)
             .into()
     } else {
-        Space::with_width(0).into()
+        Space::new().width(0).into()
     };
 
     let next_btn: Element<'static, Message> = if !hide_next {
@@ -1144,14 +1144,14 @@ fn navigation_row(
             .on_press(Message::OnboardingNext)
             .into()
     } else {
-        Space::with_width(0).into()
+        Space::new().width(0).into()
     };
 
     row![
         skip_btn,
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         back_btn,
-        Space::with_width(8),
+        Space::new().width(8),
         next_btn,
     ]
     .align_y(Vertical::Center)

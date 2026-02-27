@@ -9,7 +9,7 @@ use directories::ProjectDirs;
 use iced::widget::{column, container};
 use iced::alignment::{Horizontal, Vertical};
 use iced::{Color, Element, Length, Subscription, Task};
-use rand::Rng;
+use rand::RngExt;
 
 use lilypad_common::{
     analyze_vault_health,
@@ -1431,10 +1431,10 @@ impl LilypadApp {
 
     fn generate_demo_password(&self) -> String {
         let charset = b"abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*";
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         (0..16)
             .map(|_| {
-                let idx = rng.gen_range(0..charset.len());
+                let idx = rng.random_range(0..charset.len());
                 charset[idx] as char
             })
             .collect()
@@ -2000,9 +2000,9 @@ impl LilypadApp {
         }
 
         let chars: Vec<char> = charset.chars().collect();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         self.generated_password = (0..self.generator_length)
-            .map(|_| chars[rng.gen_range(0..chars.len())])
+            .map(|_| chars[rng.random_range(0..chars.len())])
             .collect();
     }
 

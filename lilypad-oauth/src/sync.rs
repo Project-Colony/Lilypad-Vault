@@ -377,9 +377,9 @@ fn calculate_checksum(data: &[u8]) -> String {
 
 /// Generates a unique device identifier.
 fn generate_device_id() -> String {
-    use rand::Rng;
-    let mut rng = rand::thread_rng();
-    let bytes: [u8; 8] = rng.gen();
+    use rand::RngExt;
+    let mut rng = rand::rng();
+    let bytes: [u8; 8] = rng.random();
     hex::encode(bytes)
 }
 

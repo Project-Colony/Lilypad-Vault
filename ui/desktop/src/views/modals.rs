@@ -50,7 +50,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
     })
     .on_press(Message::HideSettings);
 
-    let header = row![title, Space::with_width(Length::Fill), close_btn,].align_y(Vertical::Center);
+    let header = row![title, Space::new().width(Length::Fill), close_btn,].align_y(Vertical::Center);
 
     // Theme label + sort toggle
     let theme_label = text("Theme")
@@ -61,7 +61,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
     let sort_btn = button(
         row![
             fonts::centered_icon(icons::SORT, 12.0),
-            Space::with_width(6),
+            Space::new().width(6),
             text(sort_label).size(12).color(palette.text_secondary),
         ]
         .align_y(Vertical::Center),
@@ -75,7 +75,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
 
     let theme_header = row![
         theme_label,
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         sort_btn,
     ]
     .align_y(Vertical::Center);
@@ -101,7 +101,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
             let t_palette = t.palette();
             let theme_btn = button(
                 row![
-                    container(Space::new(Length::Fixed(12.0), Length::Fixed(12.0)))
+                    container(Space::new().width(Length::Fixed(12.0)).height(Length::Fixed(12.0)))
                         .style(move |_| container::Style {
                             background: Some(iced::Background::Color(t_palette.primary)),
                             border: iced::Border {
@@ -110,7 +110,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
                             },
                             ..Default::default()
                         }),
-                    Space::with_width(10),
+                    Space::new().width(10),
                     text(t.name())
                         .size(13)
                         .color(if is_active {
@@ -137,20 +137,20 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
             })
             .on_press(Message::ChangeTheme(*t));
             r.push(theme_btn.into());
-            r.push(Space::with_width(8).into());
+            r.push(Space::new().width(8).into());
         }
         // If odd number, add spacer for second column
         if pair.len() == 1 {
-            r.push(Space::with_width(Length::FillPortion(1)).into());
-            r.push(Space::with_width(8).into());
+            r.push(Space::new().width(Length::FillPortion(1)).into());
+            r.push(Space::new().width(8).into());
         }
         theme_rows.push(row(r).into());
-        theme_rows.push(Space::with_height(8).into());
+        theme_rows.push(Space::new().height(8).into());
     }
 
     // ── UI Variation picker ───────────────────────────────────────────
     let variation_divider = container(
-        container(Space::new(Length::Fill, Length::Fixed(1.0)))
+        container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
             .style(move |_| container::Style {
                 background: Some(iced::Background::Color(palette.border)),
                 ..Default::default()
@@ -202,14 +202,14 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
             })
             .on_press(Message::ChangeUiVariation(var_copy));
             r.push(variation_btn.into());
-            r.push(Space::with_width(8).into());
+            r.push(Space::new().width(8).into());
         }
         if pair.len() == 1 {
-            r.push(Space::with_width(Length::FillPortion(1)).into());
-            r.push(Space::with_width(8).into());
+            r.push(Space::new().width(Length::FillPortion(1)).into());
+            r.push(Space::new().width(8).into());
         }
         variation_rows.push(row(r).into());
-        variation_rows.push(Space::with_height(8).into());
+        variation_rows.push(Space::new().height(8).into());
     }
 
     let variation_grid = column(variation_rows);
@@ -219,9 +219,9 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
         column![
             column(theme_rows),
             variation_divider,
-            Space::with_height(8),
+            Space::new().height(8),
             variation_label,
-            Space::with_height(8),
+            Space::new().height(8),
             variation_grid,
         ],
     )
@@ -230,11 +230,11 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
 
     let content = column![
         header,
-        Space::with_height(24),
+        Space::new().height(24),
         theme_header,
-        Space::with_height(8),
+        Space::new().height(8),
         combined_grid,
-        Space::with_height(16),
+        Space::new().height(16),
         button(
             container(text("Close").size(14))
                 .width(Length::Fill)
@@ -272,7 +272,7 @@ pub fn new_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &str
     })
     .on_press(Message::HideNewVaultModal);
 
-    let header = row![title, Space::with_width(Length::Fill), close_btn,].align_y(Vertical::Center);
+    let header = row![title, Space::new().width(Length::Fill), close_btn,].align_y(Vertical::Center);
 
     let name_label = text("Vault Name")
         .size(14)
@@ -284,7 +284,7 @@ pub fn new_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &str
         .on_input(Message::NewVaultNameChanged)
         .on_submit(Message::CreateVault)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
             _ => theme::text_input_style(theme, v),
         });
 
@@ -313,16 +313,16 @@ pub fn new_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &str
             Some(Message::CreateVault)
         });
 
-    let actions = row![Space::with_width(Length::Fill), cancel_btn, Space::with_width(12), create_btn,]
+    let actions = row![Space::new().width(Length::Fill), cancel_btn, Space::new().width(12), create_btn,]
         .align_y(Vertical::Center);
 
     let content = column![
         header,
-        Space::with_height(24),
+        Space::new().height(24),
         name_label,
-        Space::with_height(8),
+        Space::new().height(8),
         name_input,
-        Space::with_height(24),
+        Space::new().height(24),
         actions,
     ]
     .padding(24)
@@ -349,7 +349,7 @@ pub fn rename_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &
     })
     .on_press(Message::CancelRenameVault);
 
-    let header = row![title, Space::with_width(Length::Fill), close_btn,].align_y(Vertical::Center);
+    let header = row![title, Space::new().width(Length::Fill), close_btn,].align_y(Vertical::Center);
 
     let name_label = text("New Name")
         .size(14)
@@ -361,7 +361,7 @@ pub fn rename_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &
         .on_input(Message::RenameVaultNameChanged)
         .on_submit(Message::ConfirmRenameVault)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
             _ => theme::text_input_style(theme, v),
         });
 
@@ -390,16 +390,16 @@ pub fn rename_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &
             Some(Message::ConfirmRenameVault)
         });
 
-    let actions = row![Space::with_width(Length::Fill), cancel_btn, Space::with_width(12), rename_btn,]
+    let actions = row![Space::new().width(Length::Fill), cancel_btn, Space::new().width(12), rename_btn,]
         .align_y(Vertical::Center);
 
     let content = column![
         header,
-        Space::with_height(24),
+        Space::new().height(24),
         name_label,
-        Space::with_height(8),
+        Space::new().height(8),
         name_input,
-        Space::with_height(24),
+        Space::new().height(24),
         actions,
     ]
     .padding(24)
@@ -451,15 +451,15 @@ pub fn delete_confirm_modal<'a>(theme: LilypadTheme, v: UiVariation, entry_title
     })
     .on_press(Message::ConfirmDelete);
 
-    let actions = row![cancel_btn, Space::with_width(12), delete_btn,];
+    let actions = row![cancel_btn, Space::new().width(12), delete_btn,];
 
     let content = column![
         icon,
-        Space::with_height(16),
+        Space::new().height(16),
         title,
-        Space::with_height(12),
+        Space::new().height(12),
         message,
-        Space::with_height(24),
+        Space::new().height(24),
         actions,
     ]
     .align_x(Horizontal::Center)
@@ -488,7 +488,7 @@ pub fn reauth_modal<'a>(theme: LilypadTheme, v: UiVariation, reauth_password: &s
         .on_input(Message::ReauthPasswordChanged)
         .on_submit(Message::ConfirmReauth)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
             _ => theme::text_input_style(theme, v),
         });
 
@@ -517,18 +517,18 @@ pub fn reauth_modal<'a>(theme: LilypadTheme, v: UiVariation, reauth_password: &s
             Some(Message::ConfirmReauth)
         });
 
-    let actions = row![Space::with_width(Length::Fill), cancel_btn, Space::with_width(12), confirm_btn,]
+    let actions = row![Space::new().width(Length::Fill), cancel_btn, Space::new().width(12), confirm_btn,]
         .align_y(Vertical::Center);
 
     let content = column![
         fonts::centered_icon(icons::VAULT, 48.0),
-        Space::with_height(16),
+        Space::new().height(16),
         title,
-        Space::with_height(8),
+        Space::new().height(8),
         message,
-        Space::with_height(24),
+        Space::new().height(24),
         password_input,
-        Space::with_height(24),
+        Space::new().height(24),
         actions,
     ]
     .align_x(Horizontal::Center)
@@ -558,7 +558,7 @@ pub fn change_password_modal<'a>(
 
     let warning = row![
         fonts::centered_icon_colored(icons::TRIANGLE_EXCLAMATION, 13.0, palette.warning),
-        Space::with_width(8),
+        Space::new().width(8),
         text("Make sure you remember this password. If you forget it, your vault data cannot be recovered.")
             .size(12)
             .color(palette.warning),
@@ -572,7 +572,7 @@ pub fn change_password_modal<'a>(
         .on_input(Message::NewMasterPasswordChanged)
         .on_submit(Message::ConfirmChangeMasterPassword)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
             _ => theme::text_input_style(theme, v),
         });
 
@@ -601,20 +601,20 @@ pub fn change_password_modal<'a>(
             Some(Message::ConfirmChangeMasterPassword)
         });
 
-    let actions = row![Space::with_width(Length::Fill), cancel_btn, Space::with_width(12), confirm_btn,]
+    let actions = row![Space::new().width(Length::Fill), cancel_btn, Space::new().width(12), confirm_btn,]
         .align_y(Vertical::Center);
 
     let content = column![
         icon,
-        Space::with_height(16),
+        Space::new().height(16),
         title,
-        Space::with_height(8),
+        Space::new().height(8),
         message,
-        Space::with_height(16),
+        Space::new().height(16),
         warning,
-        Space::with_height(16),
+        Space::new().height(16),
         password_input,
-        Space::with_height(24),
+        Space::new().height(24),
         actions,
     ]
     .align_x(Horizontal::Center)
@@ -648,14 +648,14 @@ pub fn entry_history_modal<'a>(
     })
     .on_press(Message::CloseEntryHistory);
 
-    let header = row![icon, Space::with_width(12), title, Space::with_width(Length::Fill), close_btn,]
+    let header = row![icon, Space::new().width(12), title, Space::new().width(Length::Fill), close_btn,]
         .align_y(Vertical::Center);
 
     let history_content: Element<'a, Message> = if history_entries.is_empty() {
         container(
             column![
                 fonts::centered_icon_colored(icons::CLOCK, 32.0, palette.text_muted),
-                Space::with_height(12),
+                Space::new().height(12),
                 text("No history available")
                     .size(14)
                     .color(palette.text_muted),
@@ -688,12 +688,12 @@ pub fn entry_history_modal<'a>(
                                     } else {
                                         palette.text_secondary
                                     }),
-                                Space::with_width(Length::Fill),
+                                Space::new().width(Length::Fill),
                                 text(relative_time)
                                     .size(12)
                                     .color(palette.text_muted),
                             ],
-                            Space::with_height(6),
+                            Space::new().height(6),
                             text(pwd).size(13).color(palette.text_muted),
                         ]
                         .width(Length::Fill),
@@ -722,11 +722,11 @@ pub fn entry_history_modal<'a>(
 
     let content = column![
         header,
-        Space::with_height(16),
+        Space::new().height(16),
         hint,
-        Space::with_height(12),
+        Space::new().height(12),
         history_content,
-        Space::with_height(16),
+        Space::new().height(16),
         button(
             container(text("Close").size(14))
                 .width(Length::Fill)
@@ -770,14 +770,14 @@ pub fn audit_log_modal<'a>(
     })
     .on_press(Message::CloseAuditLog);
 
-    let header = row![icon, Space::with_width(12), title, Space::with_width(Length::Fill), close_btn,]
+    let header = row![icon, Space::new().width(12), title, Space::new().width(Length::Fill), close_btn,]
         .align_y(Vertical::Center);
 
     let log_content: Element<'a, Message> = if audit_events.is_empty() {
         container(
             column![
                 fonts::centered_icon_colored(icons::SHIELD, 32.0, palette.text_muted),
-                Space::with_height(12),
+                Space::new().height(12),
                 text("No events recorded yet")
                     .size(14)
                     .color(palette.text_muted),
@@ -801,7 +801,7 @@ pub fn audit_log_modal<'a>(
                         text(action_display)
                             .size(13)
                             .color(palette.text_primary),
-                        Space::with_width(Length::Fill),
+                        Space::new().width(Length::Fill),
                         text(relative_time)
                             .size(11)
                             .color(palette.text_muted),
@@ -842,7 +842,7 @@ pub fn audit_log_modal<'a>(
     let export_json_btn = button(
         row![
             fonts::centered_icon(icons::DOWNLOAD, 12.0),
-            Space::with_width(6),
+            Space::new().width(6),
             text("JSON").size(12),
         ]
         .align_y(Vertical::Center),
@@ -861,7 +861,7 @@ pub fn audit_log_modal<'a>(
     let export_csv_btn = button(
         row![
             fonts::centered_icon(icons::DOWNLOAD, 12.0),
-            Space::with_width(6),
+            Space::new().width(6),
             text("CSV").size(12),
         ]
         .align_y(Vertical::Center),
@@ -880,7 +880,7 @@ pub fn audit_log_modal<'a>(
     let export_txt_btn = button(
         row![
             fonts::centered_icon(icons::DOWNLOAD, 12.0),
-            Space::with_width(6),
+            Space::new().width(6),
             text("Text").size(12),
         ]
         .align_y(Vertical::Center),
@@ -902,22 +902,22 @@ pub fn audit_log_modal<'a>(
 
     let export_row = row![
         export_label,
-        Space::with_width(8),
+        Space::new().width(8),
         export_json_btn,
-        Space::with_width(4),
+        Space::new().width(4),
         export_csv_btn,
-        Space::with_width(4),
+        Space::new().width(4),
         export_txt_btn,
     ]
     .align_y(Vertical::Center);
 
     let content = column![
         header,
-        Space::with_height(12),
-        row![count_text, Space::with_width(Length::Fill), export_row,].align_y(Vertical::Center),
-        Space::with_height(12),
+        Space::new().height(12),
+        row![count_text, Space::new().width(Length::Fill), export_row,].align_y(Vertical::Center),
+        Space::new().height(12),
         log_content,
-        Space::with_height(16),
+        Space::new().height(16),
         button(
             container(text("Close").size(14))
                 .width(Length::Fill)

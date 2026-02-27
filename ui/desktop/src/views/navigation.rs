@@ -69,7 +69,7 @@ pub fn view(theme: LilypadTheme, v: UiVariation, selected_category: usize) -> El
                     } else {
                         palette.text_muted
                     }),
-                Space::with_height(4),
+                Space::new().height(4),
                 text(item.label)
                     .size(11)
                     .font(fonts::FONT_MEDIUM)

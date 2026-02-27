@@ -48,7 +48,7 @@ pub fn account_view(
         .size(16)
         .color(palette.text_primary);
 
-    let two_factor_check = checkbox("Two-Factor Authentication", two_factor_enabled)
+    let two_factor_check = checkbox(two_factor_enabled).label("Two-Factor Authentication")
         .on_toggle(Message::ToggleTwoFactor)
         .text_size(14)
         .spacing(10);
@@ -60,9 +60,9 @@ pub fn account_view(
     let security_section = container(
         column![
             security_title,
-            Space::with_height(16),
+            Space::new().height(16),
             two_factor_check,
-            Space::with_height(4),
+            Space::new().height(4),
             two_factor_hint,
         ]
         .padding(24),
@@ -75,26 +75,26 @@ pub fn account_view(
         .size(16)
         .color(palette.text_primary);
 
-    let marketing_check = checkbox("Receive product updates and tips", marketing_opt_in)
+    let marketing_check = checkbox(marketing_opt_in).label("Receive product updates and tips")
         .on_toggle(Message::ToggleMarketingOptIn)
         .text_size(14)
         .spacing(10);
 
     let prefs_section = container(
-        column![prefs_title, Space::with_height(16), marketing_check,].padding(24),
+        column![prefs_title, Space::new().height(16), marketing_check,].padding(24),
     )
     .width(Length::Fill)
     .style(move |_| theme::card_container(theme, v));
 
     let content = column![
         title,
-        Space::with_height(4),
+        Space::new().height(4),
         subtitle,
-        Space::with_height(24),
+        Space::new().height(24),
         github_section,
-        Space::with_height(16),
+        Space::new().height(16),
         security_section,
-        Space::with_height(16),
+        Space::new().height(16),
         prefs_section,
     ]
     .width(Length::Fixed(560.0));
@@ -132,19 +132,19 @@ fn github_auth_section(
         column![
             row![
                 fonts::centered_icon_colored(icons::CHECK, 16.0, palette.success),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Connected to GitHub")
                     .size(14)
                     .color(palette.text_primary),
             ]
             .align_y(Vertical::Center),
-            Space::with_height(8),
+            Space::new().height(8),
             row![
                 text("Username:").size(13).color(palette.text_secondary),
-                Space::with_width(8),
+                Space::new().width(8),
                 text(user_display).size(13).color(palette.text_primary),
             ],
-            Space::with_height(16),
+            Space::new().height(16),
             button(
                 container(
                     text("Logout from GitHub").size(14)
@@ -169,7 +169,7 @@ fn github_auth_section(
         let mut items: Vec<Element<'static, Message>> = vec![
             row![
                 fonts::centered_icon(icons::CLOCK, 16.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Authenticating with GitHub...")
                     .size(14)
                     .color(palette.text_primary),
@@ -182,20 +182,20 @@ fn github_auth_section(
             let code_owned = code.to_string();
             let code_for_copy = code.to_string();
             let _uri_owned = uri.to_string();
-            items.push(Space::with_height(16).into());
+            items.push(Space::new().height(16).into());
             items.push(
                 container(
                     column![
                         text("Enter this code at GitHub:")
                             .size(13)
                             .color(palette.text_secondary),
-                        Space::with_height(8),
+                        Space::new().height(8),
                         button(
                             row![
                                 text(code_owned)
                                     .size(24)
                                     .color(palette.primary),
-                                Space::with_width(12),
+                                Space::new().width(12),
                                 fonts::centered_icon_colored(icons::COPY, 14.0, palette.text_muted),
                             ]
                             .align_y(Vertical::Center),
@@ -210,11 +210,11 @@ fn github_auth_section(
                             _ => theme::ghost_button(theme, v),
                         })
                         .on_press(Message::CopyToClipboard(code_for_copy)),
-                        Space::with_height(4),
+                        Space::new().height(4),
                         text("Click code to copy")
                             .size(11)
                             .color(palette.text_muted),
-                        Space::with_height(8),
+                        Space::new().height(8),
                         button(
                             text("https://github.com/login/device").size(12).color(palette.primary)
                         )
@@ -241,22 +241,22 @@ fn github_auth_section(
         column![
             row![
                 fonts::centered_icon_colored(icons::CIRCLE, 16.0, palette.text_muted),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Not connected to GitHub")
                     .size(14)
                     .color(palette.text_secondary),
             ]
             .align_y(Vertical::Center),
-            Space::with_height(8),
+            Space::new().height(8),
             text("Connect to GitHub to sync your vault across devices securely. All data is encrypted before upload.")
                 .size(12)
                 .color(palette.text_muted),
-            Space::with_height(16),
+            Space::new().height(16),
             button(
                 container(
                     row![
                         fonts::centered_icon(icons::GITHUB, 14.0),
-                        Space::with_width(8),
+                        Space::new().width(8),
                         text("Login with GitHub").size(14),
                     ]
                     .align_y(Vertical::Center),
@@ -276,7 +276,7 @@ fn github_auth_section(
     };
 
     container(
-        column![section_title, Space::with_height(16), content,].padding(24),
+        column![section_title, Space::new().height(16), content,].padding(24),
     )
     .width(Length::Fill)
     .style(move |_| theme::card_container(theme, v))
@@ -319,7 +319,7 @@ pub fn security_view(
         text("Lock after inactivity")
             .size(14)
             .color(palette.text_secondary),
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         text(autolock_value).size(14).color(palette.text_primary),
     ];
 
@@ -328,9 +328,9 @@ pub fn security_view(
     let autolock_section = container(
         column![
             autolock_title,
-            Space::with_height(16),
+            Space::new().height(16),
             autolock_label,
-            Space::with_height(8),
+            Space::new().height(8),
             autolock_slider,
         ]
         .padding(24),
@@ -353,17 +353,15 @@ pub fn security_view(
         text("Clear clipboard after")
             .size(14)
             .color(palette.text_secondary),
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         text(clipboard_value).size(14).color(palette.text_primary),
     ];
 
     let clipboard_slider =
         slider(0..=120, clipboard_timeout, Message::ChangeClipboardTimeout).width(Length::Fill);
 
-    let require_master_check = checkbox(
-        "Require master password when copying passwords",
-        require_master_on_copy,
-    )
+    let require_master_check = checkbox(require_master_on_copy)
+    .label("Require master password when copying passwords")
     .on_toggle(Message::ToggleRequireMasterOnCopy)
     .text_size(14)
     .spacing(10);
@@ -371,11 +369,11 @@ pub fn security_view(
     let clipboard_section = container(
         column![
             clipboard_title,
-            Space::with_height(16),
+            Space::new().height(16),
             clipboard_label,
-            Space::with_height(8),
+            Space::new().height(8),
             clipboard_slider,
-            Space::with_height(16),
+            Space::new().height(16),
             require_master_check,
         ]
         .padding(24),
@@ -398,7 +396,7 @@ pub fn security_view(
     );
 
     let recovery_section = container(
-        column![recovery_title, Space::with_height(16), recovery_input,].padding(24),
+        column![recovery_title, Space::new().height(16), recovery_input,].padding(24),
     )
     .width(Length::Fill)
     .style(move |_| theme::card_container(theme, v));
@@ -412,7 +410,7 @@ pub fn security_view(
         container(
             row![
                 fonts::centered_icon(icons::KEY, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Change Master Password").size(14),
             ]
             .align_y(Vertical::Center),
@@ -435,9 +433,9 @@ pub fn security_view(
     let master_pw_section = container(
         column![
             master_pw_title,
-            Space::with_height(16),
+            Space::new().height(16),
             change_pw_btn,
-            Space::with_height(8),
+            Space::new().height(8),
             master_pw_hint,
         ]
         .padding(24),
@@ -454,7 +452,7 @@ pub fn security_view(
         container(
             row![
                 fonts::centered_icon(icons::SHIELD, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("View Audit Log").size(14),
             ]
             .align_y(Vertical::Center),
@@ -477,9 +475,9 @@ pub fn security_view(
     let audit_section = container(
         column![
             audit_title,
-            Space::with_height(16),
+            Space::new().height(16),
             audit_btn,
-            Space::with_height(8),
+            Space::new().height(8),
             audit_hint,
         ]
         .padding(24),
@@ -496,7 +494,7 @@ pub fn security_view(
         container(
             row![
                 fonts::centered_icon(icons::SAVE, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Create Backup").size(14),
             ]
             .align_y(Vertical::Center),
@@ -516,7 +514,7 @@ pub fn security_view(
         container(
             row![
                 fonts::centered_icon(icons::UPLOAD, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Restore").size(14),
             ]
             .align_y(Vertical::Center),
@@ -536,7 +534,7 @@ pub fn security_view(
         container(
             row![
                 fonts::centered_icon(icons::TRASH, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Prune Old").size(14),
             ]
             .align_y(Vertical::Center),
@@ -554,9 +552,9 @@ pub fn security_view(
 
     let backup_actions = row![
         backup_btn,
-        Space::with_width(8),
+        Space::new().width(8),
         restore_btn,
-        Space::with_width(8),
+        Space::new().width(8),
         prune_btn,
     ];
 
@@ -567,9 +565,9 @@ pub fn security_view(
     let backup_section = container(
         column![
             backup_title,
-            Space::with_height(16),
+            Space::new().height(16),
             backup_actions,
-            Space::with_height(8),
+            Space::new().height(8),
             backup_hint,
         ]
         .padding(24),
@@ -589,9 +587,9 @@ pub fn security_view(
             let device_name = device.clone();
             row![
                 fonts::centered_icon(icons::DESKTOP, 16.0),
-                Space::with_width(12),
+                Space::new().width(12),
                 text(device_name).size(14).color(palette.text_primary),
-                Space::with_width(Length::Fill),
+                Space::new().width(Length::Fill),
                 button(text("Remove").size(12).color(palette.danger))
                     .padding([6, 12])
                     .style(move |_theme, status| match status {
@@ -620,28 +618,28 @@ pub fn security_view(
     };
 
     let devices_section = container(
-        column![devices_title, Space::with_height(16), devices_content,].padding(24),
+        column![devices_title, Space::new().height(16), devices_content,].padding(24),
     )
     .width(Length::Fill)
     .style(move |_| theme::card_container(theme, v));
 
     let content = column![
         title,
-        Space::with_height(4),
+        Space::new().height(4),
         subtitle,
-        Space::with_height(24),
+        Space::new().height(24),
         autolock_section,
-        Space::with_height(16),
+        Space::new().height(16),
         clipboard_section,
-        Space::with_height(16),
+        Space::new().height(16),
         master_pw_section,
-        Space::with_height(16),
+        Space::new().height(16),
         audit_section,
-        Space::with_height(16),
+        Space::new().height(16),
         backup_section,
-        Space::with_height(16),
+        Space::new().height(16),
         recovery_section,
-        Space::with_height(16),
+        Space::new().height(16),
         devices_section,
     ]
     .width(Length::Fixed(560.0));
@@ -673,13 +671,13 @@ where
 
     column![
         text(label).size(13).color(palette.text_secondary),
-        Space::with_height(6),
+        Space::new().height(6),
         text_input(placeholder, &value)
             .padding(12)
             .size(14)
             .on_input(on_change)
             .style(move |_theme, status| match status {
-                text_input::Status::Focused => theme::text_input_focused(theme, v),
+                text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
                 _ => theme::text_input_style(theme, v),
             }),
     ]

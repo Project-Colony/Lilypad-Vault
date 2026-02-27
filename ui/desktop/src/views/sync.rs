@@ -35,7 +35,7 @@ pub fn view(
         let connect_hint = container(
             column![
                 fonts::centered_icon_colored(icons::GITHUB, 32.0, palette.text_muted),
-                Space::with_height(12),
+                Space::new().height(12),
                 text("Connect to GitHub in Account Settings to enable sync")
                     .size(14)
                     .color(palette.text_secondary),
@@ -53,7 +53,7 @@ pub fn view(
     let conflict_section: Element<'static, Message> = if sync_conflict {
         conflict_resolution_section(theme, v)
     } else {
-        Space::new(0, 0).into()
+        Space::new().width(0).height(0).into()
     };
 
     // Export/Import Section
@@ -64,15 +64,15 @@ pub fn view(
 
     let content = column![
         title,
-        Space::with_height(4),
+        Space::new().height(4),
         subtitle,
-        Space::with_height(24),
+        Space::new().height(24),
         sync_section,
-        Space::with_height(16),
+        Space::new().height(16),
         conflict_section,
-        Space::with_height(16),
+        Space::new().height(16),
         data_section,
-        Space::with_height(16),
+        Space::new().height(16),
         backup,
     ]
     .width(Length::Fixed(560.0));
@@ -108,7 +108,7 @@ fn sync_actions_section(
         container(
             row![
                 fonts::centered_icon(icons::UPLOAD, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Push to GitHub").size(14),
             ]
             .align_y(Vertical::Center),
@@ -133,7 +133,7 @@ fn sync_actions_section(
         container(
             row![
                 fonts::centered_icon(icons::DOWNLOAD, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Pull from GitHub").size(14),
             ]
             .align_y(Vertical::Center),
@@ -180,20 +180,20 @@ fn sync_actions_section(
             .color(palette.warning)
             .into()
     } else {
-        Space::new(0, 0).into()
+        Space::new().width(0).height(0).into()
     };
 
     container(
         column![
             section_title,
-            Space::with_height(8),
+            Space::new().height(8),
             hint,
-            Space::with_height(16),
-            row![push_btn, Space::with_width(12), pull_btn,]
+            Space::new().height(16),
+            row![push_btn, Space::new().width(12), pull_btn,]
                 .spacing(0),
-            Space::with_height(12),
+            Space::new().height(12),
             status_btn,
-            Space::with_height(8),
+            Space::new().height(8),
             progress_hint,
         ]
         .padding(24),
@@ -219,7 +219,7 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
         container(
             row![
                 fonts::centered_icon(icons::DOWNLOAD, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Export Encrypted (.lily)").size(13),
             ]
             .align_y(Vertical::Center),
@@ -239,7 +239,7 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
         container(
             row![
                 fonts::centered_icon(icons::EXTERNAL_LINK, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Export JSON (plaintext)").size(13),
             ]
             .align_y(Vertical::Center),
@@ -263,7 +263,7 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
         container(
             row![
                 fonts::centered_icon(icons::EXTERNAL_LINK, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Export CSV").size(13),
             ]
             .align_y(Vertical::Center),
@@ -285,7 +285,7 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
 
     let warning = row![
         fonts::centered_icon_colored(icons::TRIANGLE_EXCLAMATION, 11.0, palette.warning),
-        Space::with_width(6),
+        Space::new().width(6),
         text("JSON/CSV exports contain passwords in plaintext. Handle with care.")
             .size(11)
             .color(palette.warning),
@@ -293,7 +293,7 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
     .align_y(Vertical::Center);
 
     let divider = container(
-        container(Space::new(Length::Fill, Length::Fixed(1.0)))
+        container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
             .style(move |_| container::Style {
                 background: Some(iced::Background::Color(palette.border)),
                 ..Default::default()
@@ -305,7 +305,7 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
         container(
             row![
                 fonts::centered_icon(icons::UPLOAD, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Import from File (.lily / .json)").size(13),
             ]
             .align_y(Vertical::Center),
@@ -325,7 +325,7 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
         container(
             row![
                 fonts::centered_icon(icons::UPLOAD, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Import from Browser CSV").size(13),
             ]
             .align_y(Vertical::Center),
@@ -348,22 +348,22 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
     container(
         column![
             section_title,
-            Space::with_height(8),
+            Space::new().height(8),
             hint,
-            Space::with_height(16),
+            Space::new().height(16),
             export_encrypted_btn,
-            Space::with_height(8),
+            Space::new().height(8),
             export_json_btn,
-            Space::with_height(8),
+            Space::new().height(8),
             export_csv_btn,
-            Space::with_height(4),
+            Space::new().height(4),
             warning,
-            Space::with_height(4),
+            Space::new().height(4),
             divider,
             import_btn,
-            Space::with_height(8),
+            Space::new().height(8),
             import_csv_btn,
-            Space::with_height(4),
+            Space::new().height(4),
             import_hint,
         ]
         .padding(24),
@@ -433,11 +433,11 @@ fn conflict_resolution_section(theme: LilypadTheme, v: UiVariation) -> Element<'
 
     container(
         column![
-            row![icon, Space::with_width(12), title,].align_y(Vertical::Center),
-            Space::with_height(12),
+            row![icon, Space::new().width(12), title,].align_y(Vertical::Center),
+            Space::new().height(12),
             description,
-            Space::with_height(16),
-            row![keep_local, Space::with_width(12), keep_remote,],
+            Space::new().height(16),
+            row![keep_local, Space::new().width(12), keep_remote,],
         ]
         .padding(24),
     )
@@ -473,7 +473,7 @@ fn backup_section(theme: LilypadTheme, v: UiVariation) -> Element<'static, Messa
         container(
             row![
                 fonts::centered_icon(icons::SAVE, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Create Backup").size(14),
             ]
             .align_y(Vertical::Center),
@@ -493,7 +493,7 @@ fn backup_section(theme: LilypadTheme, v: UiVariation) -> Element<'static, Messa
         container(
             row![
                 fonts::centered_icon(icons::REFRESH, 14.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Restore Backup").size(14),
             ]
             .align_y(Vertical::Center),
@@ -512,10 +512,10 @@ fn backup_section(theme: LilypadTheme, v: UiVariation) -> Element<'static, Messa
     container(
         column![
             section_title,
-            Space::with_height(8),
+            Space::new().height(8),
             hint,
-            Space::with_height(16),
-            row![backup_btn, Space::with_width(12), restore_btn,],
+            Space::new().height(16),
+            row![backup_btn, Space::new().width(12), restore_btn,],
         ]
         .padding(24),
     )

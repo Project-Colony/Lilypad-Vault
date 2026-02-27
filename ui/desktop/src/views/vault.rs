@@ -199,7 +199,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
                 button(
                     row![
                         fonts::centered_icon(icons::FOLDER, 10.0),
-                        Space::with_width(4),
+                        Space::new().width(4),
                         text(folder_name.clone()).size(11),
                     ]
                     .align_y(Vertical::Center),
@@ -227,7 +227,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
         None
     };
 
-    let header_row = row![tabs_row, Space::with_width(Length::Fill), count_text,]
+    let header_row = row![tabs_row, Space::new().width(Length::Fill), count_text,]
         .align_y(Vertical::Center)
         .padding(Padding::new(0.0).bottom(16.0));
 
@@ -264,7 +264,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
         .color(palette.text_muted);
 
         container(
-            column![empty_icon, Space::with_height(16), empty_text, Space::with_height(8), empty_hint,]
+            column![empty_icon, Space::new().height(16), empty_text, Space::new().height(8), empty_hint,]
                 .align_x(Horizontal::Center),
         )
         .width(Length::Fill)
@@ -311,13 +311,13 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
     if let Some(form) = form_content {
         main_column = main_column
             .push(form)
-            .push(Space::with_height(24));
+            .push(Space::new().height(24));
     }
 
     if let Some(folder_element) = folder_row {
         main_column = main_column
             .push(folder_element)
-            .push(Space::with_height(8));
+            .push(Space::new().height(8));
     }
 
     main_column = main_column
@@ -344,7 +344,7 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
     let color_indicator: Option<Element<'static, Message>> = if let Some(color) = &entry.color {
         let color_rgb = theme::entry_color_to_iced(color);
         Some(
-            container(Space::new(Length::Fixed(4.0), Length::Fixed(50.0)))
+            container(Space::new().width(Length::Fixed(4.0)).height(Length::Fixed(50.0)))
                 .style(move |_| container::Style {
                     background: Some(iced::Background::Color(color_rgb)),
                     ..Default::default()
@@ -441,7 +441,7 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
                 container(
                     row![
                         fonts::centered_icon(icons::SAVE, 9.0),
-                        Space::with_width(3),
+                        Space::new().width(3),
                         text(format!("{}", count)).size(10),
                     ]
                     .align_y(Vertical::Center),
@@ -506,7 +506,7 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
             );
         }
 
-        info_column = info_column.push(Space::with_height(2));
+        info_column = info_column.push(Space::new().height(2));
         info_column = info_column.push(badge_row);
     }
 
@@ -519,7 +519,7 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
         lilypad_common::PasswordStrength::VeryStrong => palette.success,
     };
 
-    let strength_dot = container(Space::new(Length::Fixed(8.0), Length::Fixed(8.0)))
+    let strength_dot = container(Space::new().width(Length::Fixed(8.0)).height(Length::Fixed(8.0)))
         .style(move |_| container::Style {
             background: Some(iced::Background::Color(strength_color)),
             border: iced::Border {
@@ -624,20 +624,20 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
 
     if let Some(indicator) = color_indicator {
         card_row = card_row.push(indicator);
-        card_row = card_row.push(Space::with_width(12));
+        card_row = card_row.push(Space::new().width(12));
     }
 
     card_row = card_row
         .push(type_icon)
-        .push(Space::with_width(10))
+        .push(Space::new().width(10))
         .push(favorite_btn)
-        .push(Space::with_width(8))
+        .push(Space::new().width(8))
         .push(info_column)
-        .push(Space::with_width(Length::Fill))
+        .push(Space::new().width(Length::Fill))
         .push(strength_dot)
-        .push(Space::with_width(12))
+        .push(Space::new().width(12))
         .push(updated_text)
-        .push(Space::with_width(16))
+        .push(Space::new().width(16))
         .push(actions_row);
 
     container(card_row)
@@ -732,19 +732,19 @@ fn form_section<'a>(
     let palette = theme.palette();
     let header = row![
         fonts::centered_icon_colored(icon, 13.0, palette.text_muted),
-        Space::with_width(8),
+        Space::new().width(8),
         text(title).size(14).color(palette.text_primary),
     ]
     .align_y(Vertical::Center);
 
     // Separator line
-    let separator = container(Space::new(Length::Fill, Length::Fixed(1.0)))
+    let separator = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
         .style(move |_| container::Style {
             background: Some(iced::Background::Color(palette.surface_variant)),
             ..Default::default()
         });
 
-    column![separator, Space::with_height(12), header, Space::with_height(12), content,]
+    column![separator, Space::new().height(12), header, Space::new().height(12), content,]
         .into()
 }
 
@@ -777,11 +777,11 @@ fn entry_form(
     // ── Header ──────────────────────────────────────────────────────────
     let form_title = row![
         text(type_icon(entry_type)).size(20).font(fonts::FONT_REGULAR).color(palette.primary),
-        Space::with_width(10),
+        Space::new().width(10),
         text(if edit_mode { "Edit Entry" } else { "New Entry" })
             .size(18)
             .color(palette.text_primary),
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         button(
             fonts::centered_icon_colored(icons::CLOSE, 14.0, palette.text_muted),
         )
@@ -819,7 +819,7 @@ fn entry_form(
             button(
                 row![
                     fonts::centered_icon(*icon, 12.0),
-                    Space::with_width(5),
+                    Space::new().width(5),
                     text(display).size(12),
                 ]
                 .align_y(Vertical::Center),
@@ -866,7 +866,7 @@ fn entry_form(
                         entry_username.to_string(), Message::EntryUsernameChanged,
                     )]
                     .width(Length::Fill),
-                    Space::with_width(12),
+                    Space::new().width(12),
                     column![labeled_input(
                         theme, v, "Email", "e.g., john@example.com",
                         entry_email.to_string(), Message::EntryEmailChanged,
@@ -893,26 +893,26 @@ fn entry_form(
                 row![
                     column![
                         text(pw_label).size(13).color(palette.text_secondary),
-                        Space::with_height(6),
+                        Space::new().height(6),
                         text_input("Enter password...", entry_password)
                             .padding(12)
                             .size(14)
                             .secure(true)
                             .on_input(Message::EntryPasswordChanged)
                             .style(move |_theme, status| match status {
-                                text_input::Status::Focused => theme::text_input_focused(theme, v),
+                                text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
                                 _ => theme::text_input_style(theme, v),
                             }),
                     ]
                     .width(Length::Fill),
-                    Space::with_width(12),
+                    Space::new().width(12),
                     column![
                         text("").size(13),
-                        Space::with_height(6),
+                        Space::new().height(6),
                         button(
                             row![
                                 fonts::centered_icon(icons::DICE, 14.0),
-                                Space::with_width(6),
+                                Space::new().width(6),
                                 text("Generate").size(13),
                             ]
                             .align_y(Vertical::Center),
@@ -949,7 +949,7 @@ fn entry_form(
                         entry_url.to_string(), Message::EntryUrlChanged,
                     )]
                     .width(Length::Fill),
-                    Space::with_width(12),
+                    Space::new().width(12),
                     column![labeled_input(
                         theme, v, "Phone", "e.g., +33 6 12 34 56 78",
                         entry_phone.to_string(), Message::EntryPhoneChanged,
@@ -997,7 +997,7 @@ fn entry_form(
             container(
                 row![
                     text(tag_str).size(11).color(palette.text_primary),
-                    Space::with_width(4),
+                    Space::new().width(4),
                     button(fonts::centered_icon_colored(icons::CLOSE, 9.0, palette.text_muted))
                         .padding([2, 4])
                         .style(move |_theme, status| match status {
@@ -1024,14 +1024,14 @@ fn entry_form(
             .on_input(Message::EntryNewTagChanged)
             .on_submit(Message::AddEntryTag)
             .style(move |_theme, status| match status {
-                text_input::Status::Focused => theme::text_input_focused(theme, v),
+                text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
                 _ => theme::text_input_style(theme, v),
             }),
-        Space::with_width(8),
+        Space::new().width(8),
         button(
             row![
                 fonts::centered_icon(icons::PLUS, 11.0),
-                Space::with_width(4),
+                Space::new().width(4),
                 text("Add").size(12),
             ]
             .align_y(Vertical::Center),
@@ -1048,9 +1048,9 @@ fn entry_form(
     org_col = org_col.push(
         column![
             text("Tags").size(13).color(palette.text_secondary),
-            Space::with_height(6),
+            Space::new().height(6),
             tags_row,
-            Space::with_height(6),
+            Space::new().height(6),
             tag_input_row,
         ],
     );
@@ -1065,11 +1065,11 @@ fn entry_form(
     let advanced_header_btn = button(
         row![
             fonts::centered_icon_colored(advanced_toggle_icon, 12.0, palette.text_muted),
-            Space::with_width(8),
+            Space::new().width(8),
             fonts::centered_icon_colored(icons::COG, 14.0, palette.text_muted),
-            Space::with_width(8),
+            Space::new().width(8),
             text("Advanced").size(14).color(palette.text_primary),
-            Space::with_width(Length::Fill),
+            Space::new().width(Length::Fill),
             text(format!(
                 "{} field{}, {} file{}",
                 entry_custom_fields.len(),
@@ -1108,18 +1108,18 @@ fn entry_form(
                 .size(14)
                 .on_input(Message::EntryNotesChanged)
                 .style(move |_theme, status| match status {
-                    text_input::Status::Focused => theme::text_input_focused(theme, v),
+                    text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
                     _ => theme::text_input_style(theme, v),
                 });
             advanced_col = advanced_col.push(
                 column![
                     row![
                         fonts::centered_icon_colored(icons::EDIT, 13.0, palette.text_muted),
-                        Space::with_width(6),
+                        Space::new().width(6),
                         text("Notes").size(13).color(palette.text_secondary),
                     ]
                     .align_y(Vertical::Center),
-                    Space::with_height(6),
+                    Space::new().height(6),
                     notes_input,
                 ],
             );
@@ -1130,11 +1130,11 @@ fn entry_form(
             column![
                 row![
                     fonts::centered_icon_colored(icons::FOLDER, 13.0, palette.text_muted),
-                    Space::with_width(6),
+                    Space::new().width(6),
                     text("Organization").size(13).color(palette.text_secondary),
                 ]
                 .align_y(Vertical::Center),
-                Space::with_height(6),
+                Space::new().height(6),
                 org_col,
             ],
         );
@@ -1152,19 +1152,19 @@ fn entry_form(
                         .size(13)
                         .on_input(move |s| Message::CustomFieldNameChanged(idx, s))
                         .style(move |_theme, status| match status {
-                            text_input::Status::Focused => theme::text_input_focused(theme, v),
+                            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
                             _ => theme::text_input_style(theme, v),
                         }),
-                    Space::with_width(8),
+                    Space::new().width(8),
                     text_input("Value", &value_owned)
                         .padding(10)
                         .size(13)
                         .on_input(move |s| Message::CustomFieldValueChanged(idx, s))
                         .style(move |_theme, status| match status {
-                            text_input::Status::Focused => theme::text_input_focused(theme, v),
+                            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
                             _ => theme::text_input_style(theme, v),
                         }),
-                    Space::with_width(8),
+                    Space::new().width(8),
                     button(
                         fonts::centered_icon_colored(icons::CLOSE, 12.0, palette.danger),
                     )
@@ -1182,7 +1182,7 @@ fn entry_form(
         let add_field_btn = button(
             row![
                 fonts::centered_icon(icons::PLUS, 12.0),
-                Space::with_width(6),
+                Space::new().width(6),
                 text("Add Custom Field").size(13),
             ]
             .align_y(Vertical::Center),
@@ -1197,9 +1197,9 @@ fn entry_form(
         advanced_col = advanced_col.push(
             column![
                 text("Custom Fields").size(13).color(palette.text_secondary),
-                Space::with_height(6),
+                Space::new().height(6),
                 custom_fields_col,
-                Space::with_height(6),
+                Space::new().height(6),
                 add_field_btn,
             ],
         );
@@ -1221,11 +1221,11 @@ fn entry_form(
                 container(
                     row![
                         fonts::centered_icon_colored(icons::SAVE, 12.0, palette.text_muted),
-                        Space::with_width(8),
+                        Space::new().width(8),
                         text(filename_str).size(13).color(palette.text_primary),
-                        Space::with_width(8),
+                        Space::new().width(8),
                         text(size_display).size(11).color(palette.text_muted),
-                        Space::with_width(Length::Fill),
+                        Space::new().width(Length::Fill),
                         button(
                             fonts::centered_icon_colored(icons::CLOSE, 12.0, palette.danger),
                         )
@@ -1250,7 +1250,7 @@ fn entry_form(
         let add_attachment_btn = button(
             row![
                 fonts::centered_icon(icons::PLUS, 12.0),
-                Space::with_width(6),
+                Space::new().width(6),
                 text("Add Attachment").size(13),
             ]
             .align_y(Vertical::Center),
@@ -1265,14 +1265,14 @@ fn entry_form(
         advanced_col = advanced_col.push(
             column![
                 text("Attachments").size(13).color(palette.text_secondary),
-                Space::with_height(6),
+                Space::new().height(6),
                 attachments_col,
-                Space::with_height(6),
+                Space::new().height(6),
                 add_attachment_btn,
             ],
         );
 
-        let separator = container(Space::new(Length::Fill, Length::Fixed(1.0)))
+        let separator = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
             .style(move |_| container::Style {
                 background: Some(iced::Background::Color(palette.surface_variant)),
                 ..Default::default()
@@ -1280,19 +1280,19 @@ fn entry_form(
 
         column![
             separator,
-            Space::with_height(8),
+            Space::new().height(8),
             advanced_header_btn,
             advanced_col,
         ]
         .into()
     } else {
-        let separator = container(Space::new(Length::Fill, Length::Fixed(1.0)))
+        let separator = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
             .style(move |_| container::Style {
                 background: Some(iced::Background::Color(palette.surface_variant)),
                 ..Default::default()
             });
 
-        column![separator, Space::with_height(8), advanced_header_btn,].into()
+        column![separator, Space::new().height(8), advanced_header_btn,].into()
     };
 
     // ── Actions ─────────────────────────────────────────────────────────
@@ -1307,7 +1307,7 @@ fn entry_form(
     let save_btn = button(
         row![
             fonts::centered_icon(icons::CHECK, 14.0),
-            Space::with_width(6),
+            Space::new().width(6),
             text(if edit_mode { "Update" } else { "Save" }).size(14),
         ]
         .align_y(Vertical::Center),
@@ -1319,35 +1319,35 @@ fn entry_form(
     })
     .on_press(Message::SaveEntry);
 
-    let actions_row = row![Space::with_width(Length::Fill), cancel_btn, Space::with_width(12), save_btn,]
+    let actions_row = row![Space::new().width(Length::Fill), cancel_btn, Space::new().width(12), save_btn,]
         .align_y(Vertical::Center);
 
     // ── Assemble form ───────────────────────────────────────────────────
     let mut form_col = column![
         form_title,
-        Space::with_height(12),
+        Space::new().height(12),
         type_row,
-        Space::with_height(16),
+        Space::new().height(16),
         general_section,
     ]
     .spacing(0);
 
     if let Some(creds) = credentials_section {
         form_col = form_col
-            .push(Space::with_height(12))
+            .push(Space::new().height(12))
             .push(creds);
     }
 
     if let Some(details) = details_section {
         form_col = form_col
-            .push(Space::with_height(12))
+            .push(Space::new().height(12))
             .push(details);
     }
 
     form_col = form_col
-        .push(Space::with_height(12))
+        .push(Space::new().height(12))
         .push(advanced_section)
-        .push(Space::with_height(16))
+        .push(Space::new().height(16))
         .push(actions_row);
 
     container(form_col.padding(24))
@@ -1372,13 +1372,13 @@ where
 
     column![
         text(label).size(13).color(palette.text_secondary),
-        Space::with_height(6),
+        Space::new().height(6),
         text_input(placeholder, &value)
             .padding(12)
             .size(14)
             .on_input(on_change)
             .style(move |_theme, status| match status {
-                text_input::Status::Focused => theme::text_input_focused(theme, v),
+                text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
                 _ => theme::text_input_style(theme, v),
             }),
     ]

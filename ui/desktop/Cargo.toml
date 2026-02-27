@@ -8,14 +8,14 @@ description = "Lilypad desktop GUI built with Iced"
 
 [dependencies]
 # GUI Framework - Iced
-iced = { version = "0.13", features = ["advanced", "tokio", "image"] }
+iced = { version = "0.14", features = ["advanced", "tokio", "image"] }
 
 # Async runtime
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "time"] }
 
 # System integration
 directories = "6.0.0"
-webbrowser = "1.0.6"
+webbrowser = "1.1"
 rfd = "0.17.2"
 arboard.workspace = true
 

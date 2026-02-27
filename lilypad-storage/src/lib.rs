@@ -4,7 +4,7 @@ use lilypad_common::validation::validate_vault_name;
 use lilypad_core::{
     decrypt, encrypt, AppConfig, EmbeddedKdfParams, KeyMaterial, KeyMetadata, Vault,
 };
-use rand::RngCore;
+use rand::Rng as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
@@ -607,7 +607,7 @@ fn secure_delete(path: &Path) -> Result<()> {
             if pass == 1 {
                 buffer[..to_write].fill(0x00);
             } else {
-                rand::thread_rng().fill_bytes(&mut buffer[..to_write]);
+                rand::rng().fill_bytes(&mut buffer[..to_write]);
             }
 
             file.write_all(&buffer[..to_write])?;

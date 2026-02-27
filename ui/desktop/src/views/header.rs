@@ -28,9 +28,9 @@ pub fn view(
     let vault_btn = button(
         row![
             fonts::centered_icon_colored(icons::VAULT, 14.0, palette.primary),
-            Space::with_width(8),
+            Space::new().width(8),
             text(active_vault_owned).size(14).font(fonts::FONT_MEDIUM).color(palette.text_primary),
-            Space::with_width(8),
+            Space::new().width(8),
             fonts::centered_icon_colored(icons::CHEVRON_DOWN, 10.0, palette.text_muted),
         ]
         .align_y(Vertical::Center),
@@ -52,7 +52,7 @@ pub fn view(
         .size(14)
         .on_input(Message::SearchChanged)
         .style(move |_theme, status| match status {
-            text_input::Status::Focused => theme::text_input_focused(theme, v),
+            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
             _ => theme::text_input_style(theme, v),
         })
         .width(Length::Fixed(280.0));
@@ -85,7 +85,7 @@ pub fn view(
     let add_entry_btn = button(
         row![
             fonts::centered_icon(icons::PLUS, 14.0),
-            Space::with_width(6),
+            Space::new().width(6),
             text("Add Entry").size(14).font(fonts::FONT_SEMIBOLD),
         ]
         .align_y(Vertical::Center),
@@ -123,15 +123,15 @@ pub fn view(
     // Main header row (dropdown is rendered as overlay in app.rs)
     let header_content = row![
         vault_btn,
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         search_row,
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         add_entry_btn,
-        Space::with_width(8),
+        Space::new().width(8),
         sync_indicator,
-        Space::with_width(8),
+        Space::new().width(8),
         settings_btn,
-        Space::with_width(4),
+        Space::new().width(4),
         lock_btn,
     ]
     .align_y(Vertical::Center)
@@ -167,7 +167,7 @@ pub fn vault_dropdown_overlay(
                         .color(palette.primary)
                         .width(Length::Fixed(16.0)),
                     text(name.clone()).size(14).font(fonts::FONT_REGULAR).color(palette.text_primary),
-                    Space::with_width(Length::Fill),
+                    Space::new().width(Length::Fill),
                     button(
                         fonts::centered_icon_colored(icons::EDIT, 12.0, palette.text_muted),
                     )
@@ -194,7 +194,7 @@ pub fn vault_dropdown_overlay(
     // Add divider
     items.push(
         container(
-            container(Space::new(Length::Fill, Length::Fixed(1.0)))
+            container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
                 .style(move |_| container::Style {
                     background: Some(iced::Background::Color(palette.border)),
                     ..Default::default()
@@ -210,7 +210,7 @@ pub fn vault_dropdown_overlay(
             container(
                 row![
                     fonts::centered_icon_colored(icons::PLUS, 14.0, palette.primary),
-                    Space::with_width(8),
+                    Space::new().width(8),
                     text("Create new vault")
                         .size(14)
                         .font(fonts::FONT_MEDIUM)
@@ -239,9 +239,9 @@ pub fn vault_dropdown_overlay(
 
     // Position the dropdown at the top-left below the header button
     let positioned = column![
-        Space::with_height(56), // Offset below header
+        Space::new().height(56), // Offset below header
         row![
-            Space::with_width(20), // Left margin
+            Space::new().width(20), // Left margin
             dropdown_card,
         ],
     ];

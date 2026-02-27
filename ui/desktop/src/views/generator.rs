@@ -64,7 +64,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
                 text(generated_password_owned.clone())
                     .size(18)
                     .color(palette.text_primary),
-                Space::with_width(Length::Fill),
+                Space::new().width(Length::Fill),
                 button(fonts::centered_icon(icons::COPY, 16.0))
                     .padding([8, 12])
                     .style(move |_theme, status| match status {
@@ -85,7 +85,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
         container(
             row![
                 fonts::centered_icon(icons::DICE, 16.0),
-                Space::with_width(8),
+                Space::new().width(8),
                 text("Generate Password").size(15),
             ]
             .align_y(Vertical::Center),
@@ -104,7 +104,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     // Length slider
     let length_label = row![
         text("Length").size(14).color(palette.text_secondary),
-        Space::with_width(Length::Fill),
+        Space::new().width(Length::Fill),
         text(format!("{} characters", generator_length))
             .size(14)
             .color(palette.text_primary),
@@ -120,27 +120,27 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
         .size(14)
         .color(palette.text_secondary);
 
-    let lowercase_check = checkbox("Lowercase (a-z)", generator_lowercase)
+    let lowercase_check = checkbox(generator_lowercase).label("Lowercase (a-z)")
         .on_toggle(Message::ToggleLowercase)
         .text_size(14)
         .spacing(10);
 
-    let uppercase_check = checkbox("Uppercase (A-Z)", generator_uppercase)
+    let uppercase_check = checkbox(generator_uppercase).label("Uppercase (A-Z)")
         .on_toggle(Message::ToggleUppercase)
         .text_size(14)
         .spacing(10);
 
-    let digits_check = checkbox("Digits (0-9)", generator_digits)
+    let digits_check = checkbox(generator_digits).label("Digits (0-9)")
         .on_toggle(Message::ToggleDigits)
         .text_size(14)
         .spacing(10);
 
-    let symbols_check = checkbox("Symbols (!@#$%...)", generator_symbols)
+    let symbols_check = checkbox(generator_symbols).label("Symbols (!@#$%...)")
         .on_toggle(Message::ToggleSymbols)
         .text_size(14)
         .spacing(10);
 
-    let ambiguous_check = checkbox("Exclude ambiguous (0O, 1lI)", exclude_ambiguous)
+    let ambiguous_check = checkbox(exclude_ambiguous).label("Exclude ambiguous (0O, 1lI)")
         .on_toggle(Message::ToggleExcludeAmbiguous)
         .text_size(14)
         .spacing(10);
@@ -174,7 +174,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     // Build the bar - only include empty portion if there's any empty space
     let bar_content: Element<'static, Message> = if empty_portion == 0 {
         // Full bar - no empty portion needed
-        container(Space::new(Length::Fill, Length::Fixed(8.0)))
+        container(Space::new().width(Length::Fill).height(Length::Fixed(8.0)))
             .style(move |_| container::Style {
                 background: Some(iced::Background::Color(strength_color)),
                 ..Default::default()
@@ -182,12 +182,12 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
             .into()
     } else {
         row![
-            container(Space::new(Length::FillPortion(fill_portion), Length::Fixed(8.0)))
+            container(Space::new().width(Length::FillPortion(fill_portion)).height(Length::Fixed(8.0)))
                 .style(move |_| container::Style {
                     background: Some(iced::Background::Color(strength_color)),
                     ..Default::default()
                 }),
-            container(Space::new(Length::FillPortion(empty_portion), Length::Fixed(8.0)))
+            container(Space::new().width(Length::FillPortion(empty_portion)).height(Length::Fixed(8.0)))
                 .style(move |_| container::Style {
                     background: Some(iced::Background::Color(palette.surface_variant)),
                     ..Default::default()
@@ -199,10 +199,10 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     let strength_section: Element<'static, Message> = column![
         row![
             text("Strength").size(14).color(palette.text_secondary),
-            Space::with_width(Length::Fill),
+            Space::new().width(Length::Fill),
             text(strength_label).size(14).color(strength_color),
         ],
-        Space::with_height(8),
+        Space::new().height(8),
         container(bar_content)
             .width(Length::Fill)
             .style(move |_| container::Style {
@@ -231,33 +231,33 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     // Main content layout
     let content = column![
         title,
-        Space::with_height(4),
+        Space::new().height(4),
         subtitle,
-        Space::with_height(32),
+        Space::new().height(32),
         password_display,
-        Space::with_height(16),
+        Space::new().height(16),
         generate_btn,
-        Space::with_height(32),
+        Space::new().height(32),
         length_label,
-        Space::with_height(8),
+        Space::new().height(8),
         length_slider,
-        Space::with_height(24),
+        Space::new().height(24),
         options_title,
-        Space::with_height(12),
+        Space::new().height(12),
         lowercase_check,
-        Space::with_height(8),
+        Space::new().height(8),
         uppercase_check,
-        Space::with_height(8),
+        Space::new().height(8),
         digits_check,
-        Space::with_height(8),
+        Space::new().height(8),
         symbols_check,
-        Space::with_height(8),
+        Space::new().height(8),
         ambiguous_check,
-        Space::with_height(24),
+        Space::new().height(24),
         strength_section,
-        Space::with_height(32),
+        Space::new().height(32),
         tips_title,
-        Space::with_height(12),
+        Space::new().height(12),
         tips,
     ]
     .width(Length::Fixed(480.0));
@@ -292,7 +292,7 @@ fn tip_item<'a>(
 ) -> Element<'a, Message> {
     row![
         text("•").size(14).color(palette.primary),
-        Space::with_width(8),
+        Space::new().width(8),
         text(tip).size(13).color(palette.text_muted),
     ]
     .align_y(Vertical::Center)

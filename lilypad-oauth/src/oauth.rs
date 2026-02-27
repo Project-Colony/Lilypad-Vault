@@ -7,7 +7,7 @@
 use crate::config::{AuthFlow, OAuthConfig};
 use crate::error::{OAuthError, Result};
 use crate::token_store::TokenInfo;
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
@@ -451,8 +451,8 @@ impl DeviceFlowAuth {
 
 /// Generates a random state parameter for CSRF protection.
 fn generate_state() -> String {
-    let mut rng = rand::thread_rng();
-    let bytes: [u8; 32] = rng.gen();
+    let mut rng = rand::rng();
+    let bytes: [u8; 32] = rng.random();
     base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, bytes)
 }
 

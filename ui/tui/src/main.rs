@@ -22,7 +22,7 @@ use lilypad_core::{
     EntryMetadata, EntrySecret, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
 };
 use lilypad_storage::LocalStore;
-use rand::Rng;
+use rand::RngExt;
 use totp_rs::{Algorithm, Secret, TOTP};
 use ratatui::{
     backend::CrosstermBackend,
@@ -685,9 +685,9 @@ impl App {
         }
 
         let chars: Vec<char> = charset.chars().collect();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         self.gen_result = (0..self.gen_length)
-            .map(|_| chars[rng.gen_range(0..chars.len())])
+            .map(|_| chars[rng.random_range(0..chars.len())])
             .collect();
     }
 
