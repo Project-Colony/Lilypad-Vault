@@ -36,6 +36,28 @@ pub enum Message {
     AcknowledgeWelcome,
 
     // ========================================================================
+    // Onboarding
+    // ========================================================================
+    /// Move to the next onboarding step
+    OnboardingNext,
+    /// Move to the previous onboarding step
+    OnboardingPrev,
+    /// Skip onboarding entirely
+    OnboardingSkip,
+    /// Jump to a specific onboarding step (dot navigation)
+    OnboardingGoTo(usize),
+    /// Tutorial: generate a demo password
+    OnboardingTutorialGenerate,
+    /// Tutorial: copy the demo password to clipboard
+    OnboardingTutorialCopy,
+    /// Tutorial: advance to next tutorial phase
+    OnboardingTutorialNext,
+    /// Onboarding: create GitHub repo after successful auth
+    OnboardingEnsureRepo,
+    /// Onboarding: result of repo creation
+    OnboardingRepoResult(std::result::Result<String, String>),
+
+    // ========================================================================
     // Search
     // ========================================================================
     /// Search query changed

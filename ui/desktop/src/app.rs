@@ -28,8 +28,8 @@ use zeroize::Zeroize;
 
 use crate::message::Message;
 use crate::state::{
-    AppSettings, Category, LockoutState, UnlockMode, VaultEntry, VaultViewMode,
-    DEFAULT_VAULT_NAME, SETTINGS_VERSION,
+    AppSettings, Category, LockoutState, OnboardingStep, TutorialPhase, UnlockMode, VaultEntry,
+    VaultViewMode, DEFAULT_VAULT_NAME, SETTINGS_VERSION,
 };
 use crate::theme::{self, LilypadTheme};
 use crate::views;
@@ -38,6 +38,10 @@ use crate::views;
 pub struct LilypadApp {
     // Application mode
     pub show_welcome: bool,
+    pub onboarding_step: OnboardingStep,
+    pub tutorial_phase: TutorialPhase,
+    pub tutorial_generated_pw: String,
+    pub tutorial_pw_copied: bool,
     pub vault_unlocked: bool,
     pub error_message: Option<String>,
 
@@ -184,6 +188,7 @@ impl Drop for LilypadApp {
         self.master_password.zeroize();
         self.confirm_password.zeroize();
         self.generated_password.zeroize();
+        self.tutorial_generated_pw.zeroize();
         self.entry_password.zeroize();
         self.reauth_password.zeroize();
         self.new_master_password.zeroize();
@@ -221,6 +226,10 @@ impl LilypadApp {
 
         let mut app = Self {
             show_welcome: true,
+            onboarding_step: OnboardingStep::Welcome,
+            tutorial_phase: TutorialPhase::GeneratePassword,
+            tutorial_generated_pw: String::new(),
+            tutorial_pw_copied: false,
             vault_unlocked: false,
             error_message: None,
             search_query: String::new(),
@@ -323,7 +332,7 @@ impl LilypadApp {
         }
 
         // Load persisted state
-        if let Some(project_dirs) = ProjectDirs::from("", "", "Lilypad") {
+        if let Some(project_dirs) = ProjectDirs::from("", "Colony", "Lilypad") {
             let config_dir = project_dirs.config_dir();
             let welcome_ack_path = config_dir.join("welcome_ack");
             let settings_path = config_dir.join("settings.json");
@@ -422,9 +431,51 @@ impl LilypadApp {
             Message::LockVault => {
                 self.lock_vault();
             }
-            Message::AcknowledgeWelcome => {
+            Message::AcknowledgeWelcome | Message::OnboardingSkip => {
                 self.show_welcome = false;
                 self.save_welcome_ack();
+            }
+            Message::OnboardingNext => {
+                if let Some(next) = self.onboarding_step.next() {
+                    if next == OnboardingStep::Tutorial {
+                        self.tutorial_phase = TutorialPhase::GeneratePassword;
+                        self.tutorial_generated_pw.clear();
+                        self.tutorial_pw_copied = false;
+                    }
+                    self.onboarding_step = next;
+                }
+            }
+            Message::OnboardingPrev => {
+                if let Some(prev) = self.onboarding_step.prev() {
+                    self.onboarding_step = prev;
+                }
+            }
+            Message::OnboardingGoTo(index) => {
+                self.onboarding_step = OnboardingStep::from_index(index);
+            }
+            Message::OnboardingTutorialGenerate => {
+                self.tutorial_generated_pw = self.generate_demo_password();
+                self.tutorial_phase = TutorialPhase::ViewVault;
+            }
+            Message::OnboardingTutorialCopy => {
+                if let Some(ref mut clipboard) = self.clipboard {
+                    let _ = clipboard.set_text(&self.tutorial_generated_pw);
+                }
+                self.tutorial_pw_copied = true;
+            }
+            Message::OnboardingTutorialNext => {
+                if let Some(next_phase) = self.tutorial_phase.next() {
+                    self.tutorial_phase = next_phase;
+                }
+            }
+            Message::OnboardingEnsureRepo => {
+                return self.ensure_github_repo();
+            }
+            Message::OnboardingRepoResult(result) => {
+                match result {
+                    Ok(msg) => self.set_status(msg),
+                    Err(e) => self.set_status(format!("Repository setup failed: {}", e)),
+                }
             }
 
             // Search
@@ -822,6 +873,10 @@ impl LilypadApp {
                         self.device_flow_device_code = None;
                         self.device_flow_interval = None;
                         self.set_status(format!("Logged in as {}", username));
+                        // Auto-create repo during onboarding
+                        if self.show_welcome {
+                            return self.ensure_github_repo();
+                        }
                     }
                     Err(e) => {
                         self.device_flow_code = None;
@@ -983,7 +1038,21 @@ impl LilypadApp {
     /// Create the view
     pub fn view(&self) -> Element<'_, Message> {
         if self.show_welcome {
-            return views::welcome::view(self.theme);
+            return views::welcome::view(views::welcome::OnboardingParams {
+                theme: self.theme,
+                step: self.onboarding_step,
+                tutorial_phase: self.tutorial_phase,
+                tutorial_generated_pw: &self.tutorial_generated_pw,
+                tutorial_pw_copied: self.tutorial_pw_copied,
+                github_authenticated: self.github_authenticated,
+                github_username: self.github_username.as_deref(),
+                sync_in_progress: self.sync_in_progress,
+                device_flow_code: self.device_flow_code.as_deref(),
+                device_flow_uri: self.device_flow_uri.as_deref(),
+                master_password: &self.master_password,
+                confirm_password: &self.confirm_password,
+                error_message: self.error_message.as_deref(),
+            });
         }
 
         if !self.vault_unlocked {
@@ -1281,6 +1350,17 @@ impl LilypadApp {
         }
     }
 
+    fn generate_demo_password(&self) -> String {
+        let charset = b"abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*";
+        let mut rng = rand::thread_rng();
+        (0..16)
+            .map(|_| {
+                let idx = rng.gen_range(0..charset.len());
+                charset[idx] as char
+            })
+            .collect()
+    }
+
     fn save_lockout(&self) {
         if let Some(path) = &self.lockout_path {
             if let Some(parent) = path.parent() {
@@ -1445,6 +1525,12 @@ impl LilypadApp {
         self.confirm_password.zeroize();
         self.load_available_vaults();
         self.refresh_health_report();
+
+        // Dismiss onboarding if active
+        if self.show_welcome {
+            self.show_welcome = false;
+            self.save_welcome_ack();
+        }
 
         Task::none()
     }
@@ -2253,6 +2339,26 @@ impl LilypadApp {
                 .unwrap_or_else(|e| Err(format!("{}", e)))
             },
             Message::GitHubLoginResult,
+        )
+    }
+
+    fn ensure_github_repo(&mut self) -> Task<Message> {
+        Task::perform(
+            async {
+                tokio::task::spawn_blocking(|| {
+                    let backend = match lilypad_oauth::GitHubSyncBackend::from_stored_token() {
+                        Ok(b) => b,
+                        Err(e) => return Err(format!("{}", e)),
+                    };
+                    match backend.ensure_repo() {
+                        Ok(()) => Ok("Repository ready".to_string()),
+                        Err(e) => Err(format!("{}", e)),
+                    }
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("{}", e)))
+            },
+            Message::OnboardingRepoResult,
         )
     }
 

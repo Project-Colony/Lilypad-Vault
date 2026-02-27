@@ -204,6 +204,82 @@ impl Drop for VaultEntry {
     }
 }
 
+/// Onboarding flow step
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OnboardingStep {
+    #[default]
+    Welcome,
+    Features,
+    Colony,
+    Tutorial,
+    GitHubConnect,
+    CreateVault,
+}
+
+impl OnboardingStep {
+    pub const COUNT: usize = 6;
+
+    pub fn index(&self) -> usize {
+        match self {
+            OnboardingStep::Welcome => 0,
+            OnboardingStep::Features => 1,
+            OnboardingStep::Colony => 2,
+            OnboardingStep::Tutorial => 3,
+            OnboardingStep::GitHubConnect => 4,
+            OnboardingStep::CreateVault => 5,
+        }
+    }
+
+    pub fn from_index(index: usize) -> Self {
+        match index {
+            0 => OnboardingStep::Welcome,
+            1 => OnboardingStep::Features,
+            2 => OnboardingStep::Colony,
+            3 => OnboardingStep::Tutorial,
+            4 => OnboardingStep::GitHubConnect,
+            5 => OnboardingStep::CreateVault,
+            _ => OnboardingStep::CreateVault,
+        }
+    }
+
+    pub fn next(&self) -> Option<OnboardingStep> {
+        let i = self.index();
+        if i + 1 < Self::COUNT {
+            Some(Self::from_index(i + 1))
+        } else {
+            None
+        }
+    }
+
+    pub fn prev(&self) -> Option<OnboardingStep> {
+        let i = self.index();
+        if i > 0 {
+            Some(Self::from_index(i - 1))
+        } else {
+            None
+        }
+    }
+}
+
+/// State within the mini-tutorial onboarding step
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TutorialPhase {
+    #[default]
+    GeneratePassword,
+    ViewVault,
+    CopyPassword,
+}
+
+impl TutorialPhase {
+    pub fn next(&self) -> Option<TutorialPhase> {
+        match self {
+            TutorialPhase::GeneratePassword => Some(TutorialPhase::ViewVault),
+            TutorialPhase::ViewVault => Some(TutorialPhase::CopyPassword),
+            TutorialPhase::CopyPassword => None,
+        }
+    }
+}
+
 /// Navigation category
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Category {
