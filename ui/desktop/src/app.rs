@@ -33,6 +33,11 @@ use crate::state::{
 use crate::theme::{self, LilypadTheme, UiVariation};
 use crate::views;
 
+/// Convert a string to `Some(string)` if non-empty, or `None` otherwise.
+fn non_empty(s: impl Into<String> + AsRef<str>) -> Option<String> {
+    if s.as_ref().is_empty() { None } else { Some(s.into()) }
+}
+
 /// Main Lilypad application
 pub struct LilypadApp {
     // Application mode
@@ -183,6 +188,9 @@ pub struct LilypadApp {
     pub entry_type: String,
     // Whether the advanced fields section is expanded in the entry form
     pub show_advanced_fields: bool,
+
+    // UI interaction state
+    pub hovered_entry_index: Option<usize>,
 }
 
 impl Drop for LilypadApp {
@@ -321,6 +329,7 @@ impl LilypadApp {
             audit_events: Vec::new(),
             entry_type: "Login".to_string(),
             show_advanced_fields: false,
+            hovered_entry_index: None,
         };
 
         // Check GitHub OAuth status on startup
@@ -871,6 +880,12 @@ impl LilypadApp {
                     }
                 }
             }
+            Message::EntryCardHovered(index) => {
+                self.hovered_entry_index = Some(index);
+            }
+            Message::EntryCardUnhovered => {
+                self.hovered_entry_index = None;
+            }
             Message::ClearStatus => {
                 self.status_message = None;
                 self.status_message_time = None;
@@ -1166,6 +1181,7 @@ impl LilypadApp {
                 entry_type: &self.entry_type,
                 entry_attachments: &self.entry_attachments,
                 show_advanced_fields: self.show_advanced_fields,
+                hovered_entry_index: self.hovered_entry_index,
             }),
             Category::Health => views::health::view(self.theme, v, self.health_report.as_ref(), &self.breached_entries),
             Category::Generator => views::generator::view(views::generator::GeneratorViewParams {
@@ -1809,26 +1825,10 @@ impl LilypadApp {
 
         // Update the fields that the form exposes
         secret.password = self.entry_password.clone();
-        secret.notes = if self.entry_notes.is_empty() {
-            None
-        } else {
-            Some(self.entry_notes.clone())
-        };
-        secret.email = if self.entry_email.is_empty() {
-            None
-        } else {
-            Some(self.entry_email.clone())
-        };
-        secret.phone = if self.entry_phone.is_empty() {
-            None
-        } else {
-            Some(self.entry_phone.clone())
-        };
-        secret.totp_secret = if self.entry_totp_secret.is_empty() {
-            None
-        } else {
-            Some(self.entry_totp_secret.clone())
-        };
+        secret.notes = non_empty(&self.entry_notes);
+        secret.email = non_empty(&self.entry_email);
+        secret.phone = non_empty(&self.entry_phone);
+        secret.totp_secret = non_empty(&self.entry_totp_secret);
         secret.custom_fields = self
             .entry_custom_fields
             .iter()
@@ -1862,22 +1862,10 @@ impl LilypadApp {
 
         // Build metadata with tags and folder
         let metadata = EntryMetadata {
-            username: if self.entry_username.is_empty() {
-                None
-            } else {
-                Some(self.entry_username.clone())
-            },
-            url: if self.entry_url.is_empty() {
-                None
-            } else {
-                Some(self.entry_url.clone())
-            },
+            username: non_empty(&self.entry_username),
+            url: non_empty(&self.entry_url),
             tags: self.entry_tags.clone(),
-            folder: if self.entry_folder.is_empty() {
-                None
-            } else {
-                Some(self.entry_folder.clone())
-            },
+            folder: non_empty(&self.entry_folder),
             entry_type: match self.entry_type.as_str() {
                 "Card" => lilypad_core::EntryType::Card,
                 "Identity" => lilypad_core::EntryType::Identity,
@@ -2272,27 +2260,15 @@ impl LilypadApp {
                                         entry_val["folder"].as_str().map(String::from);
 
                                     let mut secret = EntrySecret::new(&password);
-                                    if !notes.is_empty() {
-                                        secret.notes = Some(notes);
-                                    }
-                                    if !email.is_empty() {
-                                        secret.email = Some(email);
-                                    }
+                                    secret.notes = non_empty(notes);
+                                    secret.email = non_empty(email);
 
                                     let secret_bytes =
                                         serde_json::to_vec(&secret).unwrap_or_default();
                                     if let Ok(ciphertext) = encrypt(key, &secret_bytes) {
                                         let metadata = EntryMetadata {
-                                            username: if username.is_empty() {
-                                                None
-                                            } else {
-                                                Some(username)
-                                            },
-                                            url: if url.is_empty() {
-                                                None
-                                            } else {
-                                                Some(url)
-                                            },
+                                            username: non_empty(username),
+                                            url: non_empty(url),
                                             tags,
                                             folder,
                                             ..Default::default()
@@ -2786,22 +2762,16 @@ impl LilypadApp {
             };
 
             let mut secret = EntrySecret::new(&password);
-            if !notes.is_empty() {
-                secret.notes = Some(notes);
-            }
-            if !totp.is_empty() {
-                secret.totp_secret = Some(totp);
-            }
-            if !email.is_empty() {
-                secret.email = Some(email);
-            }
+            secret.notes = non_empty(notes);
+            secret.totp_secret = non_empty(totp);
+            secret.email = non_empty(email);
 
             let secret_bytes = serde_json::to_vec(&secret).unwrap_or_default();
             if let Ok(ciphertext) = encrypt(key, &secret_bytes) {
                 let metadata = EntryMetadata {
-                    username: if username.is_empty() { None } else { Some(username) },
-                    url: if url.is_empty() { None } else { Some(url) },
-                    folder: if folder.is_empty() { None } else { Some(folder) },
+                    username: non_empty(username),
+                    url: non_empty(url),
+                    folder: non_empty(folder),
                     ..Default::default()
                 };
                 let entry = Entry::new_with_metadata(&label, metadata, ciphertext);

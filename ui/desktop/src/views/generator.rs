@@ -67,10 +67,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
                 Space::new().width(Length::Fill),
                 button(fonts::centered_icon(icons::COPY, 16.0))
                     .padding([8, 12])
-                    .style(move |_theme, status| match status {
-                        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-                        _ => theme::icon_button(theme, v),
-                    })
+                    .style(theme::icon_style(theme, v))
                     .on_press(Message::CopyGeneratedPassword),
             ]
             .align_y(Vertical::Center),
@@ -95,10 +92,7 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
     )
     .width(Length::Fill)
     .padding([14, 24])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme, v),
-        _ => theme::primary_button(theme, v),
-    })
+    .style(theme::primary_style(theme, v))
     .on_press(Message::GeneratePassword);
 
     // Length slider

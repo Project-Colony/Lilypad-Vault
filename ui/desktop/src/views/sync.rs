@@ -9,6 +9,7 @@ use iced::{Element, Length};
 use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::theme::{self, LilypadTheme, UiVariation};
+use crate::views::common::padded_separator;
 
 /// Render the sync & data management section
 pub fn view(
@@ -118,10 +119,7 @@ fn sync_actions_section(
     )
     .width(Length::FillPortion(1))
     .padding([12, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme, v),
-        _ => theme::primary_button(theme, v),
-    });
+    .style(theme::primary_style(theme, v));
 
     let push_btn = if in_progress {
         push_btn
@@ -145,6 +143,7 @@ fn sync_actions_section(
     .padding([12, 16])
     .style(move |_theme, status| match status {
         button::Status::Hovered => theme::secondary_button(theme, v),
+        button::Status::Pressed => theme::secondary_button_pressed(theme, v),
         _ => theme::secondary_button(theme, v),
     });
 
@@ -163,10 +162,7 @@ fn sync_actions_section(
     )
     .width(Length::Fill)
     .padding([8, 12])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-        _ => theme::ghost_button(theme, v),
-    });
+    .style(theme::ghost_style(theme, v));
 
     let status_btn = if in_progress {
         status_btn
@@ -229,10 +225,7 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
     )
     .width(Length::Fill)
     .padding([10, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-        _ => theme::secondary_button(theme, v),
-    })
+    .style(theme::secondary_style(theme, v))
     .on_press(Message::ExportVault);
 
     let export_json_btn = button(
@@ -252,6 +245,11 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
     .style(move |_theme, status| match status {
         button::Status::Hovered => {
             let mut style = theme::secondary_button_hovered(theme, v);
+            style.text_color = palette.warning;
+            style
+        }
+        button::Status::Pressed => {
+            let mut style = theme::secondary_button_pressed(theme, v);
             style.text_color = palette.warning;
             style
         }
@@ -279,6 +277,11 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
             style.text_color = palette.warning;
             style
         }
+        button::Status::Pressed => {
+            let mut style = theme::secondary_button_pressed(theme, v);
+            style.text_color = palette.warning;
+            style
+        }
         _ => theme::secondary_button(theme, v),
     })
     .on_press(Message::ExportVaultCsv);
@@ -292,14 +295,7 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
     ]
     .align_y(Vertical::Center);
 
-    let divider = container(
-        container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
-            .style(move |_| container::Style {
-                background: Some(iced::Background::Color(palette.border)),
-                ..Default::default()
-            }),
-    )
-    .padding([8, 0]);
+    let divider = padded_separator(theme, v);
 
     let import_btn = button(
         container(
@@ -315,10 +311,7 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
     )
     .width(Length::Fill)
     .padding([10, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-        _ => theme::secondary_button(theme, v),
-    })
+    .style(theme::secondary_style(theme, v))
     .on_press(Message::ImportVault);
 
     let import_csv_btn = button(
@@ -335,10 +328,7 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
     )
     .width(Length::Fill)
     .padding([10, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-        _ => theme::secondary_button(theme, v),
-    })
+    .style(theme::secondary_style(theme, v))
     .on_press(Message::ImportBrowserCsv);
 
     let import_hint = text("Supports Chrome, Firefox, Bitwarden, LastPass, 1Password, KeePass CSV formats")
@@ -404,10 +394,7 @@ fn conflict_resolution_section(theme: LilypadTheme, v: UiVariation) -> Element<'
     )
     .width(Length::FillPortion(1))
     .padding([12, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme, v),
-        _ => theme::primary_button(theme, v),
-    })
+    .style(theme::primary_style(theme, v))
     .on_press(Message::SyncResolveKeepLocal);
 
     let keep_remote = button(
@@ -425,10 +412,7 @@ fn conflict_resolution_section(theme: LilypadTheme, v: UiVariation) -> Element<'
     )
     .width(Length::FillPortion(1))
     .padding([12, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-        _ => theme::secondary_button(theme, v),
-    })
+    .style(theme::secondary_style(theme, v))
     .on_press(Message::SyncResolveKeepRemote);
 
     container(
@@ -483,10 +467,7 @@ fn backup_section(theme: LilypadTheme, v: UiVariation) -> Element<'static, Messa
     )
     .width(Length::FillPortion(1))
     .padding([12, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme, v),
-        _ => theme::primary_button(theme, v),
-    })
+    .style(theme::primary_style(theme, v))
     .on_press(Message::BackupVault);
 
     let restore_btn = button(
@@ -503,10 +484,7 @@ fn backup_section(theme: LilypadTheme, v: UiVariation) -> Element<'static, Messa
     )
     .width(Length::FillPortion(1))
     .padding([12, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-        _ => theme::secondary_button(theme, v),
-    })
+    .style(theme::secondary_style(theme, v))
     .on_press(Message::RestoreVault);
 
     container(

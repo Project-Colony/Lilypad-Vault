@@ -3,13 +3,14 @@
 //! Displays the list of credentials/entries with filtering and actions.
 
 use iced::alignment::{Horizontal, Vertical};
-use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
+use iced::widget::{button, column, container, mouse_area, row, scrollable, text, text_input, Space};
 use iced::{Element, Length, Padding};
 
 use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::state::{VaultEntry, VaultViewMode};
 use crate::theme::{self, LilypadTheme, UiVariation};
+use crate::views::common::{labeled_input, separator};
 
 /// Parameters for the vault view.
 pub struct VaultViewParams<'a> {
@@ -36,6 +37,29 @@ pub struct VaultViewParams<'a> {
     pub entry_type: &'a str,
     pub entry_attachments: &'a [(String, String)],
     pub show_advanced_fields: bool,
+    pub hovered_entry_index: Option<usize>,
+}
+
+/// Parameters for the entry add/edit form.
+struct EntryFormParams<'a> {
+    theme: LilypadTheme,
+    v: UiVariation,
+    edit_mode: bool,
+    title: &'a str,
+    username: &'a str,
+    password: &'a str,
+    url: &'a str,
+    notes: &'a str,
+    email: &'a str,
+    phone: &'a str,
+    folder: &'a str,
+    tags: &'a [String],
+    new_tag: &'a str,
+    totp_secret: &'a str,
+    custom_fields: &'a [(String, String)],
+    entry_type: &'a str,
+    attachments: &'a [(String, String)],
+    show_advanced: bool,
 }
 
 /// Render the vault entries section
@@ -64,15 +88,99 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
         entry_type,
         entry_attachments,
         show_advanced_fields,
+        hovered_entry_index,
     } = params;
-    let palette = theme.palette();
 
     // Filter entries based on search and view mode
-    let filtered_entries: Vec<(usize, &VaultEntry)> = entries
+    let filtered_entries = filter_entries(entries, search_query, view_mode, folder_filter);
+
+    let tabs_row = view_mode_tabs(theme, v, view_mode);
+
+    let count_text = text(format!(
+        "{} credential{}",
+        filtered_entries.len(),
+        if filtered_entries.len() == 1 { "" } else { "s" }
+    ))
+    .size(13)
+    .color(theme.palette().text_muted);
+
+    let folder_row = folder_filter_chips(theme, v, entries, folder_filter);
+
+    let header_row = row![tabs_row, Space::new().width(Length::Fill), count_text,]
+        .align_y(Vertical::Center)
+        .padding(Padding::new(0.0).bottom(16.0));
+
+    let entries_content = entries_list(
+        theme, v, &filtered_entries, search_query, view_mode, hovered_entry_index,
+    );
+
+    // Add/Edit entry form
+    let form_content = if show_add_entry {
+        Some(entry_form(EntryFormParams {
+            theme,
+            v,
+            edit_mode,
+            title: entry_title,
+            username: entry_username,
+            password: entry_password,
+            url: entry_url,
+            notes: entry_notes,
+            email: entry_email,
+            phone: entry_phone,
+            folder: entry_folder,
+            tags: entry_tags,
+            new_tag: entry_new_tag,
+            totp_secret: entry_totp_secret,
+            custom_fields: entry_custom_fields,
+            entry_type,
+            attachments: entry_attachments,
+            show_advanced: show_advanced_fields,
+        }))
+    } else {
+        None
+    };
+
+    let mut main_column = column![].spacing(0);
+
+    if let Some(form) = form_content {
+        main_column = main_column
+            .push(form)
+            .push(Space::new().height(24));
+    }
+
+    if let Some(folder_element) = folder_row {
+        main_column = main_column
+            .push(folder_element)
+            .push(Space::new().height(8));
+    }
+
+    main_column = main_column
+        .push(header_row)
+        .push(entries_content);
+
+    let main_content: Element<'static, Message> = scrollable(main_column)
+        .height(Length::Fill)
+        .style(move |_theme, _status| theme::scrollable_style(theme, v))
+        .into();
+
+    container(main_content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(24)
+        .into()
+}
+
+/// Filter entries by search query, view mode, and folder.
+fn filter_entries<'a>(
+    entries: &'a [VaultEntry],
+    search_query: &str,
+    view_mode: VaultViewMode,
+    folder_filter: Option<&str>,
+) -> Vec<(usize, &'a VaultEntry)> {
+    entries
         .iter()
         .enumerate()
         .filter(|(_, entry)| {
-            // Search filter
             let query_lower = search_query.to_lowercase();
             let matches_search = search_query.is_empty()
                 || entry.title.to_lowercase().contains(&query_lower)
@@ -80,7 +188,6 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
                 || entry.url.to_lowercase().contains(&query_lower)
                 || entry.tags.iter().any(|t| t.to_lowercase().contains(&query_lower));
 
-            // View mode filter
             let matches_mode = match view_mode {
                 VaultViewMode::All => true,
                 VaultViewMode::Favorites => entry.is_favorite,
@@ -93,7 +200,6 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
                 VaultViewMode::Expired => entry.is_expired,
             };
 
-            // Folder filter
             let matches_folder = match folder_filter {
                 Some(f) => entry.folder.as_deref() == Some(f),
                 None => true,
@@ -101,21 +207,24 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
 
             matches_search && matches_mode && matches_folder
         })
-        .collect();
+        .collect()
+}
 
-    // View mode tabs
-    let view_tabs: Vec<Element<'static, Message>> = VaultViewMode::ALL
+/// Render the view mode tab bar (All, Favorites, Recent, Weak, Expired).
+fn view_mode_tabs(
+    theme: LilypadTheme,
+    v: UiVariation,
+    view_mode: VaultViewMode,
+) -> Element<'static, Message> {
+    let palette = theme.palette();
+    let tabs: Vec<Element<'static, Message>> = VaultViewMode::ALL
         .iter()
         .map(|mode| {
             let is_active = *mode == view_mode;
             button(
                 text(mode.label())
                     .size(13)
-                    .color(if is_active {
-                        palette.primary
-                    } else {
-                        palette.text_muted
-                    }),
+                    .color(if is_active { palette.primary } else { palette.text_muted }),
             )
             .padding([8, 16])
             .style(move |_theme, status| {
@@ -130,6 +239,7 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
                 } else {
                     match status {
                         button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                        button::Status::Pressed => theme::ghost_button_pressed(theme, v),
                         _ => theme::ghost_button(theme, v),
                     }
                 }
@@ -139,18 +249,17 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
         })
         .collect();
 
-    let tabs_row = row(view_tabs).spacing(4);
+    row(tabs).spacing(4).into()
+}
 
-    // Entry count
-    let count_text = text(format!(
-        "{} credential{}",
-        filtered_entries.len(),
-        if filtered_entries.len() == 1 { "" } else { "s" }
-    ))
-    .size(13)
-    .color(palette.text_muted);
-
-    // Folder filter chips
+/// Render folder filter chip bar. Returns `None` if there are no folders.
+fn folder_filter_chips(
+    theme: LilypadTheme,
+    v: UiVariation,
+    entries: &[VaultEntry],
+    folder_filter: Option<&str>,
+) -> Option<Element<'static, Message>> {
+    let palette = theme.palette();
     let mut folders: Vec<String> = entries
         .iter()
         .filter_map(|e| e.folder.clone())
@@ -159,80 +268,58 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
         .collect();
     folders.sort();
 
+    if folders.is_empty() {
+        return None;
+    }
+
     let folder_filter_owned: Option<String> = folder_filter.map(|s| s.to_string());
     let no_filter = folder_filter_owned.is_none();
 
-    let folder_row: Option<Element<'static, Message>> = if !folders.is_empty() {
-        let mut folder_chips = row![
+    let mut chips = row![
+        button(
+            text("All folders")
+                .size(11)
+                .color(if no_filter { palette.primary } else { palette.text_muted }),
+        )
+        .padding([4, 10])
+        .style(theme::ghost_active_style(theme, v, no_filter))
+        .on_press(Message::FilterByFolder(None)),
+    ]
+    .spacing(4)
+    .align_y(Vertical::Center);
+
+    for folder in &folders {
+        let folder_name = folder.clone();
+        let is_active = folder_filter_owned.as_deref() == Some(folder.as_str());
+        chips = chips.push(
             button(
-                text("All folders")
-                    .size(11)
-                    .color(if no_filter {
-                        palette.primary
-                    } else {
-                        palette.text_muted
-                    }),
+                row![
+                    fonts::centered_icon(icons::FOLDER, 10.0),
+                    Space::new().width(4),
+                    text(folder_name.clone()).size(11),
+                ]
+                .align_y(Vertical::Center),
             )
             .padding([4, 10])
-            .style(move |_theme, status| {
-                if no_filter {
-                    let mut style = theme::ghost_button(theme, v);
-                    style.background = Some(iced::Background::Color(palette.hover));
-                    style.text_color = palette.primary;
-                    style
-                } else {
-                    match status {
-                        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-                        _ => theme::ghost_button(theme, v),
-                    }
-                }
-            })
-            .on_press(Message::FilterByFolder(None)),
-        ]
-        .spacing(4)
-        .align_y(Vertical::Center);
+            .style(theme::ghost_active_style(theme, v, is_active))
+            .on_press(Message::FilterByFolder(Some(folder_name))),
+        );
+    }
 
-        for folder in &folders {
-            let folder_name = folder.clone();
-            let is_active = folder_filter_owned.as_deref() == Some(folder.as_str());
-            folder_chips = folder_chips.push(
-                button(
-                    row![
-                        fonts::centered_icon(icons::FOLDER, 10.0),
-                        Space::new().width(4),
-                        text(folder_name.clone()).size(11),
-                    ]
-                    .align_y(Vertical::Center),
-                )
-                .padding([4, 10])
-                .style(move |_theme, status| {
-                    if is_active {
-                        let mut style = theme::ghost_button(theme, v);
-                        style.background = Some(iced::Background::Color(palette.hover));
-                        style.text_color = palette.primary;
-                        style
-                    } else {
-                        match status {
-                            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-                            _ => theme::ghost_button(theme, v),
-                        }
-                    }
-                })
-                .on_press(Message::FilterByFolder(Some(folder_name))),
-            );
-        }
+    Some(chips.into())
+}
 
-        Some(folder_chips.into())
-    } else {
-        None
-    };
-
-    let header_row = row![tabs_row, Space::new().width(Length::Fill), count_text,]
-        .align_y(Vertical::Center)
-        .padding(Padding::new(0.0).bottom(16.0));
-
-    // Entry list or empty state
-    let entries_content: Element<'static, Message> = if filtered_entries.is_empty() {
+/// Render the entry list, or an empty state message if no entries match.
+fn entries_list(
+    theme: LilypadTheme,
+    v: UiVariation,
+    filtered_entries: &[(usize, &VaultEntry)],
+    search_query: &str,
+    view_mode: VaultViewMode,
+    hovered_entry_index: Option<usize>,
+) -> Element<'static, Message> {
+    let palette = theme.palette();
+    if filtered_entries.is_empty() {
         let empty_icon = text(if search_query.is_empty() {
             icons::VAULT
         } else {
@@ -272,72 +359,20 @@ pub fn view(params: VaultViewParams<'_>) -> Element<'static, Message> {
         .align_x(Horizontal::Center)
         .into()
     } else {
-        let entry_cards: Vec<Element<'static, Message>> = filtered_entries
+        let cards: Vec<Element<'static, Message>> = filtered_entries
             .iter()
-            .map(|(index, entry)| entry_card(theme, v, *index, entry))
+            .map(|(index, entry)| {
+                let is_hovered = hovered_entry_index == Some(*index);
+                entry_card(theme, v, *index, entry, is_hovered)
+            })
             .collect();
 
-        column(entry_cards).spacing(12).into()
-    };
-
-    // Add/Edit entry form
-    let form_content = if show_add_entry {
-        Some(entry_form(
-            theme,
-            v,
-            edit_mode,
-            entry_title,
-            entry_username,
-            entry_password,
-            entry_url,
-            entry_notes,
-            entry_email,
-            entry_phone,
-            entry_folder,
-            entry_tags,
-            entry_new_tag,
-            entry_totp_secret,
-            entry_custom_fields,
-            entry_type,
-            entry_attachments,
-            show_advanced_fields,
-        ))
-    } else {
-        None
-    };
-
-    let mut main_column = column![].spacing(0);
-
-    if let Some(form) = form_content {
-        main_column = main_column
-            .push(form)
-            .push(Space::new().height(24));
+        column(cards).spacing(12).into()
     }
-
-    if let Some(folder_element) = folder_row {
-        main_column = main_column
-            .push(folder_element)
-            .push(Space::new().height(8));
-    }
-
-    main_column = main_column
-        .push(header_row)
-        .push(entries_content);
-
-    let main_content: Element<'static, Message> = scrollable(main_column)
-        .height(Length::Fill)
-        .style(move |_theme, _status| theme::scrollable_style(theme, v))
-        .into();
-
-    container(main_content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .padding(24)
-        .into()
 }
 
 /// Render a single entry card
-fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEntry) -> Element<'static, Message> {
+fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEntry, is_hovered: bool) -> Element<'static, Message> {
     let palette = theme.palette();
 
     // Color indicator
@@ -363,7 +398,20 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
     )
     .padding([4, 8])
     .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme, v),
+        button::Status::Hovered => {
+            let mut s = theme::icon_button_hovered(theme, v);
+            s.text_color = palette.warning;
+            s
+        }
+        button::Status::Pressed => {
+            let mut s = theme::icon_button_pressed(theme, v);
+            s.text_color = palette.warning;
+            s.background = Some(iced::Background::Color(iced::Color {
+                a: 0.2,
+                ..palette.warning
+            }));
+            s
+        }
         _ => theme::icon_button(theme, v),
     })
     .on_press(Message::ToggleFavorite(index));
@@ -386,14 +434,7 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
     .height(Length::Fixed(36.0))
     .align_x(Horizontal::Center)
     .align_y(Vertical::Center)
-    .style(move |_| container::Style {
-        background: Some(iced::Background::Color(palette.surface_variant)),
-        border: iced::Border {
-            radius: 8.0.into(),
-            ..Default::default()
-        },
-        ..Default::default()
-    });
+    .style(move |_| theme::icon_badge_container(theme, v));
 
     // Title and username
     let title_str = entry.title.clone();
@@ -408,106 +449,9 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
 
     let mut info_column = column![title_text, username_text,].spacing(2);
 
-    // Show tags as small badges and folder/TOTP/type indicators
-    let has_tags = !entry.tags.is_empty();
-    let has_folder = entry.folder.is_some();
-    let has_totp = entry.totp_secret.is_some();
-    let is_non_login = !matches!(entry.entry_type, lilypad_core::EntryType::Login);
-    let has_attachments = !entry.attachments.is_empty();
-
-    if has_tags || has_folder || has_totp || is_non_login || has_attachments {
-        let mut badge_row = row![].spacing(4).align_y(Vertical::Center);
-
-        // Entry type badge (only show for non-Login types)
-        if is_non_login {
-            let type_label = format!("{:?}", entry.entry_type);
-            badge_row = badge_row.push(
-                container(text(type_label).size(10).color(palette.text_secondary))
-                    .padding([2, 6])
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(palette.surface_variant)),
-                        border: iced::Border {
-                            radius: 3.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }),
-            );
-        }
-
-        if has_attachments {
-            let count = entry.attachments.len();
-            badge_row = badge_row.push(
-                container(
-                    row![
-                        fonts::centered_icon(icons::SAVE, 9.0),
-                        Space::new().width(3),
-                        text(format!("{}", count)).size(10),
-                    ]
-                    .align_y(Vertical::Center),
-                )
-                .padding([2, 6])
-                .style(move |_| container::Style {
-                    background: Some(iced::Background::Color(palette.surface_variant)),
-                    border: iced::Border {
-                        radius: 3.0.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }),
-            );
-        }
-
-        if has_totp {
-            let totp_label = if let Some(ref code) = entry.totp_code {
-                format!("TOTP: {}", code)
-            } else {
-                "TOTP".to_string()
-            };
-            badge_row = badge_row.push(
-                container(text(totp_label).size(10).color(palette.primary))
-                    .padding([2, 6])
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(iced::Color {
-                            a: 0.15,
-                            ..palette.primary
-                        })),
-                        border: iced::Border {
-                            radius: 3.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }),
-            );
-        }
-
-        if let Some(ref folder) = entry.folder {
-            let folder_str = folder.clone();
-            badge_row = badge_row.push(
-                text(format!("/{}", folder_str))
-                    .size(10)
-                    .color(palette.text_muted),
-            );
-        }
-
-        for tag in &entry.tags {
-            let tag_str = tag.clone();
-            badge_row = badge_row.push(
-                container(text(tag_str).size(10).color(palette.text_muted))
-                    .padding([1, 5])
-                    .style(move |_| container::Style {
-                        background: Some(iced::Background::Color(palette.surface_variant)),
-                        border: iced::Border {
-                            radius: 3.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }),
-            );
-        }
-
+    if let Some(badges) = entry_badge_row(theme, v, entry) {
         info_column = info_column.push(Space::new().height(2));
-        info_column = info_column.push(badge_row);
+        info_column = info_column.push(badges);
     }
 
     // Strength indicator
@@ -520,14 +464,7 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
     };
 
     let strength_dot = container(Space::new().width(Length::Fixed(8.0)).height(Length::Fixed(8.0)))
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(strength_color)),
-            border: iced::Border {
-                radius: 4.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        });
+        .style(move |_| theme::dot_indicator(strength_color));
 
     // Last updated
     let updated_str = entry.last_updated.clone();
@@ -535,90 +472,7 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
         .size(11)
         .color(palette.text_muted);
 
-    // Action buttons
-    let copy_user_btn = button(
-        fonts::centered_icon(icons::USER, 14.0),
-    )
-    .padding([6, 10])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-        _ => theme::icon_button(theme, v),
-    })
-    .on_press(Message::CopyUsername(index));
-
-    let copy_pass_btn = button(
-        fonts::centered_icon(icons::KEY, 14.0),
-    )
-    .padding([6, 10])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-        _ => theme::icon_button(theme, v),
-    })
-    .on_press(Message::CopyPassword(index));
-
-    let has_url = !entry.url.is_empty();
-    let open_url_btn: Option<Element<'static, Message>> = if has_url {
-        Some(
-            button(
-                fonts::centered_icon(icons::EXTERNAL_LINK, 14.0),
-            )
-            .padding([6, 10])
-            .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::icon_button_hovered(theme, v),
-                _ => theme::icon_button(theme, v),
-            })
-            .on_press(Message::OpenUrl(index))
-            .into(),
-        )
-    } else {
-        None
-    };
-
-    let history_btn = button(
-        fonts::centered_icon(icons::CLOCK, 14.0),
-    )
-    .padding([6, 10])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-        _ => theme::icon_button(theme, v),
-    })
-    .on_press(Message::ViewEntryHistory(index));
-
-    let edit_btn = button(
-        fonts::centered_icon(icons::EDIT, 14.0),
-    )
-    .padding([6, 10])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-        _ => theme::icon_button(theme, v),
-    })
-    .on_press(Message::EditEntry(index));
-
-    let delete_btn = button(
-        fonts::centered_icon(icons::TRASH, 14.0),
-    )
-        .padding([6, 10])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => {
-                let mut style = theme::icon_button_hovered(theme, v);
-                style.text_color = palette.danger;
-                style
-            }
-            _ => theme::icon_button(theme, v),
-        })
-        .on_press(Message::DeleteEntry(index));
-
-    let mut actions_row = row![copy_user_btn, copy_pass_btn,]
-        .spacing(4)
-        .align_y(Vertical::Center);
-
-    if let Some(url_btn) = open_url_btn {
-        actions_row = actions_row.push(url_btn);
-    }
-    actions_row = actions_row
-        .push(history_btn)
-        .push(edit_btn)
-        .push(delete_btn);
+    let actions_row = entry_action_buttons(theme, v, index, &entry.url);
 
     let mut card_row = row![].align_y(Vertical::Center).padding(16);
 
@@ -640,9 +494,172 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
         .push(Space::new().width(16))
         .push(actions_row);
 
-    container(card_row)
+    let card = container(card_row)
         .width(Length::Fill)
-        .style(move |_| theme::card_container(theme, v))
+        .style(move |_| {
+            if is_hovered {
+                theme::card_container_hovered(theme, v)
+            } else {
+                theme::card_container(theme, v)
+            }
+        });
+
+    mouse_area(card)
+        .on_enter(Message::EntryCardHovered(index))
+        .on_exit(Message::EntryCardUnhovered)
+        .into()
+}
+
+/// Build the badge row (type, attachments, TOTP, folder, tags) for an entry card.
+/// Returns `None` if there are no badges to show.
+fn entry_badge_row(
+    theme: LilypadTheme,
+    v: UiVariation,
+    entry: &VaultEntry,
+) -> Option<Element<'static, Message>> {
+    let palette = theme.palette();
+    let has_tags = !entry.tags.is_empty();
+    let has_folder = entry.folder.is_some();
+    let has_totp = entry.totp_secret.is_some();
+    let is_non_login = !matches!(entry.entry_type, lilypad_core::EntryType::Login);
+    let has_attachments = !entry.attachments.is_empty();
+
+    if !(has_tags || has_folder || has_totp || is_non_login || has_attachments) {
+        return None;
+    }
+
+    let mut badge_row = row![].spacing(4).align_y(Vertical::Center);
+
+    if is_non_login {
+        let type_label = format!("{:?}", entry.entry_type);
+        badge_row = badge_row.push(
+            container(text(type_label).size(10).color(palette.text_secondary))
+                .padding([2, 6])
+                .style(move |_| theme::badge_container(theme, v)),
+        );
+    }
+
+    if has_attachments {
+        let count = entry.attachments.len();
+        badge_row = badge_row.push(
+            container(
+                row![
+                    fonts::centered_icon(icons::SAVE, 9.0),
+                    Space::new().width(3),
+                    text(format!("{}", count)).size(10),
+                ]
+                .align_y(Vertical::Center),
+            )
+            .padding([2, 6])
+            .style(move |_| theme::badge_container(theme, v)),
+        );
+    }
+
+    if has_totp {
+        let totp_label = if let Some(ref code) = entry.totp_code {
+            format!("TOTP: {}", code)
+        } else {
+            "TOTP".to_string()
+        };
+        badge_row = badge_row.push(
+            container(text(totp_label).size(10).color(palette.primary))
+                .padding([2, 6])
+                .style(move |_| theme::primary_badge_container(theme, v)),
+        );
+    }
+
+    if let Some(ref folder) = entry.folder {
+        badge_row = badge_row.push(
+            text(format!("/{}", folder))
+                .size(10)
+                .color(palette.text_muted),
+        );
+    }
+
+    for tag in &entry.tags {
+        let tag_str = tag.clone();
+        badge_row = badge_row.push(
+            container(text(tag_str).size(10).color(palette.text_muted))
+                .padding([1, 5])
+                .style(move |_| theme::badge_container(theme, v)),
+        );
+    }
+
+    Some(badge_row.into())
+}
+
+/// Build the action button row for an entry card.
+fn entry_action_buttons(
+    theme: LilypadTheme,
+    v: UiVariation,
+    index: usize,
+    url: &str,
+) -> Element<'static, Message> {
+    let palette = theme.palette();
+
+    let copy_user_btn = button(fonts::centered_icon(icons::USER, 14.0))
+        .padding([6, 10])
+        .style(theme::icon_style(theme, v))
+        .on_press(Message::CopyUsername(index));
+
+    let copy_pass_btn = button(fonts::centered_icon(icons::KEY, 14.0))
+        .padding([6, 10])
+        .style(theme::icon_style(theme, v))
+        .on_press(Message::CopyPassword(index));
+
+    let history_btn = button(fonts::centered_icon(icons::CLOCK, 14.0))
+        .padding([6, 10])
+        .style(theme::icon_style(theme, v))
+        .on_press(Message::ViewEntryHistory(index));
+
+    let edit_btn = button(fonts::centered_icon(icons::EDIT, 14.0))
+        .padding([6, 10])
+        .style(theme::icon_style(theme, v))
+        .on_press(Message::EditEntry(index));
+
+    let delete_btn = button(fonts::centered_icon(icons::TRASH, 14.0))
+        .padding([6, 10])
+        .style(move |_theme, status| match status {
+            button::Status::Hovered => {
+                let mut style = theme::icon_button_hovered(theme, v);
+                style.text_color = palette.danger;
+                style.border.color = iced::Color { a: 0.3, ..palette.danger };
+                style.background = Some(iced::Background::Color(iced::Color {
+                    a: 0.1,
+                    ..palette.danger
+                }));
+                style
+            }
+            button::Status::Pressed => {
+                let mut style = theme::icon_button_pressed(theme, v);
+                style.text_color = palette.danger;
+                style.background = Some(iced::Background::Color(iced::Color {
+                    a: 0.2,
+                    ..palette.danger
+                }));
+                style
+            }
+            _ => theme::icon_button(theme, v),
+        })
+        .on_press(Message::DeleteEntry(index));
+
+    let mut actions = row![copy_user_btn, copy_pass_btn,]
+        .spacing(4)
+        .align_y(Vertical::Center);
+
+    if !url.is_empty() {
+        actions = actions.push(
+            button(fonts::centered_icon(icons::EXTERNAL_LINK, 14.0))
+                .padding([6, 10])
+                .style(theme::icon_style(theme, v))
+                .on_press(Message::OpenUrl(index)),
+        );
+    }
+
+    actions
+        .push(history_btn)
+        .push(edit_btn)
+        .push(delete_btn)
         .into()
 }
 
@@ -724,7 +741,7 @@ fn type_icon(entry_type: &str) -> &'static str {
 /// Helper to build a form section with title and icon (no card, just a labeled group)
 fn form_section<'a>(
     theme: LilypadTheme,
-    _v: UiVariation,
+    v: UiVariation,
     icon: &'static str,
     title: &'static str,
     content: Element<'a, Message>,
@@ -738,38 +755,23 @@ fn form_section<'a>(
     .align_y(Vertical::Center);
 
     // Separator line
-    let separator = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
-        .style(move |_| container::Style {
-            background: Some(iced::Background::Color(palette.surface_variant)),
-            ..Default::default()
-        });
+    let sep = separator(theme, v);
 
-    column![separator, Space::new().height(12), header, Space::new().height(12), content,]
+    column![sep, Space::new().height(12), header, Space::new().height(12), content,]
         .into()
 }
 
 /// Render the add/edit entry form
-#[allow(clippy::too_many_arguments)]
-fn entry_form(
-    theme: LilypadTheme,
-    v: UiVariation,
-    edit_mode: bool,
-    entry_title: &str,
-    entry_username: &str,
-    entry_password: &str,
-    entry_url: &str,
-    entry_notes: &str,
-    entry_email: &str,
-    entry_phone: &str,
-    entry_folder: &str,
-    entry_tags: &[String],
-    entry_new_tag: &str,
-    entry_totp_secret: &str,
-    entry_custom_fields: &[(String, String)],
-    entry_type: &str,
-    entry_attachments: &[(String, String)],
-    show_advanced: bool,
-) -> Element<'static, Message> {
+fn entry_form(params: EntryFormParams<'_>) -> Element<'static, Message> {
+    let EntryFormParams {
+        theme, v, edit_mode,
+        title: entry_title, username: entry_username, password: entry_password,
+        url: entry_url, notes: entry_notes, email: entry_email,
+        phone: entry_phone, folder: entry_folder, tags: entry_tags,
+        new_tag: entry_new_tag, totp_secret: entry_totp_secret,
+        custom_fields: entry_custom_fields, entry_type,
+        attachments: entry_attachments, show_advanced,
+    } = params;
     let palette = theme.palette();
     let vis = fields_for_type(entry_type);
     let (username_label, username_placeholder, password_label, url_label) = type_labels(entry_type);
@@ -786,10 +788,7 @@ fn entry_form(
             fonts::centered_icon_colored(icons::CLOSE, 14.0, palette.text_muted),
         )
         .padding([6, 10])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::icon_button_hovered(theme, v),
-            _ => theme::icon_button(theme, v),
-        })
+        .style(theme::icon_style(theme, v))
         .on_press(Message::HideAddEntry),
     ]
     .align_y(Vertical::Center);
@@ -825,19 +824,7 @@ fn entry_form(
                 .align_y(Vertical::Center),
             )
             .padding([6, 10])
-            .style(move |_theme, status| {
-                if is_active {
-                    let mut style = theme::ghost_button(theme, v);
-                    style.background = Some(iced::Background::Color(palette.hover));
-                    style.text_color = palette.primary;
-                    style
-                } else {
-                    match status {
-                        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-                        _ => theme::ghost_button(theme, v),
-                    }
-                }
-            })
+            .style(theme::ghost_active_style(theme, v, is_active))
             .on_press(Message::EntryTypeChanged(type_str))
             .into()
         })
@@ -899,10 +886,7 @@ fn entry_form(
                             .size(14)
                             .secure(true)
                             .on_input(Message::EntryPasswordChanged)
-                            .style(move |_theme, status| match status {
-                                text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-                                _ => theme::text_input_style(theme, v),
-                            }),
+                            .style(theme::text_input_style_closure(theme, v)),
                     ]
                     .width(Length::Fill),
                     Space::new().width(12),
@@ -918,10 +902,7 @@ fn entry_form(
                             .align_y(Vertical::Center),
                         )
                         .padding([12, 16])
-                        .style(move |_theme, status| match status {
-                            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-                            _ => theme::secondary_button(theme, v),
-                        })
+                        .style(theme::secondary_style(theme, v))
                         .on_press(Message::UseGeneratedPassword),
                     ],
                 ]
@@ -1000,20 +981,13 @@ fn entry_form(
                     Space::new().width(4),
                     button(fonts::centered_icon_colored(icons::CLOSE, 9.0, palette.text_muted))
                         .padding([2, 4])
-                        .style(move |_theme, status| match status {
-                            button::Status::Hovered => theme::icon_button_hovered(theme, v),
-                            _ => theme::icon_button(theme, v),
-                        })
+                        .style(theme::icon_style(theme, v))
                         .on_press(Message::RemoveEntryTag(i)),
                 ]
                 .align_y(Vertical::Center),
             )
             .padding([3, 8])
-            .style(move |_| container::Style {
-                background: Some(iced::Background::Color(palette.surface_variant)),
-                border: iced::Border { radius: 4.0.into(), ..Default::default() },
-                ..Default::default()
-            }),
+            .style(move |_| theme::badge_container(theme, v)),
         );
     }
 
@@ -1023,10 +997,7 @@ fn entry_form(
             .size(13)
             .on_input(Message::EntryNewTagChanged)
             .on_submit(Message::AddEntryTag)
-            .style(move |_theme, status| match status {
-                text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-                _ => theme::text_input_style(theme, v),
-            }),
+            .style(theme::text_input_style_closure(theme, v)),
         Space::new().width(8),
         button(
             row![
@@ -1037,10 +1008,7 @@ fn entry_form(
             .align_y(Vertical::Center),
         )
         .padding([8, 12])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-            _ => theme::secondary_button(theme, v),
-        })
+        .style(theme::secondary_style(theme, v))
         .on_press(Message::AddEntryTag),
     ]
     .align_y(Vertical::Center);
@@ -1090,6 +1058,11 @@ fn entry_form(
             s.border.radius = 8.0.into();
             s
         }
+        button::Status::Pressed => {
+            let mut s = theme::ghost_button_pressed(theme, v);
+            s.border.radius = 8.0.into();
+            s
+        }
         _ => {
             let mut s = theme::ghost_button(theme, v);
             s.border.radius = 8.0.into();
@@ -1107,10 +1080,7 @@ fn entry_form(
                 .padding(12)
                 .size(14)
                 .on_input(Message::EntryNotesChanged)
-                .style(move |_theme, status| match status {
-                    text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-                    _ => theme::text_input_style(theme, v),
-                });
+                .style(theme::text_input_style_closure(theme, v));
             advanced_col = advanced_col.push(
                 column![
                     row![
@@ -1151,28 +1121,19 @@ fn entry_form(
                         .padding(10)
                         .size(13)
                         .on_input(move |s| Message::CustomFieldNameChanged(idx, s))
-                        .style(move |_theme, status| match status {
-                            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-                            _ => theme::text_input_style(theme, v),
-                        }),
+                        .style(theme::text_input_style_closure(theme, v)),
                     Space::new().width(8),
                     text_input("Value", &value_owned)
                         .padding(10)
                         .size(13)
                         .on_input(move |s| Message::CustomFieldValueChanged(idx, s))
-                        .style(move |_theme, status| match status {
-                            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-                            _ => theme::text_input_style(theme, v),
-                        }),
+                        .style(theme::text_input_style_closure(theme, v)),
                     Space::new().width(8),
                     button(
                         fonts::centered_icon_colored(icons::CLOSE, 12.0, palette.danger),
                     )
                     .padding([6, 10])
-                    .style(move |_theme, status| match status {
-                        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-                        _ => theme::icon_button(theme, v),
-                    })
+                    .style(theme::icon_style(theme, v))
                     .on_press(Message::RemoveCustomField(i)),
                 ]
                 .align_y(Vertical::Center),
@@ -1188,10 +1149,7 @@ fn entry_form(
             .align_y(Vertical::Center),
         )
         .padding([8, 14])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-            _ => theme::secondary_button(theme, v),
-        })
+        .style(theme::secondary_style(theme, v))
         .on_press(Message::AddCustomField);
 
         advanced_col = advanced_col.push(
@@ -1230,20 +1188,13 @@ fn entry_form(
                             fonts::centered_icon_colored(icons::CLOSE, 12.0, palette.danger),
                         )
                         .padding([4, 8])
-                        .style(move |_theme, status| match status {
-                            button::Status::Hovered => theme::icon_button_hovered(theme, v),
-                            _ => theme::icon_button(theme, v),
-                        })
+                        .style(theme::icon_style(theme, v))
                         .on_press(Message::RemoveAttachment(i)),
                     ]
                     .align_y(Vertical::Center),
                 )
                 .padding([6, 10])
-                .style(move |_| container::Style {
-                    background: Some(iced::Background::Color(palette.surface_variant)),
-                    border: iced::Border { radius: 4.0.into(), ..Default::default() },
-                    ..Default::default()
-                }),
+                .style(move |_| theme::badge_container(theme, v)),
             );
         }
 
@@ -1256,10 +1207,7 @@ fn entry_form(
             .align_y(Vertical::Center),
         )
         .padding([8, 14])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-            _ => theme::secondary_button(theme, v),
-        })
+        .style(theme::secondary_style(theme, v))
         .on_press(Message::AddAttachment);
 
         advanced_col = advanced_col.push(
@@ -1272,36 +1220,25 @@ fn entry_form(
             ],
         );
 
-        let separator = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
-            .style(move |_| container::Style {
-                background: Some(iced::Background::Color(palette.surface_variant)),
-                ..Default::default()
-            });
+        let sep = separator(theme, v);
 
         column![
-            separator,
+            sep,
             Space::new().height(8),
             advanced_header_btn,
             advanced_col,
         ]
         .into()
     } else {
-        let separator = container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
-            .style(move |_| container::Style {
-                background: Some(iced::Background::Color(palette.surface_variant)),
-                ..Default::default()
-            });
+        let sep = separator(theme, v);
 
-        column![separator, Space::new().height(8), advanced_header_btn,].into()
+        column![sep, Space::new().height(8), advanced_header_btn,].into()
     };
 
     // ── Actions ─────────────────────────────────────────────────────────
     let cancel_btn = button(text("Cancel").size(14).color(palette.text_secondary))
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-            _ => theme::ghost_button(theme, v),
-        })
+        .style(theme::ghost_style(theme, v))
         .on_press(Message::HideAddEntry);
 
     let save_btn = button(
@@ -1313,10 +1250,7 @@ fn entry_form(
         .align_y(Vertical::Center),
     )
     .padding([12, 24])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme, v),
-        _ => theme::primary_button(theme, v),
-    })
+    .style(theme::primary_style(theme, v))
     .on_press(Message::SaveEntry);
 
     let actions_row = row![Space::new().width(Length::Fill), cancel_btn, Space::new().width(12), save_btn,]
@@ -1356,31 +1290,3 @@ fn entry_form(
         .into()
 }
 
-/// Helper to create a labeled text input
-fn labeled_input<F>(
-    theme: LilypadTheme,
-    v: UiVariation,
-    label: &'static str,
-    placeholder: &'static str,
-    value: String,
-    on_change: F,
-) -> Element<'static, Message>
-where
-    F: 'static + Fn(String) -> Message,
-{
-    let palette = theme.palette();
-
-    column![
-        text(label).size(13).color(palette.text_secondary),
-        Space::new().height(6),
-        text_input(placeholder, &value)
-            .padding(12)
-            .size(14)
-            .on_input(on_change)
-            .style(move |_theme, status| match status {
-                text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-                _ => theme::text_input_style(theme, v),
-            }),
-    ]
-    .into()
-}

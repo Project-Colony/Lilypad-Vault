@@ -87,11 +87,8 @@ pub fn view(theme: LilypadTheme, v: UiVariation, selected_category: usize) -> El
                     theme::nav_button_active(theme, v)
                 } else {
                     match status {
-                        button::Status::Hovered => {
-                            let mut style = theme::nav_button(theme, v);
-                            style.text_color = palette.text_secondary;
-                            style
-                        }
+                        button::Status::Hovered => theme::nav_button_hovered(theme, v),
+                        button::Status::Pressed => theme::nav_button_pressed(theme, v),
                         _ => theme::nav_button(theme, v),
                     }
                 }

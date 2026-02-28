@@ -310,10 +310,7 @@ fn colony_page(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) ->
         .align_y(Vertical::Center),
     )
     .padding([10, 20])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-        _ => theme::secondary_button(theme, v),
-    })
+    .style(theme::secondary_style(theme, v))
     .on_press(Message::OpenExternalLink(
         "https://github.com/MotherSphere/Colony".to_string(),
     ));
@@ -406,10 +403,7 @@ fn tutorial_generate(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalet
     )
     .width(Length::Fill)
     .padding([14, 24])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme, v),
-        _ => theme::primary_button(theme, v),
-    })
+    .style(theme::primary_style(theme, v))
     .on_press(Message::OnboardingTutorialGenerate);
 
     column![
@@ -478,10 +472,7 @@ fn tutorial_view_vault(
 
     let next_btn = button(text("Got it").size(14))
         .padding([10, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::primary_button_hovered(theme, v),
-            _ => theme::primary_button(theme, v),
-        })
+        .style(theme::primary_style(theme, v))
         .on_press(Message::OnboardingTutorialNext);
 
     column![
@@ -543,10 +534,7 @@ fn tutorial_copy(
             .align_y(Vertical::Center),
         )
         .padding([10, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::primary_button_hovered(theme, v),
-            _ => theme::primary_button(theme, v),
-        })
+        .style(theme::primary_style(theme, v))
         .on_press(Message::OnboardingTutorialCopy)
         .into()
     };
@@ -680,10 +668,7 @@ fn github_not_connected(
     )
     .width(Length::Fill)
     .padding([14, 24])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme, v),
-        _ => theme::primary_button(theme, v),
-    })
+    .style(theme::primary_style(theme, v))
     .on_press(Message::GitHubLogin);
 
     let skip_hint = text("You can also set this up later in Settings.")
@@ -742,10 +727,7 @@ fn github_in_progress(
                     .align_y(Vertical::Center),
                 )
                 .padding([8, 16])
-                .style(move |_theme, status| match status {
-                    button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-                    _ => theme::ghost_button(theme, v),
-                })
+                .style(theme::ghost_style(theme, v))
                 .on_press(Message::CopyToClipboard(code_for_copy)),
                 Space::new().height(4),
                 text("Click code to copy")
@@ -754,10 +736,7 @@ fn github_in_progress(
                 Space::new().height(8),
                 button(text(uri_owned).size(12).color(palette.primary))
                     .padding([4, 8])
-                    .style(move |_theme, status| match status {
-                        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-                        _ => theme::ghost_button(theme, v),
-                    })
+                    .style(theme::ghost_style(theme, v))
                     .on_press(Message::OpenExternalLink(
                         "https://github.com/login/device".to_string(),
                     )),
@@ -814,10 +793,7 @@ fn github_connected(
     )
     .width(Length::Fixed(200.0))
     .padding([12, 24])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme, v),
-        _ => theme::primary_button(theme, v),
-    })
+    .style(theme::primary_style(theme, v))
     .on_press(Message::OnboardingNext);
 
     column![
@@ -884,10 +860,7 @@ fn create_vault_page(
         .font(fonts::FONT_REGULAR)
         .secure(true)
         .on_input(Message::MasterPasswordChanged)
-        .style(move |_theme, status| match status {
-            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-            _ => theme::text_input_style(theme, v),
-        });
+        .style(theme::text_input_style_closure(theme, v));
 
     // Password strength indicator
     let strength_row: Element<'static, Message> = if !master_password.is_empty() {
@@ -932,10 +905,7 @@ fn create_vault_page(
         .secure(true)
         .on_input(Message::ConfirmPasswordChanged)
         .on_submit(Message::CreateVaultWithPassword)
-        .style(move |_theme, status| match status {
-            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-            _ => theme::text_input_style(theme, v),
-        });
+        .style(theme::text_input_style_closure(theme, v));
 
     // Mismatch indicator
     let mismatch: Element<'static, Message> =
@@ -993,6 +963,7 @@ fn create_vault_page(
     .padding([14, 32])
     .style(move |_theme, status| match status {
         button::Status::Hovered if can_create => theme::primary_button_hovered(theme, v),
+        button::Status::Pressed if can_create => theme::primary_button_pressed(theme, v),
         _ if can_create => theme::primary_button(theme, v),
         _ => {
             let mut style = theme::primary_button(theme, v);
@@ -1099,10 +1070,7 @@ fn navigation_row(
                 .color(palette.text_muted),
         )
         .padding([8, 16])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-            _ => theme::ghost_button(theme, v),
-        })
+        .style(theme::ghost_style(theme, v))
         .on_press(Message::OnboardingNext)
         .into()
     } else {
@@ -1113,10 +1081,7 @@ fn navigation_row(
                 .color(palette.text_muted),
         )
         .padding([8, 16])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-            _ => theme::ghost_button(theme, v),
-        })
+        .style(theme::ghost_style(theme, v))
         .on_press(Message::OnboardingSkip)
         .into()
     };
@@ -1124,10 +1089,7 @@ fn navigation_row(
     let back_btn: Element<'static, Message> = if !is_first {
         button(text("Back").size(13).font(fonts::FONT_REGULAR))
             .padding([8, 16])
-            .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-                _ => theme::ghost_button(theme, v),
-            })
+            .style(theme::ghost_style(theme, v))
             .on_press(Message::OnboardingPrev)
             .into()
     } else {
@@ -1137,10 +1099,7 @@ fn navigation_row(
     let next_btn: Element<'static, Message> = if !hide_next {
         button(text("Next").size(14).font(fonts::FONT_SEMIBOLD))
             .padding([10, 24])
-            .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::primary_button_hovered(theme, v),
-                _ => theme::primary_button(theme, v),
-            })
+            .style(theme::primary_style(theme, v))
             .on_press(Message::OnboardingNext)
             .into()
     } else {

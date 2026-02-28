@@ -9,6 +9,7 @@ use iced::{Element, Length};
 use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::theme::{self, LilypadTheme, UiVariation};
+use crate::views::common::padded_separator;
 
 /// Render the header bar
 pub fn view(
@@ -36,10 +37,7 @@ pub fn view(
         .align_y(Vertical::Center),
     )
     .padding([8, 12])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-        _ => theme::ghost_button(theme, v),
-    })
+    .style(theme::ghost_style(theme, v))
     .on_press(if show_vault_selector {
         Message::HideVaultSelector
     } else {
@@ -51,10 +49,7 @@ pub fn view(
         .padding([10, 14])
         .size(14)
         .on_input(Message::SearchChanged)
-        .style(move |_theme, status| match status {
-            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-            _ => theme::text_input_style(theme, v),
-        })
+        .style(theme::text_input_style_closure(theme, v))
         .width(Length::Fixed(280.0));
 
     let has_search = !search_query.is_empty();
@@ -62,10 +57,7 @@ pub fn view(
         Some(
             button(fonts::centered_icon_colored(icons::CLOSE, 12.0, palette.text_muted))
                 .padding([8, 10])
-                .style(move |_theme, status| match status {
-                    button::Status::Hovered => theme::icon_button_hovered(theme, v),
-                    _ => theme::icon_button(theme, v),
-                })
+                .style(theme::icon_style(theme, v))
                 .on_press(Message::ClearSearch)
                 .into(),
         )
@@ -91,10 +83,7 @@ pub fn view(
         .align_y(Vertical::Center),
     )
     .padding([10, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme, v),
-        _ => theme::primary_button(theme, v),
-    })
+    .style(theme::primary_style(theme, v))
     .on_press(Message::ShowAddEntry);
 
     // GitHub sync status indicator
@@ -106,18 +95,12 @@ pub fn view(
 
     let settings_btn = button(fonts::centered_icon_colored(icons::COG, 16.0, palette.text_secondary))
         .padding([10, 12])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::icon_button_hovered(theme, v),
-            _ => theme::icon_button(theme, v),
-        })
+        .style(theme::icon_style(theme, v))
         .on_press(Message::ShowSettings);
 
     let lock_btn = button(fonts::centered_icon_colored(icons::LOCK, 16.0, palette.text_secondary))
         .padding([10, 12])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::icon_button_hovered(theme, v),
-            _ => theme::icon_button(theme, v),
-        })
+        .style(theme::icon_style(theme, v))
         .on_press(Message::LockVault);
 
     // Main header row (dropdown is rendered as overlay in app.rs)
@@ -157,8 +140,8 @@ pub fn vault_dropdown_overlay(
         .iter()
         .map(|name| {
             let is_active = name == &active_vault_owned;
-            let name_for_select = name.clone();
             let name_for_rename = name.clone();
+            let name_for_select = name.clone();
             button(
                 row![
                     text(if is_active { icons::CIRCLE } else { "" })
@@ -172,37 +155,21 @@ pub fn vault_dropdown_overlay(
                         fonts::centered_icon_colored(icons::EDIT, 12.0, palette.text_muted),
                     )
                     .padding([4, 6])
-                    .style(move |_theme, status| match status {
-                        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-                        _ => theme::icon_button(theme, v),
-                    })
+                    .style(theme::icon_style(theme, v))
                     .on_press(Message::StartRenameVault(name_for_rename)),
                 ]
                 .align_y(Vertical::Center),
             )
             .width(Length::Fill)
             .padding([10, 12])
-            .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-                _ => theme::ghost_button(theme, v),
-            })
+            .style(theme::ghost_style(theme, v))
             .on_press(Message::SelectVault(name_for_select))
             .into()
         })
         .collect();
 
     // Add divider
-    items.push(
-        container(
-            container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
-                .style(move |_| container::Style {
-                    background: Some(iced::Background::Color(palette.border)),
-                    ..Default::default()
-                }),
-        )
-        .padding([8, 0])
-        .into(),
-    );
+    items.push(padded_separator(theme, v));
 
     // Add "Create new vault" option
     items.push(
@@ -223,10 +190,7 @@ pub fn vault_dropdown_overlay(
         )
         .width(Length::Fill)
         .padding([10, 12])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-            _ => theme::ghost_button(theme, v),
-        })
+        .style(theme::ghost_style(theme, v))
         .on_press(Message::ShowNewVaultModal)
         .into(),
     );

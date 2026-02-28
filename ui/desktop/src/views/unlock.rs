@@ -179,10 +179,7 @@ fn build_create_form(
         .font(fonts::FONT_REGULAR)
         .secure(true)
         .on_input(Message::MasterPasswordChanged)
-        .style(move |_theme, status| match status {
-            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-            _ => theme::text_input_style(theme, v),
-        });
+        .style(theme::text_input_style_closure(theme, v));
 
     let confirm_label = text("Confirm Password")
         .size(14)
@@ -197,10 +194,7 @@ fn build_create_form(
         .secure(true)
         .on_input(Message::ConfirmPasswordChanged)
         .on_submit(Message::CreateVaultWithPassword)
-        .style(move |_theme, status| match status {
-            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-            _ => theme::text_input_style(theme, v),
-        });
+        .style(theme::text_input_style_closure(theme, v));
 
     // Password strength indicator
     let strength_text = if master_password.is_empty() {
@@ -235,15 +229,7 @@ fn build_create_form(
     )
     .width(Length::Fill)
     .padding([14, 24])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme, v),
-        button::Status::Disabled => {
-            let mut style = theme::primary_button(theme, v);
-            style.background = Some(iced::Background::Color(palette.border));
-            style
-        }
-        _ => theme::primary_button(theme, v),
-    })
+    .style(theme::primary_disabled_style(theme, v))
     .on_press_maybe(if can_create {
         Some(Message::CreateVaultWithPassword)
     } else {
@@ -323,10 +309,7 @@ fn build_unlock_form(
         .secure(true)
         .on_input(Message::MasterPasswordChanged)
         .on_submit(Message::UnlockVault)
-        .style(move |_theme, status| match status {
-            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-            _ => theme::text_input_style(theme, v),
-        });
+        .style(theme::text_input_style_closure(theme, v));
 
     let unlock_btn = button(
         container(
@@ -339,15 +322,7 @@ fn build_unlock_form(
     )
     .width(Length::Fill)
     .padding([14, 24])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::primary_button_hovered(theme, v),
-        button::Status::Disabled => {
-            let mut style = theme::primary_button(theme, v);
-            style.background = Some(iced::Background::Color(palette.border));
-            style
-        }
-        _ => theme::primary_button(theme, v),
-    })
+    .style(theme::primary_disabled_style(theme, v))
     .on_press_maybe(if is_empty {
         None
     } else {

@@ -9,6 +9,7 @@ use iced::{Element, Length};
 use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::theme::{self, LilypadTheme, UiVariation};
+use crate::views::common::{modal_header, modal_header_with_icon, padded_separator};
 
 /// Compute hue (0..360) from an iced Color for sorting themes by color.
 fn color_hue(c: iced::Color) -> f32 {
@@ -36,21 +37,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
     let current_theme = theme;
     let palette = theme.palette();
 
-    let title = text("Settings")
-        .size(20)
-        .color(palette.text_primary);
-
-    let close_btn = button(
-        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
-    )
-    .padding([8, 12])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-        _ => theme::icon_button(theme, v),
-    })
-    .on_press(Message::HideSettings);
-
-    let header = row![title, Space::new().width(Length::Fill), close_btn,].align_y(Vertical::Center);
+    let header = modal_header(theme, v, "Settings", Message::HideSettings);
 
     // Theme label + sort toggle
     let theme_label = text("Theme")
@@ -67,10 +54,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
         .align_y(Vertical::Center),
     )
     .padding([6, 10])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-        _ => theme::ghost_button(theme, v),
-    })
+    .style(theme::ghost_style(theme, v))
     .on_press(Message::ToggleThemeSort);
 
     let theme_header = row![
@@ -131,6 +115,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
                 } else {
                     match status {
                         button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                        button::Status::Pressed => theme::ghost_button_pressed(theme, v),
                         _ => theme::ghost_button(theme, v),
                     }
                 }
@@ -149,14 +134,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
     }
 
     // ── UI Variation picker ───────────────────────────────────────────
-    let variation_divider = container(
-        container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
-            .style(move |_| container::Style {
-                background: Some(iced::Background::Color(palette.border)),
-                ..Default::default()
-            }),
-    )
-    .padding([8, 0]);
+    let variation_divider = padded_separator(theme, v);
 
     let variation_label = text("UI Style")
         .size(14)
@@ -196,6 +174,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
                 } else {
                     match status {
                         button::Status::Hovered => theme::ghost_button_hovered(theme, v),
+                        button::Status::Pressed => theme::ghost_button_pressed(theme, v),
                         _ => theme::ghost_button(theme, v),
                     }
                 }
@@ -242,10 +221,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
         )
         .width(Length::Fill)
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-            _ => theme::secondary_button(theme, v),
-        })
+        .style(theme::secondary_style(theme, v))
         .on_press(Message::HideSettings),
     ]
     .padding(24)
@@ -258,21 +234,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
 pub fn new_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &str) -> Element<'a, Message> {
     let palette = theme.palette();
 
-    let title = text("Create New Vault")
-        .size(20)
-        .color(palette.text_primary);
-
-    let close_btn = button(
-        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
-    )
-    .padding([8, 12])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-        _ => theme::icon_button(theme, v),
-    })
-    .on_press(Message::HideNewVaultModal);
-
-    let header = row![title, Space::new().width(Length::Fill), close_btn,].align_y(Vertical::Center);
+    let header = modal_header(theme, v, "Create New Vault", Message::HideNewVaultModal);
 
     let name_label = text("Vault Name")
         .size(14)
@@ -283,30 +245,16 @@ pub fn new_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &str
         .size(14)
         .on_input(Message::NewVaultNameChanged)
         .on_submit(Message::CreateVault)
-        .style(move |_theme, status| match status {
-            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-            _ => theme::text_input_style(theme, v),
-        });
+        .style(theme::text_input_style_closure(theme, v));
 
     let cancel_btn = button(text("Cancel").size(14).color(palette.text_secondary))
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-            _ => theme::ghost_button(theme, v),
-        })
+        .style(theme::ghost_style(theme, v))
         .on_press(Message::HideNewVaultModal);
 
     let create_btn = button(text("Create Vault").size(14))
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::primary_button_hovered(theme, v),
-            button::Status::Disabled => {
-                let mut style = theme::primary_button(theme, v);
-                style.background = Some(iced::Background::Color(palette.border));
-                style
-            }
-            _ => theme::primary_button(theme, v),
-        })
+        .style(theme::primary_disabled_style(theme, v))
         .on_press_maybe(if vault_name.trim().is_empty() {
             None
         } else {
@@ -335,21 +283,7 @@ pub fn new_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &str
 pub fn rename_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &str) -> Element<'a, Message> {
     let palette = theme.palette();
 
-    let title = text("Rename Vault")
-        .size(20)
-        .color(palette.text_primary);
-
-    let close_btn = button(
-        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
-    )
-    .padding([8, 12])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-        _ => theme::icon_button(theme, v),
-    })
-    .on_press(Message::CancelRenameVault);
-
-    let header = row![title, Space::new().width(Length::Fill), close_btn,].align_y(Vertical::Center);
+    let header = modal_header(theme, v, "Rename Vault", Message::CancelRenameVault);
 
     let name_label = text("New Name")
         .size(14)
@@ -360,30 +294,16 @@ pub fn rename_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &
         .size(14)
         .on_input(Message::RenameVaultNameChanged)
         .on_submit(Message::ConfirmRenameVault)
-        .style(move |_theme, status| match status {
-            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-            _ => theme::text_input_style(theme, v),
-        });
+        .style(theme::text_input_style_closure(theme, v));
 
     let cancel_btn = button(text("Cancel").size(14).color(palette.text_secondary))
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-            _ => theme::ghost_button(theme, v),
-        })
+        .style(theme::ghost_style(theme, v))
         .on_press(Message::CancelRenameVault);
 
     let rename_btn = button(text("Rename").size(14))
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::primary_button_hovered(theme, v),
-            button::Status::Disabled => {
-                let mut style = theme::primary_button(theme, v);
-                style.background = Some(iced::Background::Color(palette.border));
-                style
-            }
-            _ => theme::primary_button(theme, v),
-        })
+        .style(theme::primary_disabled_style(theme, v))
         .on_press_maybe(if vault_name.trim().is_empty() {
             None
         } else {
@@ -432,10 +352,7 @@ pub fn delete_confirm_modal<'a>(theme: LilypadTheme, v: UiVariation, entry_title
     )
     .width(Length::FillPortion(1))
     .padding([12, 24])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-        _ => theme::ghost_button(theme, v),
-    })
+    .style(theme::ghost_style(theme, v))
     .on_press(Message::CancelDelete);
 
     let delete_btn = button(
@@ -445,10 +362,7 @@ pub fn delete_confirm_modal<'a>(theme: LilypadTheme, v: UiVariation, entry_title
     )
     .width(Length::FillPortion(1))
     .padding([12, 24])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::danger_button_hovered(theme, v),
-        _ => theme::danger_button(theme, v),
-    })
+    .style(theme::danger_style(theme, v))
     .on_press(Message::ConfirmDelete);
 
     let actions = row![cancel_btn, Space::new().width(12), delete_btn,];
@@ -487,30 +401,16 @@ pub fn reauth_modal<'a>(theme: LilypadTheme, v: UiVariation, reauth_password: &s
         .secure(true)
         .on_input(Message::ReauthPasswordChanged)
         .on_submit(Message::ConfirmReauth)
-        .style(move |_theme, status| match status {
-            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-            _ => theme::text_input_style(theme, v),
-        });
+        .style(theme::text_input_style_closure(theme, v));
 
     let cancel_btn = button(text("Cancel").size(14).color(palette.text_secondary))
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-            _ => theme::ghost_button(theme, v),
-        })
+        .style(theme::ghost_style(theme, v))
         .on_press(Message::CancelReauth);
 
     let confirm_btn = button(text("Confirm").size(14))
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::primary_button_hovered(theme, v),
-            button::Status::Disabled => {
-                let mut style = theme::primary_button(theme, v);
-                style.background = Some(iced::Background::Color(palette.border));
-                style
-            }
-            _ => theme::primary_button(theme, v),
-        })
+        .style(theme::primary_disabled_style(theme, v))
         .on_press_maybe(if reauth_password.is_empty() {
             None
         } else {
@@ -571,30 +471,16 @@ pub fn change_password_modal<'a>(
         .secure(true)
         .on_input(Message::NewMasterPasswordChanged)
         .on_submit(Message::ConfirmChangeMasterPassword)
-        .style(move |_theme, status| match status {
-            text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-            _ => theme::text_input_style(theme, v),
-        });
+        .style(theme::text_input_style_closure(theme, v));
 
     let cancel_btn = button(text("Cancel").size(14).color(palette.text_secondary))
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-            _ => theme::ghost_button(theme, v),
-        })
+        .style(theme::ghost_style(theme, v))
         .on_press(Message::CancelChangeMasterPassword);
 
     let confirm_btn = button(text("Change Password").size(14))
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::danger_button_hovered(theme, v),
-            button::Status::Disabled => {
-                let mut style = theme::danger_button(theme, v);
-                style.background = Some(iced::Background::Color(palette.border));
-                style
-            }
-            _ => theme::danger_button(theme, v),
-        })
+        .style(theme::danger_disabled_style(theme, v))
         .on_press_maybe(if new_password.trim().len() < 4 {
             None
         } else {
@@ -632,24 +518,7 @@ pub fn entry_history_modal<'a>(
 ) -> Element<'a, Message> {
     let palette = theme.palette();
 
-    let icon = fonts::centered_icon_colored(icons::CLOCK, 32.0, palette.primary);
-
-    let title = text("Entry History")
-        .size(20)
-        .color(palette.text_primary);
-
-    let close_btn = button(
-        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
-    )
-    .padding([8, 12])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-        _ => theme::icon_button(theme, v),
-    })
-    .on_press(Message::CloseEntryHistory);
-
-    let header = row![icon, Space::new().width(12), title, Space::new().width(Length::Fill), close_btn,]
-        .align_y(Vertical::Center);
+    let header = modal_header_with_icon(theme, v, icons::CLOCK, 32.0, "Entry History", Message::CloseEntryHistory);
 
     let history_content: Element<'a, Message> = if history_entries.is_empty() {
         container(
@@ -734,10 +603,7 @@ pub fn entry_history_modal<'a>(
         )
         .width(Length::Fill)
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-            _ => theme::secondary_button(theme, v),
-        })
+        .style(theme::secondary_style(theme, v))
         .on_press(Message::CloseEntryHistory),
     ]
     .padding(24)
@@ -754,24 +620,7 @@ pub fn audit_log_modal<'a>(
 ) -> Element<'a, Message> {
     let palette = theme.palette();
 
-    let icon = fonts::centered_icon_colored(icons::SHIELD, 32.0, palette.primary);
-
-    let title = text("Audit Log")
-        .size(20)
-        .color(palette.text_primary);
-
-    let close_btn = button(
-        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
-    )
-    .padding([8, 12])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::icon_button_hovered(theme, v),
-        _ => theme::icon_button(theme, v),
-    })
-    .on_press(Message::CloseAuditLog);
-
-    let header = row![icon, Space::new().width(12), title, Space::new().width(Length::Fill), close_btn,]
-        .align_y(Vertical::Center);
+    let header = modal_header_with_icon(theme, v, icons::SHIELD, 32.0, "Audit Log", Message::CloseAuditLog);
 
     let log_content: Element<'a, Message> = if audit_events.is_empty() {
         container(
@@ -848,10 +697,7 @@ pub fn audit_log_modal<'a>(
         .align_y(Vertical::Center),
     )
     .padding([8, 14])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-        _ => theme::ghost_button(theme, v),
-    })
+    .style(theme::ghost_style(theme, v))
     .on_press_maybe(if has_events {
         Some(Message::ExportAuditLogJson)
     } else {
@@ -867,10 +713,7 @@ pub fn audit_log_modal<'a>(
         .align_y(Vertical::Center),
     )
     .padding([8, 14])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-        _ => theme::ghost_button(theme, v),
-    })
+    .style(theme::ghost_style(theme, v))
     .on_press_maybe(if has_events {
         Some(Message::ExportAuditLogCsv)
     } else {
@@ -886,10 +729,7 @@ pub fn audit_log_modal<'a>(
         .align_y(Vertical::Center),
     )
     .padding([8, 14])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-        _ => theme::ghost_button(theme, v),
-    })
+    .style(theme::ghost_style(theme, v))
     .on_press_maybe(if has_events {
         Some(Message::ExportAuditLogText)
     } else {
@@ -925,10 +765,7 @@ pub fn audit_log_modal<'a>(
         )
         .width(Length::Fill)
         .padding([12, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-            _ => theme::secondary_button(theme, v),
-        })
+        .style(theme::secondary_style(theme, v))
         .on_press(Message::CloseAuditLog),
     ]
     .padding(24)
@@ -939,22 +776,26 @@ pub fn audit_log_modal<'a>(
 
 /// Format audit action strings for display
 fn format_audit_action(action: &str) -> String {
-    match action {
-        "entry_added" => "Entry added".to_string(),
-        "entry_updated" => "Entry updated".to_string(),
-        "entry_removed" => "Entry removed".to_string(),
-        "entry_renamed" => "Entry renamed".to_string(),
-        "entry_metadata_updated" => "Entry metadata updated".to_string(),
-        "entry_folder_updated" => "Entry folder updated".to_string(),
-        "entry_tag_added" => "Tag added".to_string(),
-        "entry_tag_removed" => "Tag removed".to_string(),
-        "vault_accessed" => "Vault accessed".to_string(),
-        "vault_description_updated" => "Vault description updated".to_string(),
-        "bulk_folder_updated" => "Bulk folder update".to_string(),
-        "bulk_tag_added" => "Bulk tag added".to_string(),
-        "bulk_tag_removed" => "Bulk tag removed".to_string(),
-        other => other.replace('_', " "),
-    }
+    const LABELS: &[(&str, &str)] = &[
+        ("entry_added", "Entry added"),
+        ("entry_updated", "Entry updated"),
+        ("entry_removed", "Entry removed"),
+        ("entry_renamed", "Entry renamed"),
+        ("entry_metadata_updated", "Entry metadata updated"),
+        ("entry_folder_updated", "Entry folder updated"),
+        ("entry_tag_added", "Tag added"),
+        ("entry_tag_removed", "Tag removed"),
+        ("vault_accessed", "Vault accessed"),
+        ("vault_description_updated", "Vault description updated"),
+        ("bulk_folder_updated", "Bulk folder update"),
+        ("bulk_tag_added", "Bulk tag added"),
+        ("bulk_tag_removed", "Bulk tag removed"),
+    ];
+    LABELS
+        .iter()
+        .find(|(k, _)| *k == action)
+        .map(|(_, v)| v.to_string())
+        .unwrap_or_else(|| action.replace('_', " "))
 }
 
 /// Helper: wrap content in a centered modal overlay

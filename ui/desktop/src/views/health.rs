@@ -224,10 +224,7 @@ pub fn view(
             .align_y(Vertical::Center),
         )
         .padding([10, 16])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-            _ => theme::secondary_button(theme, v),
-        })
+        .style(theme::secondary_style(theme, v))
         .on_press(Message::RefreshHealthReport);
 
         // Breach check button
@@ -240,10 +237,7 @@ pub fn view(
             .align_y(Vertical::Center),
         )
         .padding([10, 16])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::primary_button_hovered(theme, v),
-            _ => theme::primary_button(theme, v),
-        })
+        .style(theme::primary_style(theme, v))
         .on_press(Message::CheckBreaches);
 
         // Breached entries section
@@ -349,10 +343,7 @@ pub fn view(
             .align_y(Vertical::Center),
         )
         .padding([14, 24])
-        .style(move |_theme, status| match status {
-            button::Status::Hovered => theme::primary_button_hovered(theme, v),
-            _ => theme::primary_button(theme, v),
-        })
+        .style(theme::primary_style(theme, v))
         .on_press(Message::RefreshHealthReport);
 
         column![

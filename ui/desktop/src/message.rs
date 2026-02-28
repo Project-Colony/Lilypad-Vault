@@ -272,6 +272,14 @@ pub enum Message {
     BreachCheckCompleted(Vec<String>),
 
     // ========================================================================
+    // UI Interactions (hover tracking)
+    // ========================================================================
+    /// Mouse entered an entry card
+    EntryCardHovered(usize),
+    /// Mouse exited an entry card
+    EntryCardUnhovered,
+
+    // ========================================================================
     // System
     // ========================================================================
     /// Tick for timer-based updates (auto-lock, clipboard clear)

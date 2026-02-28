@@ -961,7 +961,170 @@ pub fn icon_button_hovered(theme: LilypadTheme, v: UiVariation) -> button::Style
     let mut style = icon_button(theme, v);
     style.background = Some(Background::Color(palette.surface_variant));
     style.text_color = palette.primary;
+    style.border.color = Color {
+        a: 0.3,
+        ..palette.primary
+    };
+    style.border.width = v.border_width();
+    style.shadow = Shadow {
+        color: Color::from_rgba(0.0, 0.0, 0.0, 0.1),
+        offset: Vector::new(0.0, 1.0),
+        blur_radius: 3.0,
+    };
     style
+}
+
+// ============================================================================
+// Button Pressed Styles
+// ============================================================================
+
+/// Primary button pressed (click feedback)
+pub fn primary_button_pressed(theme: LilypadTheme, v: UiVariation) -> button::Style {
+    let palette = theme.palette();
+    let mut style = primary_button(theme, v);
+    style.background = Some(Background::Color(darken_color(palette.primary, 0.15)));
+    style.shadow.blur_radius = 0.0;
+    style.shadow.offset = Vector::new(0.0, 0.0);
+    style
+}
+
+/// Secondary button pressed
+pub fn secondary_button_pressed(theme: LilypadTheme, v: UiVariation) -> button::Style {
+    let palette = theme.palette();
+    let mut style = secondary_button(theme, v);
+    style.background = Some(Background::Color(Color {
+        a: 0.15,
+        ..palette.primary
+    }));
+    style.border.color = darken_color(palette.primary, 0.1);
+    style
+}
+
+/// Ghost button pressed
+pub fn ghost_button_pressed(theme: LilypadTheme, v: UiVariation) -> button::Style {
+    let palette = theme.palette();
+    let mut style = ghost_button(theme, v);
+    style.background = Some(Background::Color(Color {
+        a: 0.2,
+        ..palette.primary
+    }));
+    style.text_color = palette.primary;
+    style
+}
+
+/// Danger button pressed
+pub fn danger_button_pressed(theme: LilypadTheme, v: UiVariation) -> button::Style {
+    let mut style = danger_button(theme, v);
+    style.background = Some(Background::Color(darken_color(
+        theme.palette().danger,
+        0.15,
+    )));
+    style.shadow.blur_radius = 0.0;
+    style.shadow.offset = Vector::new(0.0, 0.0);
+    style
+}
+
+/// Icon button pressed
+pub fn icon_button_pressed(theme: LilypadTheme, v: UiVariation) -> button::Style {
+    let palette = theme.palette();
+    let mut style = icon_button(theme, v);
+    style.background = Some(Background::Color(darken_color(palette.surface_variant, 0.1)));
+    style.text_color = palette.primary;
+    style
+}
+
+/// Navigation button hovered (inactive tab)
+pub fn nav_button_hovered(theme: LilypadTheme, v: UiVariation) -> button::Style {
+    let palette = theme.palette();
+    let mut style = nav_button(theme, v);
+    style.background = Some(Background::Color(palette.hover));
+    style.text_color = palette.text_secondary;
+    style
+}
+
+/// Navigation button pressed
+pub fn nav_button_pressed(theme: LilypadTheme, v: UiVariation) -> button::Style {
+    let palette = theme.palette();
+    let mut style = nav_button(theme, v);
+    style.background = Some(Background::Color(Color {
+        a: 0.15,
+        ..palette.primary
+    }));
+    style
+}
+
+/// Card container hovered (entry card hover effect)
+pub fn card_container_hovered(theme: LilypadTheme, v: UiVariation) -> container::Style {
+    let palette = theme.palette();
+    let mut style = card_container(theme, v);
+    style.border.color = Color {
+        a: 0.5,
+        ..palette.primary
+    };
+    style.border.width = v.border_width().max(1.0);
+    style.shadow.blur_radius = v.card_shadow_blur() * 2.0;
+    style.shadow.offset = Vector::new(0.0, v.card_shadow_offset() * 1.5);
+    style.shadow.color = Color::from_rgba(0.0, 0.0, 0.0, v.card_shadow_alpha() * 2.0);
+    style.background = Some(Background::Color(lighten_color(palette.surface, 0.03)));
+    style
+}
+
+// ============================================================================
+// Badge / Indicator Styles
+// ============================================================================
+
+/// Small badge container (tags, type labels, attachment counts).
+pub fn badge_container(theme: LilypadTheme, _v: UiVariation) -> container::Style {
+    let palette = theme.palette();
+    container::Style {
+        background: Some(Background::Color(palette.surface_variant)),
+        border: Border {
+            radius: 3.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+/// Icon badge container (type icon circle — larger radius).
+pub fn icon_badge_container(theme: LilypadTheme, _v: UiVariation) -> container::Style {
+    let palette = theme.palette();
+    container::Style {
+        background: Some(Background::Color(palette.surface_variant)),
+        border: Border {
+            radius: 8.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+/// Primary-tinted badge (e.g. TOTP indicator).
+pub fn primary_badge_container(theme: LilypadTheme, _v: UiVariation) -> container::Style {
+    let palette = theme.palette();
+    container::Style {
+        background: Some(Background::Color(Color {
+            a: 0.15,
+            ..palette.primary
+        })),
+        border: Border {
+            radius: 3.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+/// Small colored dot indicator (password strength).
+pub fn dot_indicator(color: Color) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(color)),
+        border: Border {
+            radius: 4.0.into(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
 }
 
 // ============================================================================
@@ -1051,7 +1214,7 @@ pub fn scrollable_style(theme: LilypadTheme, v: UiVariation) -> scrollable::Styl
 // ============================================================================
 
 /// Lighten a color by a factor (0.0 to 1.0)
-fn lighten_color(color: Color, factor: f32) -> Color {
+pub fn lighten_color(color: Color, factor: f32) -> Color {
     Color {
         r: (color.r + (1.0 - color.r) * factor).min(1.0),
         g: (color.g + (1.0 - color.g) * factor).min(1.0),
@@ -1092,4 +1255,139 @@ pub fn toast_container(_theme: LilypadTheme, v: UiVariation) -> container::Style
 /// Create a color with alpha
 pub fn with_alpha(color: Color, alpha: f32) -> Color {
     Color { a: alpha, ..color }
+}
+
+// ============================================================================
+// Button Style Closure Helpers
+// ============================================================================
+
+/// Returns a style closure for primary buttons (hovered/pressed/default).
+pub fn primary_style(
+    theme: LilypadTheme,
+    v: UiVariation,
+) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    move |_, status| match status {
+        button::Status::Hovered => primary_button_hovered(theme, v),
+        button::Status::Pressed => primary_button_pressed(theme, v),
+        _ => primary_button(theme, v),
+    }
+}
+
+/// Returns a style closure for secondary buttons.
+pub fn secondary_style(
+    theme: LilypadTheme,
+    v: UiVariation,
+) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    move |_, status| match status {
+        button::Status::Hovered => secondary_button_hovered(theme, v),
+        button::Status::Pressed => secondary_button_pressed(theme, v),
+        _ => secondary_button(theme, v),
+    }
+}
+
+/// Returns a style closure for ghost buttons.
+pub fn ghost_style(
+    theme: LilypadTheme,
+    v: UiVariation,
+) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    move |_, status| match status {
+        button::Status::Hovered => ghost_button_hovered(theme, v),
+        button::Status::Pressed => ghost_button_pressed(theme, v),
+        _ => ghost_button(theme, v),
+    }
+}
+
+/// Returns a style closure for ghost buttons with an active/inactive state.
+/// When active: highlighted background with primary text. When inactive: normal ghost hover/pressed.
+pub fn ghost_active_style(
+    theme: LilypadTheme,
+    v: UiVariation,
+    is_active: bool,
+) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    let palette = theme.palette();
+    move |_, status| {
+        if is_active {
+            let mut style = ghost_button(theme, v);
+            style.background = Some(Background::Color(palette.hover));
+            style.text_color = palette.primary;
+            style
+        } else {
+            match status {
+                button::Status::Hovered => ghost_button_hovered(theme, v),
+                button::Status::Pressed => ghost_button_pressed(theme, v),
+                _ => ghost_button(theme, v),
+            }
+        }
+    }
+}
+
+/// Returns a style closure for danger buttons.
+pub fn danger_style(
+    theme: LilypadTheme,
+    v: UiVariation,
+) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    move |_, status| match status {
+        button::Status::Hovered => danger_button_hovered(theme, v),
+        button::Status::Pressed => danger_button_pressed(theme, v),
+        _ => danger_button(theme, v),
+    }
+}
+
+/// Returns a style closure for primary buttons that can be disabled (greyed out).
+pub fn primary_disabled_style(
+    theme: LilypadTheme,
+    v: UiVariation,
+) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    let palette = theme.palette();
+    move |_, status| match status {
+        button::Status::Hovered => primary_button_hovered(theme, v),
+        button::Status::Pressed => primary_button_pressed(theme, v),
+        button::Status::Disabled => {
+            let mut style = primary_button(theme, v);
+            style.background = Some(Background::Color(palette.border));
+            style
+        }
+        _ => primary_button(theme, v),
+    }
+}
+
+/// Returns a style closure for danger buttons that can be disabled (greyed out).
+pub fn danger_disabled_style(
+    theme: LilypadTheme,
+    v: UiVariation,
+) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    let palette = theme.palette();
+    move |_, status| match status {
+        button::Status::Hovered => danger_button_hovered(theme, v),
+        button::Status::Pressed => danger_button_pressed(theme, v),
+        button::Status::Disabled => {
+            let mut style = danger_button(theme, v);
+            style.background = Some(Background::Color(palette.border));
+            style
+        }
+        _ => danger_button(theme, v),
+    }
+}
+
+/// Returns a style closure for icon buttons.
+pub fn icon_style(
+    theme: LilypadTheme,
+    v: UiVariation,
+) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+    move |_, status| match status {
+        button::Status::Hovered => icon_button_hovered(theme, v),
+        button::Status::Pressed => icon_button_pressed(theme, v),
+        _ => icon_button(theme, v),
+    }
+}
+
+/// Returns a style closure for text input fields.
+pub fn text_input_style_closure(
+    theme: LilypadTheme,
+    v: UiVariation,
+) -> impl Fn(&iced::Theme, text_input::Status) -> text_input::Style {
+    move |_, status| match status {
+        text_input::Status::Focused { .. } => text_input_focused(theme, v),
+        _ => text_input_style(theme, v),
+    }
 }

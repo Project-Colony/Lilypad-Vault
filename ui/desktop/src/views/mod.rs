@@ -2,6 +2,7 @@
 //!
 //! Contains all the view components for the application.
 
+pub mod common;
 pub mod generator;
 pub mod header;
 pub mod health;

@@ -3,12 +3,13 @@
 //! Account and security settings sections.
 
 use iced::alignment::{Horizontal, Vertical};
-use iced::widget::{button, checkbox, column, container, row, scrollable, slider, text, text_input, Space};
+use iced::widget::{button, checkbox, column, container, row, scrollable, slider, text, Space};
 use iced::{Element, Length};
 
 use crate::fonts::{self, icons};
 use crate::message::Message;
 use crate::theme::{self, LilypadTheme, UiVariation};
+use crate::views::common::labeled_input;
 
 /// Render the account settings section
 pub fn account_view(
@@ -160,6 +161,11 @@ fn github_auth_section(
                     style.text_color = palette.danger;
                     style
                 }
+                button::Status::Pressed => {
+                    let mut style = theme::secondary_button(theme, v);
+                    style.text_color = palette.danger;
+                    style
+                }
                 _ => theme::secondary_button(theme, v),
             })
             .on_press(Message::GitHubLogout),
@@ -178,10 +184,9 @@ fn github_auth_section(
             .into(),
         ];
 
-        if let (Some(code), Some(uri)) = (device_code, device_uri) {
+        if let (Some(code), Some(_uri)) = (device_code, device_uri) {
             let code_owned = code.to_string();
             let code_for_copy = code.to_string();
-            let _uri_owned = uri.to_string();
             items.push(Space::new().height(16).into());
             items.push(
                 container(
@@ -207,6 +212,11 @@ fn github_auth_section(
                                 style.background = Some(iced::Background::Color(palette.hover));
                                 style
                             }
+                            button::Status::Pressed => {
+                                let mut style = theme::ghost_button_pressed(theme, v);
+                                style.background = Some(iced::Background::Color(palette.hover));
+                                style
+                            }
                             _ => theme::ghost_button(theme, v),
                         })
                         .on_press(Message::CopyToClipboard(code_for_copy)),
@@ -219,10 +229,7 @@ fn github_auth_section(
                             text("https://github.com/login/device").size(12).color(palette.primary)
                         )
                         .padding([4, 8])
-                        .style(move |_theme, status| match status {
-                            button::Status::Hovered => theme::ghost_button_hovered(theme, v),
-                            _ => theme::ghost_button(theme, v),
-                        })
+                        .style(theme::ghost_style(theme, v))
                         .on_press(Message::OpenExternalLink(
                             "https://github.com/login/device".to_string()
                         )),
@@ -266,10 +273,7 @@ fn github_auth_section(
             )
             .width(Length::Fill)
             .padding([12, 16])
-            .style(move |_theme, status| match status {
-                button::Status::Hovered => theme::primary_button_hovered(theme, v),
-                _ => theme::primary_button(theme, v),
-            })
+            .style(theme::primary_style(theme, v))
             .on_press(Message::GitHubLogin),
         ]
         .into()
@@ -420,10 +424,7 @@ pub fn security_view(
     )
     .width(Length::Fill)
     .padding([12, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::danger_button_hovered(theme, v),
-        _ => theme::danger_button(theme, v),
-    })
+    .style(theme::danger_style(theme, v))
     .on_press(Message::ChangeMasterPassword);
 
     let master_pw_hint = text("Re-encrypts all vault entries with a new key derived from your new password")
@@ -462,10 +463,7 @@ pub fn security_view(
     )
     .width(Length::Fill)
     .padding([12, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-        _ => theme::secondary_button(theme, v),
-    })
+    .style(theme::secondary_style(theme, v))
     .on_press(Message::ShowAuditLog);
 
     let audit_hint = text("View all vault actions: entry additions, updates, deletions, and more")
@@ -504,10 +502,7 @@ pub fn security_view(
     )
     .width(Length::FillPortion(1))
     .padding([12, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-        _ => theme::secondary_button(theme, v),
-    })
+    .style(theme::secondary_style(theme, v))
     .on_press(Message::BackupVault);
 
     let restore_btn = button(
@@ -524,10 +519,7 @@ pub fn security_view(
     )
     .width(Length::FillPortion(1))
     .padding([12, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::secondary_button_hovered(theme, v),
-        _ => theme::secondary_button(theme, v),
-    })
+    .style(theme::secondary_style(theme, v))
     .on_press(Message::RestoreVault);
 
     let prune_btn = button(
@@ -544,10 +536,7 @@ pub fn security_view(
     )
     .width(Length::FillPortion(1))
     .padding([12, 16])
-    .style(move |_theme, status| match status {
-        button::Status::Hovered => theme::danger_button_hovered(theme, v),
-        _ => theme::danger_button(theme, v),
-    })
+    .style(theme::danger_style(theme, v))
     .on_press(Message::PruneBackups);
 
     let backup_actions = row![
@@ -595,6 +584,11 @@ pub fn security_view(
                     .style(move |_theme, status| match status {
                         button::Status::Hovered => {
                             let mut style = theme::ghost_button_hovered(theme, v);
+                            style.text_color = palette.danger;
+                            style
+                        }
+                        button::Status::Pressed => {
+                            let mut style = theme::ghost_button_pressed(theme, v);
                             style.text_color = palette.danger;
                             style
                         }
@@ -655,31 +649,3 @@ pub fn security_view(
     .into()
 }
 
-/// Helper to create a labeled text input
-fn labeled_input<F>(
-    theme: LilypadTheme,
-    v: UiVariation,
-    label: &'static str,
-    placeholder: &'static str,
-    value: String,
-    on_change: F,
-) -> Element<'static, Message>
-where
-    F: 'static + Fn(String) -> Message,
-{
-    let palette = theme.palette();
-
-    column![
-        text(label).size(13).color(palette.text_secondary),
-        Space::new().height(6),
-        text_input(placeholder, &value)
-            .padding(12)
-            .size(14)
-            .on_input(on_change)
-            .style(move |_theme, status| match status {
-                text_input::Status::Focused { .. } => theme::text_input_focused(theme, v),
-                _ => theme::text_input_style(theme, v),
-            }),
-    ]
-    .into()
-}
