@@ -359,15 +359,22 @@ fn entries_list(
         .align_x(Horizontal::Center)
         .into()
     } else {
-        let cards: Vec<Element<'static, Message>> = filtered_entries
-            .iter()
-            .map(|(index, entry)| {
-                let is_hovered = hovered_entry_index == Some(*index);
-                entry_card(theme, v, *index, entry, is_hovered)
+        let grid_rows: Vec<Element<'static, Message>> = filtered_entries
+            .chunks(2)
+            .map(|pair| {
+                let mut r = row![].spacing(12);
+                for (index, entry) in pair {
+                    let is_hovered = hovered_entry_index == Some(*index);
+                    r = r.push(entry_card(theme, v, *index, entry, is_hovered));
+                }
+                if pair.len() == 1 {
+                    r = r.push(Space::new().width(Length::FillPortion(1)));
+                }
+                r.into()
             })
             .collect();
 
-        column(cards).spacing(12).into()
+        column(grid_rows).spacing(12).into()
     }
 }
 
@@ -447,13 +454,6 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
         .size(13)
         .color(palette.text_secondary);
 
-    let mut info_column = column![title_text, username_text,].spacing(2);
-
-    if let Some(badges) = entry_badge_row(theme, v, entry) {
-        info_column = info_column.push(Space::new().height(2));
-        info_column = info_column.push(badges);
-    }
-
     // Strength indicator
     let strength_color = match entry.password_strength {
         lilypad_common::PasswordStrength::VeryWeak => palette.danger,
@@ -474,28 +474,51 @@ fn entry_card(theme: LilypadTheme, v: UiVariation, index: usize, entry: &VaultEn
 
     let actions_row = entry_action_buttons(theme, v, index, &entry.url);
 
-    let mut card_row = row![].align_y(Vertical::Center).padding(16);
+    // Row 1: icon + star + title + strength dot
+    let top_row = row![
+        type_icon,
+        Space::new().width(8),
+        favorite_btn,
+        Space::new().width(6),
+        title_text,
+        Space::new().width(Length::Fill),
+        strength_dot,
+    ]
+    .align_y(Vertical::Center);
 
-    if let Some(indicator) = color_indicator {
-        card_row = card_row.push(indicator);
-        card_row = card_row.push(Space::new().width(12));
+    // Info section: username + badges, indented under title
+    // Indent = icon(36) + space(8) + star_btn(~32) + space(6) = 82px
+    let mut info_col: iced::widget::Column<'static, Message> = column![].spacing(2);
+    // Always push username (or empty space) so all cards have uniform height
+    info_col = info_col.push(username_text);
+    if let Some(badges) = entry_badge_row(theme, v, entry) {
+        info_col = info_col.push(badges);
     }
+    let info_section = container(info_col).padding(iced::Padding { top: 0.0, right: 0.0, bottom: 0.0, left: 82.0 });
 
-    card_row = card_row
-        .push(type_icon)
-        .push(Space::new().width(10))
-        .push(favorite_btn)
-        .push(Space::new().width(8))
-        .push(info_column)
-        .push(Space::new().width(Length::Fill))
-        .push(strength_dot)
-        .push(Space::new().width(12))
-        .push(updated_text)
-        .push(Space::new().width(16))
-        .push(actions_row);
+    // Row 2: action buttons + date
+    let bottom_row = row![
+        actions_row,
+        Space::new().width(Length::Fill),
+        updated_text,
+    ]
+    .align_y(Vertical::Center);
 
-    let card = container(card_row)
-        .width(Length::Fill)
+    // Assemble vertical card layout
+    let card_col = column![top_row, info_section, bottom_row].spacing(4);
+
+    // Wrap with optional color indicator
+    let inner: Element<'static, Message> = if let Some(indicator) = color_indicator {
+        row![indicator, Space::new().width(8), card_col]
+            .width(Length::Fill)
+            .into()
+    } else {
+        card_col.into()
+    };
+
+    let card = container(inner)
+        .width(Length::FillPortion(1))
+        .padding(14)
         .style(move |_| {
             if is_hovered {
                 theme::card_container_hovered(theme, v)

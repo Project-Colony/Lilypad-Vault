@@ -19,8 +19,8 @@ use lilypad_common::{
     EntryHealthData,
 };
 use lilypad_core::{
-    decrypt, default_config, derive_key, encrypt, CryptoAlgorithm, Entry, EntryMetadata,
-    EntrySecret, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
+    decrypt, default_config, derive_key, encrypt, AppConfig, CryptoAlgorithm, Entry,
+    EntryMetadata, EntrySecret, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
 };
 use lilypad_storage::LocalStore;
 use zeroize::Zeroize;
@@ -217,12 +217,24 @@ impl Drop for LilypadApp {
 impl LilypadApp {
     /// Create a new application instance
     pub fn new() -> (Self, Task<Message>) {
-        let config = default_config();
+        // Use platform-specific config directory for all data:
+        //   Linux:   ~/.config/Colony/Lilypad/
+        //   Windows: %LOCALAPPDATA%\Colony\Lilypad\
+        //   macOS:   ~/Library/Application Support/Colony/Lilypad/
+        let data_dir = ProjectDirs::from_path(std::path::PathBuf::from("Colony/Lilypad"))
+            .map(|dirs| dirs.config_dir().to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from(".lilypad"));
+        if let Err(e) = fs::create_dir_all(&data_dir) {
+            eprintln!("Warning: failed to create data directory: {e}");
+        }
+        let config = AppConfig {
+            data_dir: data_dir.to_string_lossy().to_string(),
+            ..default_config()
+        };
         let store = match LocalStore::new(&config) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("Failed to initialize store: {e}");
-                // Create a minimal store with fallback data dir so the app can still display an error
                 match LocalStore::new(&default_config()) {
                     Ok(s) => s,
                     Err(e2) => {
@@ -346,7 +358,7 @@ impl LilypadApp {
         }
 
         // Load persisted state
-        if let Some(project_dirs) = ProjectDirs::from("", "Colony", "Lilypad") {
+        if let Some(project_dirs) = ProjectDirs::from_path(std::path::PathBuf::from("Colony/Lilypad")) {
             let config_dir = project_dirs.config_dir();
             let welcome_ack_path = config_dir.join("welcome_ack");
             let settings_path = config_dir.join("settings.json");
@@ -732,6 +744,28 @@ impl LilypadApp {
                     self.switch_vault(&name);
                 }
             }
+            Message::DeleteVault(name) => {
+                self.show_vault_selector = false;
+                // Don't allow deleting the currently active vault if it's the only one
+                if self.available_vaults.len() <= 1 {
+                    self.set_status("Cannot delete the only vault");
+                } else {
+                    match self.store.delete_vault(&name) {
+                        Ok(()) => {
+                            self.available_vaults.retain(|v| v != &name);
+                            // If we deleted the active vault, switch to the first available
+                            if self.active_vault == name {
+                                let next = self.available_vaults[0].clone();
+                                self.switch_vault(&next);
+                            }
+                            self.set_status(&format!("Vault '{}' deleted", name));
+                        }
+                        Err(e) => {
+                            self.set_status(&format!("Failed to delete vault: {e}"));
+                        }
+                    }
+                }
+            }
             Message::ShowNewVaultModal => {
                 self.show_new_vault_modal = true;
                 self.show_vault_selector = false;
@@ -974,14 +1008,28 @@ impl LilypadApp {
             Message::SyncPull => {
                 return self.sync_pull();
             }
+            Message::SyncPullToUnlock => {
+                return self.sync_pull_to_unlock();
+            }
             Message::SyncCompleted(result) => {
                 self.sync_in_progress = false;
                 self.sync_started_at = None;
                 match result {
                     Ok(msg) => {
-                        self.set_status(msg);
-                        // Refresh entries after pull
-                        let _ = self.unlock_existing_vault();
+                        self.set_status(&msg);
+                        if self.vault_unlocked {
+                            // Refresh entries after pull
+                            self.reload_vault_from_disk();
+                        } else {
+                            // Vault was pulled but not unlocked yet
+                            // If on welcome screen, skip to unlock
+                            if self.show_welcome {
+                                self.show_welcome = false;
+                                self.save_welcome_ack();
+                                self.load_available_vaults();
+                            }
+                            self.determine_unlock_mode();
+                        }
                     }
                     Err(e) => {
                         self.set_status(format!("Sync error: {}", e));
@@ -1142,6 +1190,8 @@ impl LilypadApp {
                 &self.lockout_state,
                 self.error_message.as_deref(),
                 self.unlock_mode,
+                &self.active_vault,
+                &self.available_vaults,
             );
         }
 
@@ -1508,8 +1558,9 @@ impl LilypadApp {
         match self.store.vault_exists(&self.active_vault) {
             Ok(true) => self.unlock_mode = UnlockMode::Unlock,
             _ => {
-                // Also check if key.json exists (V1 vault might be loadable)
-                if self.key_path().exists() {
+                // Only check key.json for the default vault (V1 backward compat).
+                // For other vaults, if the .lily file doesn't exist, show Create.
+                if self.active_vault == DEFAULT_VAULT_NAME && self.key_path().exists() {
                     self.unlock_mode = UnlockMode::Unlock;
                 } else {
                     self.unlock_mode = UnlockMode::Create;
@@ -1537,6 +1588,8 @@ impl LilypadApp {
                 let _ = self.store.save_vault(&vault, &key);
             }
 
+            // Ensure vault name matches active vault (may differ if file was copied/restored)
+            vault.name = self.active_vault.clone();
             self.populate_vault_entries(&vault, &key);
             self.vault = Some(vault);
             self.vault_key = Some(key);
@@ -1561,6 +1614,8 @@ impl LilypadApp {
             }
         }
 
+        // Ensure vault name matches active vault
+        vault.name = self.active_vault.clone();
         self.populate_vault_entries(&vault, &key);
         self.vault = Some(vault);
         self.vault_key = Some(key);
@@ -1628,6 +1683,29 @@ impl LilypadApp {
         }
 
         Task::none()
+    }
+
+    /// Refresh vault_entries from the in-memory vault and key.
+    /// Use after modifying vault in memory (add/edit/delete/favorite).
+    fn refresh_vault_entries(&mut self) {
+        if let (Some(vault), Some(key)) = (self.vault.take(), self.vault_key.take()) {
+            self.populate_vault_entries(&vault, &key);
+            self.vault = Some(vault);
+            self.vault_key = Some(key);
+        }
+    }
+
+    /// Reload vault from disk using the existing key, then refresh entries.
+    /// Use after vault file is replaced on disk (sync pull, import, restore).
+    fn reload_vault_from_disk(&mut self) {
+        if let Some(key) = self.vault_key.take() {
+            if let Ok(mut vault) = self.store.load_vault(&self.active_vault, &key) {
+                vault.name = self.active_vault.clone();
+                self.populate_vault_entries(&vault, &key);
+                self.vault = Some(vault);
+            }
+            self.vault_key = Some(key);
+        }
     }
 
     /// Populates the UI vault entries from a decrypted vault.
@@ -1715,6 +1793,10 @@ impl LilypadApp {
         self.vault_key = None;
         self.vault_entries.clear();
         self.vault_unlocked = false;
+        // Clear password to force explicit re-entry for the new vault
+        self.master_password.zeroize();
+        self.confirm_password.zeroize();
+        self.error_message = None;
         self.determine_unlock_mode();
     }
 
@@ -1802,6 +1884,13 @@ impl LilypadApp {
     }
 
     fn save_entry(&mut self) -> Task<Message> {
+        // Safety check: ensure in-memory vault matches active vault
+        if let Some(ref v) = self.vault {
+            if v.name != self.active_vault {
+                self.set_status("Vault mismatch error - please re-unlock");
+                return Task::none();
+            }
+        }
         let Some(ref key) = self.vault_key else {
             return Task::none();
         };
@@ -1894,7 +1983,7 @@ impl LilypadApp {
         let _ = self.store.save_vault(vault, key);
 
         // Refresh entries
-        let _ = self.unlock_existing_vault();
+        self.refresh_vault_entries();
 
         self.show_add_entry = false;
         self.edit_mode = false;
@@ -1923,7 +2012,7 @@ impl LilypadApp {
             let label = vault.entries[index].label.clone();
             let _ = vault.remove_entry(&label);
             let _ = self.store.save_vault(vault, key);
-            let _ = self.unlock_existing_vault();
+            self.refresh_vault_entries();
             self.set_status("Entry deleted");
         }
 
@@ -1946,7 +2035,10 @@ impl LilypadApp {
             let new_favorite = !entry.is_favorite;
             let _ = vault.set_entry_favorite(&label, new_favorite);
             let _ = self.store.save_vault(vault, key);
-            let _ = self.unlock_existing_vault();
+            // Update in place to avoid scroll reset
+            if let Some(ui_entry) = self.vault_entries.get_mut(index) {
+                ui_entry.is_favorite = new_favorite;
+            }
         }
 
         Task::none()
@@ -2199,7 +2291,7 @@ impl LilypadApp {
                         match self.store.apply_sync_payload(vault_name, &data) {
                             Ok(()) => {
                                 // Re-decrypt to refresh entries
-                                let _ = self.unlock_existing_vault();
+                                self.reload_vault_from_disk();
                                 self.set_status("Vault imported successfully");
                             }
                             Err(e) => {
@@ -2283,7 +2375,7 @@ impl LilypadApp {
                             }
 
                             let _ = self.store.save_vault(vault, key);
-                            let _ = self.unlock_existing_vault();
+                            self.refresh_vault_entries();
                             self.set_status(format!("{} entries imported", imported));
                         } else {
                             self.set_status("Invalid JSON format");
@@ -2614,6 +2706,68 @@ impl LilypadApp {
             Message::SyncCompleted,
         )
     }
+
+    /// Pull vault from GitHub without requiring unlock.
+    /// Downloads the vault file and saves it to disk, then the user can unlock it.
+    fn sync_pull_to_unlock(&mut self) -> Task<Message> {
+        if !self.github_authenticated {
+            eprintln!("[sync_pull_to_unlock] Not authenticated");
+            self.set_status("Login to GitHub first");
+            return Task::none();
+        }
+
+        let vault_name = self.active_vault.clone();
+        let store_root = std::path::PathBuf::from(&self.config.data_dir);
+
+        eprintln!("[sync_pull_to_unlock] Starting pull for vault '{}' to {:?}", vault_name, store_root);
+
+        self.sync_in_progress = true;
+        self.sync_started_at = Some(Instant::now());
+        self.set_status("Pulling vault from GitHub...");
+
+        Task::perform(
+            async move {
+                tokio::task::spawn_blocking(move || {
+                    eprintln!("[sync_pull_to_unlock] Creating backend from stored token...");
+                    let mut backend = lilypad_oauth::GitHubSyncBackend::from_stored_token()
+                        .map_err(|e| { eprintln!("[sync_pull_to_unlock] Backend error: {}", e); format!("{}", e) })?;
+                    eprintln!("[sync_pull_to_unlock] Pulling from GitHub...");
+                    let payload = backend
+                        .pull(&vault_name)
+                        .map_err(|e| { eprintln!("[sync_pull_to_unlock] Pull error: {}", e); format!("{}", e) })?;
+
+                    match payload {
+                        Some(data) => {
+                            eprintln!("[sync_pull_to_unlock] Got {} bytes from GitHub", data.len());
+                            let config = lilypad_core::AppConfig {
+                                data_dir: store_root.to_string_lossy().to_string(),
+                                ..lilypad_core::default_config()
+                            };
+                            let store =
+                                lilypad_storage::LocalStore::new(&config).map_err(|e| { eprintln!("[sync_pull_to_unlock] Store error: {}", e); format!("{}", e) })?;
+                            store
+                                .apply_sync_payload(&vault_name, &data)
+                                .map_err(|e| { eprintln!("[sync_pull_to_unlock] Apply error: {}", e); format!("{}", e) })?;
+                            eprintln!("[sync_pull_to_unlock] Vault saved successfully!");
+                            Ok(format!(
+                                "Vault '{}' pulled from GitHub ({} bytes)",
+                                vault_name,
+                                data.len()
+                            ))
+                        }
+                        None => {
+                            eprintln!("[sync_pull_to_unlock] No vault found on GitHub");
+                            Ok("No remote vault found on GitHub".to_string())
+                        }
+                    }
+                })
+                .await
+                .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
+            },
+            Message::SyncCompleted,
+        )
+    }
+
     // ========================================================================
     // CSV Export
     // ========================================================================
@@ -2782,7 +2936,11 @@ impl LilypadApp {
 
         if imported > 0 {
             let _ = self.store.save_vault(vault, key);
-            let _ = self.unlock_existing_vault();
+        }
+        // `vault` and `key` borrows end here (NLL)
+
+        if imported > 0 {
+            self.refresh_vault_entries();
         }
         self.set_status(format!("{} entries imported from browser CSV", imported));
 
@@ -3029,7 +3187,7 @@ impl LilypadApp {
                 let vault_name = &self.active_vault;
                 match self.store.apply_sync_payload(vault_name, &data) {
                     Ok(()) => {
-                        let _ = self.unlock_existing_vault();
+                        self.reload_vault_from_disk();
                         self.set_status(format!("Vault restored from {}", path.display()));
                     }
                     Err(e) => {

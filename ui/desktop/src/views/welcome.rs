@@ -796,6 +796,21 @@ fn github_connected(
     .style(theme::primary_style(theme, v))
     .on_press(Message::OnboardingNext);
 
+    let pull_btn = button(
+        row![
+            fonts::centered_icon_colored(icons::DOWNLOAD, 14.0, palette.text_secondary),
+            Space::new().width(8),
+            text("Pull vault from GitHub")
+                .size(14)
+                .font(fonts::FONT_MEDIUM)
+                .color(palette.text_secondary),
+        ]
+        .align_y(Vertical::Center),
+    )
+    .padding([10, 20])
+    .style(theme::ghost_style(theme, v))
+    .on_press(Message::SyncPullToUnlock);
+
     column![
         success_icon,
         Space::new().height(12),
@@ -806,6 +821,8 @@ fn github_connected(
         repo_info,
         Space::new().height(24),
         next_btn,
+        Space::new().height(12),
+        pull_btn,
     ]
     .align_x(Horizontal::Center)
     .into()

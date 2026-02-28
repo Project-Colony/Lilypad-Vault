@@ -204,6 +204,8 @@ pub enum Message {
     NewVaultNameChanged(String),
     /// Create a new vault
     CreateVault,
+    /// Delete a vault by name
+    DeleteVault(String),
     /// Start renaming a vault
     StartRenameVault(String),
     /// Rename vault input changed
@@ -334,6 +336,8 @@ pub enum Message {
     SyncPush,
     /// Pull vault from GitHub
     SyncPull,
+    /// Pull vault from GitHub (no unlock required — just download the file)
+    SyncPullToUnlock,
     /// Sync operation completed (result message)
     SyncCompleted(std::result::Result<String, String>),
     /// Device flow: show user code for manual entry and start polling

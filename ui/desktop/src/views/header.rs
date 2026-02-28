@@ -141,6 +141,7 @@ pub fn vault_dropdown_overlay(
         .map(|name| {
             let is_active = name == &active_vault_owned;
             let name_for_rename = name.clone();
+            let name_for_delete = name.clone();
             let name_for_select = name.clone();
             button(
                 row![
@@ -157,6 +158,12 @@ pub fn vault_dropdown_overlay(
                     .padding([4, 6])
                     .style(theme::icon_style(theme, v))
                     .on_press(Message::StartRenameVault(name_for_rename)),
+                    button(
+                        fonts::centered_icon_colored(icons::TRASH, 12.0, palette.text_muted),
+                    )
+                    .padding([4, 6])
+                    .style(theme::icon_style(theme, v))
+                    .on_press(Message::DeleteVault(name_for_delete)),
                 ]
                 .align_y(Vertical::Center),
             )
@@ -199,7 +206,7 @@ pub fn vault_dropdown_overlay(
 
     let dropdown_card = container(dropdown_content)
         .style(move |_| theme::card_container(theme, v))
-        .width(Length::Fixed(200.0));
+        .width(Length::Fixed(220.0));
 
     // Position the dropdown at the top-left below the header button
     let positioned = column![

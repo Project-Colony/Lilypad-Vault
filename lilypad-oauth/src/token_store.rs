@@ -160,7 +160,7 @@ impl TokenStoreManager {
 
     /// Returns the default token store path.
     pub fn default_path() -> Result<PathBuf> {
-        let project_dirs = directories::ProjectDirs::from("", "Colony", "Lilypad")
+        let project_dirs = directories::ProjectDirs::from_path(std::path::PathBuf::from("Colony/Lilypad"))
             .ok_or_else(|| {
                 OAuthError::TokenStoreError("could not determine config directory".to_string())
             })?;

@@ -20,6 +20,8 @@ pub fn view(
     lockout_state: &LockoutState,
     error_message: Option<&str>,
     unlock_mode: UnlockMode,
+    active_vault: &str,
+    available_vaults: &[String],
 ) -> Element<'static, Message> {
     let palette = theme.palette();
     let master_password_owned = master_password.to_string();
@@ -103,7 +105,7 @@ pub fn view(
         }
     };
 
-    // Footer (only in Unlock mode)
+    // Footer
     let footer: iced::widget::Column<'static, Message> = match unlock_mode {
         UnlockMode::Unlock if !is_locked => {
             column![row![
@@ -129,9 +131,49 @@ pub fn view(
             .align_y(Vertical::Center)]
         }
         _ => column![],
+    }
+    .align_x(Horizontal::Center);
+
+
+    // Vault selector (top-left corner)
+    let vault_selector: Element<'static, Message> = if available_vaults.len() > 1 {
+        let active_vault_owned = active_vault.to_string();
+        let vault_buttons: Vec<Element<'static, Message>> = available_vaults
+            .iter()
+            .map(|name| {
+                let is_active = name == &active_vault_owned;
+                let name_clone = name.clone();
+                button(
+                    text(name.clone())
+                        .size(13)
+                        .font(if is_active { fonts::FONT_SEMIBOLD } else { fonts::FONT_REGULAR })
+                        .color(if is_active { palette.primary } else { palette.text_muted }),
+                )
+                .padding([6, 12])
+                .style(move |t, s| {
+                    if is_active {
+                        (theme::ghost_style(theme, v))(t, s)
+                    } else {
+                        (theme::icon_style(theme, v))(t, s)
+                    }
+                })
+                .on_press(Message::SelectVault(name_clone))
+                .into()
+            })
+            .collect();
+
+        container(
+            row(vault_buttons).spacing(4).align_y(Vertical::Center),
+        )
+        .padding([12, 20])
+        .width(Length::Fill)
+        .into()
+    } else {
+        Space::new().height(0).into()
     };
 
     let full_content = column![
+        vault_selector,
         Space::new().height(Length::FillPortion(1)),
         content,
         Space::new().height(32),
