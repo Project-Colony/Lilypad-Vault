@@ -278,7 +278,7 @@ impl App {
         let (key, key_file) = if path.exists() {
             load_key(&path, Some(password))?
         } else {
-            let params = KeyDerivationParams::generate();
+            let params = KeyDerivationParams::generate_adaptive();
             let key = derive_key(password, &params)?;
             let key_file = KeyFile::from_kdf(params);
             save_key(&path, &key_file)?;

@@ -593,6 +593,7 @@ fn tutorial_phase_dots(
 // Page 5 — GitHub Connect
 // ============================================================================
 
+#[allow(clippy::too_many_arguments)]
 fn github_connect_page(
     theme: LilypadTheme,
     v: UiVariation,

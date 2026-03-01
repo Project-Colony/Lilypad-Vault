@@ -198,7 +198,7 @@ fn test_search_entries() {
     // Search for "git"
     lilypad()
         .args(["--data-dir", data_dir])
-        .args(["search", "test", "git"])
+        .args(["search", "git", "test"])
         .assert()
         .success()
         .stdout(predicate::str::contains("github"))
@@ -696,7 +696,7 @@ fn test_search_with_json_output() {
     lilypad()
         .args(["--data-dir", data_dir])
         .args(["--output-format", "json"])
-        .args(["search", "test", "search"])
+        .args(["search", "search", "test"])
         .assert()
         .success()
         .stdout(predicate::str::contains("\"results\""))

@@ -12,6 +12,7 @@ pub struct LilypadPalette {
     /// Primary accent color (green tones)
     pub primary: Color,
     /// Secondary accent color
+    #[allow(dead_code)] // defined per theme, available for future use
     pub secondary: Color,
     /// Success color (green)
     pub success: Color,
@@ -639,6 +640,7 @@ impl UiVariation {
 }
 
 /// Health grade colors (used when health view renders grade badges)
+#[allow(dead_code)] // style utility for future health view enhancements
 pub fn health_grade_color(grade: &str, palette: &LilypadPalette) -> Color {
     match grade {
         "A" => Color::from_rgb8(34, 197, 94),   // Green
@@ -651,6 +653,7 @@ pub fn health_grade_color(grade: &str, palette: &LilypadPalette) -> Color {
 }
 
 /// Password strength colors (for entry health indicators)
+#[allow(dead_code)] // style utility for future entry-level health indicators
 pub fn strength_color(strength: u8, palette: &LilypadPalette) -> Color {
     match strength {
         0..=20 => palette.danger,
@@ -760,6 +763,7 @@ pub fn nav_container(theme: LilypadTheme, v: UiVariation) -> container::Style {
 }
 
 /// Style for sidebar container
+#[allow(dead_code)] // style utility for future sidebar layout
 pub fn sidebar_container(theme: LilypadTheme, v: UiVariation) -> container::Style {
     let palette = theme.palette();
     container::Style {
@@ -1158,6 +1162,7 @@ pub fn text_input_focused(theme: LilypadTheme, v: UiVariation) -> text_input::St
 }
 
 /// Error text input style (for form validation feedback)
+#[allow(dead_code)] // style utility for future form validation
 pub fn text_input_error(theme: LilypadTheme, v: UiVariation) -> text_input::Style {
     let palette = theme.palette();
     let mut style = text_input_style(theme, v);

@@ -27,6 +27,15 @@ Desktop.ini
 *.bak
 *.orig
 
+# Private keys and certificates
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Log files
+*.log
+
 # Coverage reports
 tarpaulin-report.*
 lcov.info

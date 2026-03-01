@@ -42,6 +42,18 @@ pub enum HealthGrade {
 
 impl HealthGrade {
     /// Returns the grade from a score.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use lilypad_common::HealthGrade;
+    ///
+    /// assert_eq!(HealthGrade::from_score(95), HealthGrade::A);
+    /// assert_eq!(HealthGrade::from_score(85), HealthGrade::B);
+    /// assert_eq!(HealthGrade::from_score(75), HealthGrade::C);
+    /// assert_eq!(HealthGrade::from_score(65), HealthGrade::D);
+    /// assert_eq!(HealthGrade::from_score(40), HealthGrade::F);
+    /// ```
     pub fn from_score(score: u8) -> Self {
         match score {
             90..=100 => HealthGrade::A,

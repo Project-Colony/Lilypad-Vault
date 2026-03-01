@@ -83,6 +83,29 @@ impl SyncBackend for NoopSync {
     }
 }
 
+/// Local filesystem storage backend for Lilypad vaults.
+///
+/// `LocalStore` manages encrypted vault files, key files, backups,
+/// and audit logs on the local filesystem.
+///
+/// # Examples
+///
+/// ```no_run
+/// use lilypad_core::{default_config, Vault};
+/// use lilypad_storage::LocalStore;
+///
+/// let config = default_config();
+/// let store = LocalStore::new(&config).expect("open store");
+///
+/// // List available vaults
+/// let vaults = store.list_vaults().expect("list vaults");
+/// println!("Found {} vaults", vaults.len());
+///
+/// // Check if a vault exists
+/// if store.vault_exists("primary").unwrap_or(false) {
+///     println!("primary vault exists");
+/// }
+/// ```
 pub struct LocalStore {
     root: PathBuf,
     sync: Option<Box<dyn SyncBackend>>,

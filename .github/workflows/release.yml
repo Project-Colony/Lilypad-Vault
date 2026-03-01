@@ -21,20 +21,12 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
-            artifact: lilypad-desktop-linux
-            binary: lilypad-desktop
           - target: x86_64-apple-darwin
             os: macos-latest
-            artifact: lilypad-desktop-macos-x86_64
-            binary: lilypad-desktop
           - target: aarch64-apple-darwin
             os: macos-latest
-            artifact: lilypad-desktop-macos-arm64
-            binary: lilypad-desktop
           - target: x86_64-pc-windows-msvc
             os: windows-latest
-            artifact: lilypad-desktop-windows.exe
-            binary: lilypad-desktop.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -47,22 +39,40 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} -p lilypad-desktop
+      - name: Build all release binaries
+        run: cargo build --release --target ${{ matrix.target }} -p lilypad-desktop -p lilypad-cli -p lilypad-tui
 
-      - name: Rename binary (Unix)
+      - name: Package binaries (Unix)
         if: runner.os != 'Windows'
-        run: cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.artifact }}
+        run: |
+          cp target/${{ matrix.target }}/release/lilypad-desktop lilypad-desktop-${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/lilypad-cli lilypad-cli-${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/lilypad-tui lilypad-tui-${{ matrix.target }}
 
-      - name: Rename binary (Windows)
+      - name: Package binaries (Windows)
         if: runner.os == 'Windows'
-        run: copy target\${{ matrix.target }}\release\${{ matrix.binary }} ${{ matrix.artifact }}
+        run: |
+          copy target\${{ matrix.target }}\release\lilypad-desktop.exe lilypad-desktop-${{ matrix.target }}.exe
+          copy target\${{ matrix.target }}\release\lilypad-cli.exe lilypad-cli-${{ matrix.target }}.exe
+          copy target\${{ matrix.target }}\release\lilypad-tui.exe lilypad-tui-${{ matrix.target }}.exe
 
-      - name: Upload artifact
+      - name: Upload desktop artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: lilypad-desktop-${{ matrix.target }}
+          path: lilypad-desktop-${{ matrix.target }}*
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lilypad-cli-${{ matrix.target }}
+          path: lilypad-cli-${{ matrix.target }}*
+
+      - name: Upload TUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lilypad-tui-${{ matrix.target }}
+          path: lilypad-tui-${{ matrix.target }}*
 
   release:
     name: Create Release

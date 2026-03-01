@@ -840,7 +840,7 @@ fn entry_form(params: EntryFormParams<'_>) -> Element<'static, Message> {
             };
             button(
                 row![
-                    fonts::centered_icon(*icon, 12.0),
+                    fonts::centered_icon(icon, 12.0),
                     Space::new().width(5),
                     text(display).size(12),
                 ]

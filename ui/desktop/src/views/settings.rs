@@ -12,6 +12,7 @@ use crate::theme::{self, LilypadTheme, UiVariation};
 use crate::views::common::labeled_input;
 
 /// Render the account settings section
+#[allow(clippy::too_many_arguments)]
 pub fn account_view(
     theme: LilypadTheme,
     v: UiVariation,
@@ -20,7 +21,7 @@ pub fn account_view(
     sync_in_progress: bool,
     device_flow_code: Option<&str>,
     device_flow_uri: Option<&str>,
-    two_factor_enabled: bool,
+    _two_factor_enabled: bool,
     marketing_opt_in: bool,
 ) -> Element<'static, Message> {
     let palette = theme.palette();
@@ -49,21 +50,14 @@ pub fn account_view(
         .size(16)
         .color(palette.text_primary);
 
-    let two_factor_check = checkbox(two_factor_enabled).label("Two-Factor Authentication")
-        .on_toggle(Message::ToggleTwoFactor)
-        .text_size(14)
-        .spacing(10);
-
-    let two_factor_hint = text("Add an extra layer of security to your account")
-        .size(12)
+    let two_factor_hint = text("Two-factor authentication — coming soon")
+        .size(13)
         .color(palette.text_muted);
 
     let security_section = container(
         column![
             security_title,
             Space::new().height(16),
-            two_factor_check,
-            Space::new().height(4),
             two_factor_hint,
         ]
         .padding(24),
@@ -292,7 +286,7 @@ pub fn security_view(
     theme: LilypadTheme,
     v: UiVariation,
     recovery_email: &str,
-    trusted_devices: &[String],
+    _trusted_devices: &[String],
     auto_lock_minutes: u32,
     clipboard_timeout: u32,
     require_master_on_copy: bool,
@@ -564,55 +558,17 @@ pub fn security_view(
     .width(Length::Fill)
     .style(move |_| theme::card_container(theme, v));
 
-    // Trusted devices section
+    // Trusted devices — coming soon
     let devices_title = text("Trusted Devices")
         .size(16)
         .color(palette.text_primary);
 
-    let devices_list: Vec<Element<'static, Message>> = trusted_devices
-        .iter()
-        .enumerate()
-        .map(|(index, device)| {
-            let device_name = device.clone();
-            row![
-                fonts::centered_icon(icons::DESKTOP, 16.0),
-                Space::new().width(12),
-                text(device_name).size(14).color(palette.text_primary),
-                Space::new().width(Length::Fill),
-                button(text("Remove").size(12).color(palette.danger))
-                    .padding([6, 12])
-                    .style(move |_theme, status| match status {
-                        button::Status::Hovered => {
-                            let mut style = theme::ghost_button_hovered(theme, v);
-                            style.text_color = palette.danger;
-                            style
-                        }
-                        button::Status::Pressed => {
-                            let mut style = theme::ghost_button_pressed(theme, v);
-                            style.text_color = palette.danger;
-                            style
-                        }
-                        _ => theme::ghost_button(theme, v),
-                    })
-                    .on_press(Message::RemoveTrustedDevice(index)),
-            ]
-            .align_y(Vertical::Center)
-            .padding([8, 0])
-            .into()
-        })
-        .collect();
-
-    let devices_content: Element<'static, Message> = if devices_list.is_empty() {
-        text("No trusted devices")
-            .size(14)
-            .color(palette.text_muted)
-            .into()
-    } else {
-        column(devices_list).spacing(8).into()
-    };
+    let devices_hint = text("Device management — coming soon")
+        .size(13)
+        .color(palette.text_muted);
 
     let devices_section = container(
-        column![devices_title, Space::new().height(16), devices_content,].padding(24),
+        column![devices_title, Space::new().height(16), devices_hint].padding(24),
     )
     .width(Length::Fill)
     .style(move |_| theme::card_container(theme, v));

@@ -8,7 +8,12 @@
 
 use crate::config::OAuthProvider;
 use crate::error::{OAuthError, Result};
+use chacha20poly1305::aead::{Aead, AeadCore, KeyInit};
+use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
+use rand::RngExt;
+use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -17,6 +22,15 @@ use zeroize::Zeroize;
 
 /// Token storage filename.
 const TOKEN_FILENAME: &str = "oauth_tokens.json";
+
+/// Magic header for encrypted token stores (8 bytes).
+const ENCRYPTED_HEADER: &[u8; 8] = b"LPTOK\x00\x01\x00";
+
+/// Application-specific salt for machine key derivation.
+const MACHINE_KEY_SALT: &[u8] = b"lilypad-oauth-token-store-v1";
+
+/// Nonce length for XChaCha20-Poly1305.
+const NONCE_LEN: usize = 24;
 
 /// Information about a stored OAuth token.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -204,21 +218,44 @@ impl TokenStoreManager {
     }
 
     /// Loads the token store from disk.
+    ///
+    /// Supports both encrypted (current) and legacy plaintext formats.
+    /// If a plaintext file is detected, it is re-saved encrypted automatically.
     fn load_store(&self) -> Result<TokenStore> {
         if !self.path.exists() {
             return Ok(TokenStore::default());
         }
 
-        let contents = fs::read_to_string(&self.path).map_err(|e| {
+        let raw = fs::read(&self.path).map_err(|e| {
             OAuthError::TokenStoreError(format!("failed to read token store: {}", e))
         })?;
 
-        serde_json::from_str(&contents).map_err(|e| {
-            OAuthError::TokenStoreError(format!("failed to parse token store: {}", e))
-        })
+        if raw.starts_with(ENCRYPTED_HEADER) {
+            // Encrypted format
+            let plaintext = decrypt_token_data(&raw)?;
+            let json = String::from_utf8(plaintext).map_err(|e| {
+                OAuthError::TokenStoreError(format!("decrypted data is not UTF-8: {}", e))
+            })?;
+            serde_json::from_str(&json).map_err(|e| {
+                OAuthError::TokenStoreError(format!("failed to parse token store: {}", e))
+            })
+        } else {
+            // Legacy plaintext JSON — parse and auto-migrate to encrypted format
+            let json = String::from_utf8(raw).map_err(|e| {
+                OAuthError::TokenStoreError(format!("token file is not UTF-8: {}", e))
+            })?;
+            let store: TokenStore = serde_json::from_str(&json).map_err(|e| {
+                OAuthError::TokenStoreError(format!("failed to parse token store: {}", e))
+            })?;
+
+            // Auto-migrate: re-save as encrypted
+            let _ = self.save_store(&store);
+
+            Ok(store)
+        }
     }
 
-    /// Saves the token store to disk.
+    /// Saves the token store to disk, encrypted with a machine-local key.
     fn save_store(&self, store: &TokenStore) -> Result<()> {
         // Ensure parent directory exists
         if let Some(parent) = self.path.parent() {
@@ -227,12 +264,13 @@ impl TokenStoreManager {
             })?;
         }
 
-        // Serialize to JSON
-        let contents = serde_json::to_string_pretty(store)?;
+        // Serialize to JSON and encrypt
+        let json = serde_json::to_string_pretty(store)?;
+        let encrypted = encrypt_token_data(json.as_bytes())?;
 
         // Write atomically using a temp file
         let temp_path = self.path.with_extension("tmp");
-        fs::write(&temp_path, &contents).map_err(|e| {
+        fs::write(&temp_path, &encrypted).map_err(|e| {
             OAuthError::TokenStoreError(format!("failed to write token store: {}", e))
         })?;
 
@@ -253,18 +291,127 @@ impl TokenStoreManager {
         Ok(())
     }
 
-    /// Securely deletes the token store.
+    /// Securely deletes the token store by overwriting with random data
+    /// across multiple passes before removing the file.
     pub fn destroy(&self) -> Result<()> {
-        if self.path.exists() {
-            // Overwrite with zeros before deleting
-            let zeros = vec![0u8; 4096];
-            fs::write(&self.path, &zeros).ok();
-            fs::remove_file(&self.path).map_err(|e| {
-                OAuthError::TokenStoreError(format!("failed to delete token store: {}", e))
+        if !self.path.exists() {
+            return Ok(());
+        }
+
+        let file_size = fs::metadata(&self.path)
+            .map_err(|e| {
+                OAuthError::TokenStoreError(format!("failed to read token store metadata: {}", e))
+            })?
+            .len() as usize;
+
+        if file_size > 0 {
+            use std::io::{Seek, SeekFrom, Write};
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .open(&self.path)
+                .map_err(|e| {
+                    OAuthError::TokenStoreError(format!(
+                        "failed to open token store for secure deletion: {}",
+                        e
+                    ))
+                })?;
+
+            let mut rng = rand::rng();
+            // 3 passes of random data to match lilypad-storage's secure_delete
+            for _ in 0..3 {
+                file.seek(SeekFrom::Start(0)).map_err(|e| {
+                    OAuthError::TokenStoreError(format!("seek failed during secure delete: {}", e))
+                })?;
+                let random_data: Vec<u8> = (0..file_size).map(|_| rng.random::<u8>()).collect();
+                file.write_all(&random_data).map_err(|e| {
+                    OAuthError::TokenStoreError(format!("write failed during secure delete: {}", e))
+                })?;
+                file.sync_all().map_err(|e| {
+                    OAuthError::TokenStoreError(format!("sync failed during secure delete: {}", e))
+                })?;
+            }
+
+            // Final: truncate to zero
+            file.set_len(0).map_err(|e| {
+                OAuthError::TokenStoreError(format!(
+                    "truncate failed during secure delete: {}",
+                    e
+                ))
+            })?;
+            file.sync_all().map_err(|e| {
+                OAuthError::TokenStoreError(format!("final sync failed during secure delete: {}", e))
             })?;
         }
+
+        fs::remove_file(&self.path).map_err(|e| {
+            OAuthError::TokenStoreError(format!("failed to delete token store: {}", e))
+        })?;
+
         Ok(())
     }
+}
+
+/// Derives a machine-local encryption key from stable system identifiers.
+///
+/// The key is deterministic on the same machine so we can decrypt without
+/// user interaction, but different on other machines so a copied file is
+/// useless without the same (hostname, username) combination.
+fn derive_machine_key() -> [u8; 32] {
+    let hostname = hostname::get()
+        .map(|h| h.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let username = whoami::username();
+
+    let mut hasher = Sha256::new();
+    hasher.update(MACHINE_KEY_SALT);
+    hasher.update(hostname.as_bytes());
+    hasher.update(b":");
+    hasher.update(username.as_bytes());
+    hasher.finalize().into()
+}
+
+/// Encrypts plaintext with a machine-derived key.
+///
+/// Output format: ENCRYPTED_HEADER (8 bytes) || nonce (24 bytes) || ciphertext
+fn encrypt_token_data(plaintext: &[u8]) -> Result<Vec<u8>> {
+    let key_bytes = derive_machine_key();
+    let key = Key::from_slice(&key_bytes);
+    let cipher = XChaCha20Poly1305::new(key);
+    let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
+
+    let ciphertext = cipher
+        .encrypt(&nonce, plaintext)
+        .map_err(|e| OAuthError::TokenStoreError(format!("encryption failed: {}", e)))?;
+
+    let mut output = Vec::with_capacity(ENCRYPTED_HEADER.len() + NONCE_LEN + ciphertext.len());
+    output.extend_from_slice(ENCRYPTED_HEADER);
+    output.extend_from_slice(nonce.as_slice());
+    output.extend_from_slice(&ciphertext);
+    Ok(output)
+}
+
+/// Decrypts data that was encrypted with `encrypt_token_data`.
+fn decrypt_token_data(data: &[u8]) -> Result<Vec<u8>> {
+    if data.len() < ENCRYPTED_HEADER.len() + NONCE_LEN + 1 {
+        return Err(OAuthError::TokenStoreError(
+            "encrypted token data is too short".to_string(),
+        ));
+    }
+
+    let nonce_start = ENCRYPTED_HEADER.len();
+    let ct_start = nonce_start + NONCE_LEN;
+
+    let nonce = XNonce::from_slice(&data[nonce_start..ct_start]);
+
+    let key_bytes = derive_machine_key();
+    let key = Key::from_slice(&key_bytes);
+    let cipher = XChaCha20Poly1305::new(key);
+
+    cipher
+        .decrypt(nonce, &data[ct_start..])
+        .map_err(|_| OAuthError::TokenStoreError(
+            "failed to decrypt token store (machine key mismatch or corrupted file)".to_string(),
+        ))
 }
 
 /// Returns the current Unix timestamp.

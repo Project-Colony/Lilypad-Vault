@@ -193,6 +193,7 @@ pub struct VaultEntry {
     pub updated_at: u64,
     pub is_favorite: bool,
     pub last_accessed_at: Option<u64>,
+    #[allow(dead_code)] // populated for future sort-by-access-count
     pub access_count: u64,
     pub password_strength: PasswordStrength,
     pub is_expired: bool,
@@ -321,6 +322,7 @@ impl Category {
         }
     }
 
+    #[allow(dead_code)] // available for future navigation rendering
     pub fn label(&self) -> &'static str {
         match self {
             Category::Credentials => "Credentials",
@@ -332,6 +334,7 @@ impl Category {
         }
     }
 
+    #[allow(dead_code)] // available for future navigation rendering
     pub fn icon(&self) -> &'static str {
         match self {
             Category::Credentials => "🔐",

@@ -79,12 +79,6 @@ fn shell_copy(value: &str) -> Result<()> {
     ))
 }
 
-/// Try to clear (set empty) the clipboard using shell commands (Linux only).
-#[cfg(target_os = "linux")]
-fn shell_clear() {
-    let _ = shell_copy("");
-}
-
 /// Try to read the clipboard content using shell commands (Linux only).
 #[cfg(target_os = "linux")]
 fn shell_get() -> Option<String> {

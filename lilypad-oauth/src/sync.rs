@@ -279,8 +279,14 @@ impl GitHubSyncBackend {
                     }
                 }
 
-                // No local metadata, remote has data
-                Ok(SyncStatus::RemoteAhead)
+                // No local metadata: if local vault has content, we cannot
+                // determine whether local or remote is newer — treat as conflict
+                // so the user explicitly chooses with --force.
+                if local_checksum.is_empty() {
+                    Ok(SyncStatus::RemoteAhead)
+                } else {
+                    Ok(SyncStatus::Conflict)
+                }
             }
             Ok(None) => Ok(SyncStatus::NoRemoteVault),
             Err(OAuthError::InvalidToken) => Ok(SyncStatus::NotAuthenticated),
@@ -353,6 +359,48 @@ impl GitHubSyncBackend {
             Err(OAuthError::RepoNotFound(_)) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+
+    /// Deletes a vault file (and its metadata) from the remote GitHub repository.
+    pub fn delete(&mut self, vault_name: &str) -> Result<()> {
+        let repo_name = format!("{}-{}", crate::VAULT_REPO_PREFIX, &self.username);
+
+        // Delete the vault data file
+        match self.client.get_file(&self.username, &repo_name, crate::VAULT_DATA_FILENAME) {
+            Ok(file) => {
+                self.client.delete_file(
+                    &self.username,
+                    &repo_name,
+                    crate::VAULT_DATA_FILENAME,
+                    &file.sha,
+                    &format!("Delete vault '{}'", vault_name),
+                )?;
+            }
+            Err(OAuthError::FileNotFound { .. }) => {
+                // Already gone — not an error
+            }
+            Err(e) => return Err(e),
+        }
+
+        // Also delete sync metadata if present
+        match self.client.get_file(&self.username, &repo_name, crate::SYNC_META_FILENAME) {
+            Ok(file) => {
+                self.client.delete_file(
+                    &self.username,
+                    &repo_name,
+                    crate::SYNC_META_FILENAME,
+                    &file.sha,
+                    "Delete sync metadata",
+                )?;
+            }
+            Err(OAuthError::FileNotFound { .. }) => {}
+            Err(e) => return Err(e),
+        }
+
+        self.metadata = None;
+        self.cached_sha = None;
+
+        Ok(())
     }
 
     /// Loads sync metadata from the remote repository.

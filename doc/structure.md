@@ -16,8 +16,8 @@ The workspace contains seven crates:
 - `lilypad-common/`: Shared utilities — clipboard management, password health analysis (HIBP breach check, strength scoring), advanced search engine, input validation, timestamp formatting, and key file management.
 - `lilypad-oauth/`: GitHub OAuth (Device Flow and Authorization Code Flow), token management, and encrypted vault sync backend with conflict detection and multi-device support.
 - `lilypad-cli/`: Full-featured command-line interface with 40+ commands covering vault management, entry CRUD, import/export (8 formats), backup, audit, and sync operations.
-- `ui/tui/`: Terminal UI built with `ratatui` and `crossterm`, offering keyboard-driven vault management with multi-vault, search, password generation, health dashboard, and TOTP support.
-- `ui/desktop/`: Desktop GUI built with `iced` (~10k lines), featuring multi-step onboarding, multi-vault support, theme switching (3 themes), health dashboard with breach detection, password generator, GitHub OAuth sync, import/export, backup/restore, master password rotation, and entry history.
+- `ui/tui/`: Terminal UI built with `ratatui` and `crossterm`, offering keyboard-driven vault management with multi-vault, search, password generation, health dashboard, export, and TOTP support.
+- `ui/desktop/`: Desktop GUI built with `iced 0.14` (~10k lines), featuring multi-step onboarding, multi-vault support, theme switching (15 themes), 3 UI density modes, health dashboard with breach detection, password generator, GitHub OAuth sync, import/export (8 browser formats), backup/restore, master password rotation, and entry history.
 
 ## Folder Documentation Convention
 Every folder must contain a short Markdown file named after the folder. Each of these files should:

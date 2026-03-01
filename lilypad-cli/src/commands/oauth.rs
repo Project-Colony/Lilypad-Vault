@@ -235,6 +235,10 @@ pub fn sync_push(
 }
 
 /// Pulls a vault from GitHub.
+///
+/// When a conflict is detected and `--force` is not set, performs an
+/// entry-level merge (last-modified-wins per entry) instead of refusing.
+/// With `--force`, the remote version replaces local entirely.
 pub fn sync_pull(
     store: &lilypad_storage::LocalStore,
     config: &lilypad_core::AppConfig,
@@ -252,47 +256,76 @@ pub fn sync_pull(
 
     let mut backend = GitHubSyncBackend::from_stored_token()?;
 
-    // Check for conflicts unless --force is used
-    if !force {
+    // Determine conflict status
+    let is_conflict = if !force {
         let local_payload = store.sync_payload(vault_name);
         if let Ok(local_data) = local_payload {
             let local_checksum = calculate_checksum(&local_data);
-            let status = backend.get_status(&local_checksum)?;
-            if status == SyncStatus::Conflict {
-                return Err(anyhow!(
-                    "Conflict detected: both local and remote have changed.\n\
-                     Use 'lilypad sync pull {} --force' to overwrite local changes.",
-                    vault_name
-                ));
-            }
+            backend.get_status(&local_checksum)? == SyncStatus::Conflict
+        } else {
+            false
         }
-    }
+    } else {
+        false
+    };
 
     // Pull data from GitHub
     let payload = backend.pull(vault_name)?;
 
     match payload {
         Some(data) => {
-            // Verify we can decrypt it with the provided key
             let key = load_vault_key(store, config, vault_name, master_password)?;
 
-            // Apply the payload (this will overwrite local)
-            store.apply_sync_payload(vault_name, &data)?;
+            if is_conflict && !force {
+                // Entry-level merge: decrypt both vaults, merge, re-encrypt & save
+                let mut local_vault = store.load_vault(vault_name, &key)?;
 
-            // Verify decryption works
-            let _vault = store.load_vault(vault_name, &key)?;
+                // Temporarily apply remote payload to decrypt the remote vault
+                store.apply_sync_payload(vault_name, &data)?;
+                let remote_vault = store.load_vault(vault_name, &key)?;
 
-            if output_format == OutputFormat::Json {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "status": "pulled",
-                        "vault": vault_name,
-                        "size_bytes": data.len()
-                    })
-                );
+                // Merge remote entries into local vault
+                let merge_result = local_vault.merge_from(&remote_vault);
+
+                // Save the merged vault
+                store.save_vault(&local_vault, &key)?;
+
+                if output_format == OutputFormat::Json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "status": "merged",
+                            "vault": vault_name,
+                            "added_from_remote": merge_result.added_from_remote,
+                            "updated_from_remote": merge_result.updated_from_remote,
+                            "kept_local": merge_result.kept_local,
+                            "unchanged": merge_result.unchanged.len(),
+                            "local_only": merge_result.local_only.len()
+                        })
+                    );
+                } else {
+                    println!("Vault '{}' merged successfully!", vault_name);
+                    println!("  {}", merge_result.summary());
+                }
             } else {
-                println!("Vault '{}' pulled from GitHub successfully!", vault_name);
+                // No conflict (or --force): apply remote payload directly
+                store.apply_sync_payload(vault_name, &data)?;
+
+                // Verify decryption works
+                let _vault = store.load_vault(vault_name, &key)?;
+
+                if output_format == OutputFormat::Json {
+                    println!(
+                        "{}",
+                        serde_json::json!({
+                            "status": "pulled",
+                            "vault": vault_name,
+                            "size_bytes": data.len()
+                        })
+                    );
+                } else {
+                    println!("Vault '{}' pulled from GitHub successfully!", vault_name);
+                }
             }
         }
         None => {
@@ -311,6 +344,44 @@ pub fn sync_pull(
         }
     }
 
+    Ok(())
+}
+
+/// Deletes a vault from GitHub (keeps local copy).
+pub fn sync_delete(
+    vault_name: &str,
+    output_format: OutputFormat,
+) -> anyhow::Result<()> {
+    let mut backend = lilypad_oauth::GitHubSyncBackend::from_stored_token()?;
+
+    // Check if the remote vault exists first
+    let status = backend.get_status("")?;
+    match status {
+        lilypad_oauth::SyncStatus::NotAuthenticated => {
+            return Err(anyhow::anyhow!("Not authenticated. Run 'lilypad login' first."));
+        }
+        lilypad_oauth::SyncStatus::NoRemoteVault => {
+            return Err(anyhow::anyhow!("No remote vault found on GitHub."));
+        }
+        _ => {}
+    }
+
+    // Delete the vault file from the remote repo
+    backend.delete(vault_name)?;
+
+    match output_format {
+        OutputFormat::Json => {
+            let json = serde_json::json!({
+                "action": "sync_delete",
+                "vault": vault_name,
+                "status": "deleted",
+            });
+            println!("{}", serde_json::to_string_pretty(&json)?);
+        }
+        OutputFormat::Text => {
+            println!("Vault '{}' deleted from GitHub. Local copy is preserved.", vault_name);
+        }
+    }
     Ok(())
 }
 

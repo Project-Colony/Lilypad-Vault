@@ -157,9 +157,15 @@ enum Commands {
         /// Notes stored inside the encrypted payload
         #[arg(long)]
         notes: Option<String>,
-        /// Tags (repeatable)
+        /// Tags to add (repeatable)
         #[arg(long = "tag", value_parser = non_empty_value)]
         tags: Vec<String>,
+        /// Tags to remove (repeatable)
+        #[arg(long = "remove-tag", value_parser = non_empty_value)]
+        remove_tags: Vec<String>,
+        /// Remove all existing tags
+        #[arg(long)]
+        clear_tags: bool,
         /// Folder metadata
         #[arg(long)]
         folder: Option<String>,
@@ -188,14 +194,28 @@ enum Commands {
         #[arg(value_parser = non_empty_value)]
         label: String,
     },
-    /// Search entries by label.
-    Search {
-        /// Vault name to inspect
+    /// Rename an entry's label.
+    RenameEntry {
+        /// Vault name
         #[arg(value_parser = non_empty_value)]
         vault: String,
+        /// Current entry label
+        #[arg(value_parser = non_empty_value)]
+        label: String,
+        /// New entry label
+        #[arg(value_parser = non_empty_value)]
+        new_label: String,
+    },
+    /// Search entries by label.
+    Search {
         /// Keyword
         #[arg(value_parser = non_empty_value)]
         query: String,
+        /// Vault name to inspect (omit with --all-vaults)
+        vault: Option<String>,
+        /// Search across all vaults
+        #[arg(long)]
+        all_vaults: bool,
     },
     /// Export a vault to a file.
     Export {
@@ -429,6 +449,12 @@ enum SyncCommands {
         #[arg(long)]
         force: bool,
     },
+    /// Delete a vault from GitHub (local copy is kept).
+    Delete {
+        /// Vault name to delete from remote
+        #[arg(value_parser = non_empty_value)]
+        vault: String,
+    },
     /// Show sync status for a vault.
     Status {
         /// Vault name to check
@@ -440,18 +466,23 @@ enum SyncCommands {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Wrap master password in SecureString for automatic zeroization on drop
-    let master_password = cli
-        .master_password
-        .or_else(|| std::env::var("LILYPAD_MASTER_PASSWORD").ok())
-        .map(SecureString::new);
-
-    // Security warning for environment variable usage
+    // Security warnings for password exposure via CLI args or env vars
+    if cli.master_password.is_some() {
+        eprintln!("WARNING: Master password passed via --master-password flag.");
+        eprintln!("         This is visible in process listings (ps) and shell history.");
+        eprintln!("         Prefer interactive entry or LILYPAD_MASTER_PASSWORD with caution.");
+    }
     if std::env::var("LILYPAD_MASTER_PASSWORD").is_ok() {
         eprintln!("WARNING: Using master password from LILYPAD_MASTER_PASSWORD environment variable.");
         eprintln!("         This may be visible in process listings and shell history.");
         eprintln!("         Consider unsetting it after use: unset LILYPAD_MASTER_PASSWORD");
     }
+
+    // Wrap master password in SecureString for automatic zeroization on drop
+    let master_password = cli
+        .master_password
+        .or_else(|| std::env::var("LILYPAD_MASTER_PASSWORD").ok())
+        .map(SecureString::new);
 
     let output_format = cli.output_format;
     let mut config = default_config();
@@ -484,14 +515,22 @@ fn main() -> Result<()> {
         Commands::Get { vault, label, copy, clipboard_timeout, show_password } => {
             entries::get_entry(&store, &config, &vault, &label, copy, clipboard_timeout, show_password, output_format, master_password.as_ref().map(|s| s.as_str()))
         }
-        Commands::Update { vault, label, value, username, url, notes, tags, folder, entry_type, totp_secret, attachment, require_strong, expires_in } => {
-            entries::update_entry(&store, &config, &vault, &label, &value, username, url, notes, tags, folder, entry_type, totp_secret, attachment, require_strong, expires_in, master_password.as_ref().map(|s| s.as_str()))
+        Commands::Update { vault, label, value, username, url, notes, tags, remove_tags, clear_tags, folder, entry_type, totp_secret, attachment, require_strong, expires_in } => {
+            entries::update_entry(&store, &config, &vault, &label, &value, username, url, notes, tags, remove_tags, clear_tags, folder, entry_type, totp_secret, attachment, require_strong, expires_in, master_password.as_ref().map(|s| s.as_str()))
         }
         Commands::Remove { vault, label } => {
             entries::remove_entry(&store, &config, &vault, &label, master_password.as_ref().map(|s| s.as_str()))
         }
-        Commands::Search { vault, query } => {
-            entries::search_entries(&store, &config, &vault, &query, output_format, master_password.as_ref().map(|s| s.as_str()))
+        Commands::RenameEntry { vault, label, new_label } => {
+            entries::rename_entry(&store, &config, &vault, &label, &new_label, master_password.as_ref().map(|s| s.as_str()))
+        }
+        Commands::Search { vault, query, all_vaults } => {
+            if all_vaults {
+                entries::search_all_vaults(&store, &config, &query, output_format, master_password.as_ref().map(|s| s.as_str()))
+            } else {
+                let vault_name = vault.ok_or_else(|| anyhow::anyhow!("vault name is required (or use --all-vaults)"))?;
+                entries::search_entries(&store, &config, &vault_name, &query, output_format, master_password.as_ref().map(|s| s.as_str()))
+            }
         }
         Commands::Generate { length, uppercase, lowercase, digits, symbols, copy, clipboard_timeout } => {
             entries::generate_password(length, uppercase, lowercase, digits, symbols, copy, clipboard_timeout)
@@ -555,6 +594,9 @@ fn main() -> Result<()> {
             }
             SyncCommands::Pull { vault, force } => {
                 oauth::sync_pull(&store, &config, &vault, force, master_password.as_ref().map(|s| s.as_str()), output_format)
+            }
+            SyncCommands::Delete { vault } => {
+                oauth::sync_delete(&vault, output_format)
             }
             SyncCommands::Status { vault } => {
                 oauth::sync_status(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()), output_format)

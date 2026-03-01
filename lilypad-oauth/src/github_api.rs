@@ -250,27 +250,22 @@ impl GitHubClient {
 
         match self.get_file(username, &repo_name, VAULT_DATA_FILENAME) {
             Ok(file) => {
-                eprintln!("[get_vault_data] File found: name={}, size={}, sha={}, has_content={}, encoding={:?}",
-                    file.name, file.size, file.sha, file.content.is_some(), file.encoding);
-
                 // For files > 1MB, GitHub returns content="" with encoding="none"
                 // instead of null. Detect this and fall back to the Git Blob API.
                 let has_inline_content = file.content.as_ref().is_some_and(|c| !c.is_empty())
                     && file.encoding.as_deref() == Some("base64");
 
                 let decoded = if has_inline_content {
-                    let content = file.content.as_ref().unwrap();
-                    eprintln!("[get_vault_data] Decoding inline base64 ({} chars)", content.len());
+                    let content = file.content.as_ref().ok_or_else(|| {
+                        OAuthError::ParseError("expected inline content but found None".to_string())
+                    })?;
                     let cleaned: String = content.chars().filter(|c| !c.is_whitespace()).collect();
                     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &cleaned)
                         .map_err(|e| OAuthError::ParseError(format!("invalid base64: {}", e)))?
                 } else {
                     // Large file or no inline content — fetch via Git Blob API
-                    eprintln!("[get_vault_data] Using Git Blob API for sha={}", file.sha);
                     self.get_blob_content(username, &repo_name, &file.sha)?
                 };
-
-                eprintln!("[get_vault_data] Decoded {} bytes", decoded.len());
 
                 if decoded.is_empty() {
                     return Err(OAuthError::ParseError("vault data is empty".to_string()));

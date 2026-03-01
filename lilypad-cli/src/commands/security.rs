@@ -86,7 +86,7 @@ pub fn rotate_key(
         if !strength.is_acceptable() {
             eprintln!("Warning: {}", strength.feedback());
         }
-        let params = KeyDerivationParams::generate();
+        let params = KeyDerivationParams::generate_adaptive();
         let key = derive_key(password, &params)?;
         let metadata = KeyMetadata::new(&key, lilypad_core::CryptoAlgorithm::XChaCha20Poly1305)
             .with_embedded_kdf(&params);
@@ -141,7 +141,7 @@ pub fn change_master_password(
     }
 
     // Generate new KDF parameters and derive key
-    let new_params = KeyDerivationParams::generate();
+    let new_params = KeyDerivationParams::generate_adaptive();
     let new_key = derive_key(&new_password, &new_params)?;
 
     // Re-encrypt all entries with the new key

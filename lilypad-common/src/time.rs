@@ -113,6 +113,18 @@ pub fn format_timestamp_relative(timestamp: u64) -> String {
 ///
 /// # Returns
 /// A formatted string like "30 seconds", "5 minutes", "2 hours".
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::time::format_duration;
+///
+/// assert_eq!(format_duration(0), "instant");
+/// assert_eq!(format_duration(1), "1 second");
+/// assert_eq!(format_duration(45), "45 seconds");
+/// assert_eq!(format_duration(60), "1 minute");
+/// assert_eq!(format_duration(3600), "1 hour");
+/// ```
 pub fn format_duration(seconds: u64) -> String {
     match seconds {
         0 => "instant".to_string(),

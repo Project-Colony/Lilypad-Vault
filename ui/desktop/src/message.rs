@@ -8,6 +8,7 @@ use crate::theme::{LilypadTheme, UiVariation};
 
 /// Main application message enum
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // some variants are pre-defined for upcoming features
 pub enum Message {
     // ========================================================================
     // Navigation

@@ -758,10 +758,10 @@ impl LilypadApp {
                                 let next = self.available_vaults[0].clone();
                                 self.switch_vault(&next);
                             }
-                            self.set_status(&format!("Vault '{}' deleted", name));
+                            self.set_status(format!("Vault '{}' deleted", name));
                         }
                         Err(e) => {
-                            self.set_status(&format!("Failed to delete vault: {e}"));
+                            self.set_status(format!("Failed to delete vault: {e}"));
                         }
                     }
                 }
@@ -1585,7 +1585,8 @@ impl LilypadApp {
             // Auto-upgrade: ensure vault metadata has embedded KDF
             if vault.key_metadata.kdf_params.is_none() {
                 vault.key_metadata = vault.key_metadata.clone().with_embedded_kdf(&kdf_params);
-                let _ = self.store.save_vault(&vault, &key);
+                // Best-effort upgrade; failure is non-fatal (will retry on next unlock)
+                let _upgrade = self.store.save_vault(&vault, &key);
             }
 
             // Ensure vault name matches active vault (may differ if file was copied/restored)
@@ -1610,7 +1611,8 @@ impl LilypadApp {
         if vault.key_metadata.kdf_params.is_none() {
             if let KeyFile::Kdf { ref params } = key_file {
                 vault.key_metadata = vault.key_metadata.clone().with_embedded_kdf(params);
-                let _ = self.store.save_vault(&vault, &key);
+                // Best-effort upgrade; failure is non-fatal (will retry on next unlock)
+                let _upgrade = self.store.save_vault(&vault, &key);
             }
         }
 
@@ -1664,9 +1666,9 @@ impl LilypadApp {
             return Task::none();
         }
 
-        // Also save key.json for CLI backward compat
+        // Also save key.json for CLI backward compat (non-fatal if it fails)
         let key_file = KeyFile::from_kdf(kdf_params);
-        let _ = save_key(&self.key_path(), &key_file);
+        let _compat = save_key(&self.key_path(), &key_file);
 
         self.vault = Some(vault);
         self.vault_key = Some(key);
@@ -1971,16 +1973,28 @@ impl LilypadApp {
             if let Some(index) = self.edit_index {
                 if let Some(entry) = vault.entries.get(index) {
                     let label = entry.label.clone();
-                    let _ = vault.update_entry(&label, ciphertext);
-                    let _ = vault.update_entry_metadata(&label, metadata);
+                    if let Err(e) = vault.update_entry(&label, ciphertext) {
+                        self.set_status(format!("Failed to update entry: {}", e));
+                        return Task::none();
+                    }
+                    if let Err(e) = vault.update_entry_metadata(&label, metadata) {
+                        self.set_status(format!("Failed to update metadata: {}", e));
+                        return Task::none();
+                    }
                 }
             }
         } else {
             let entry = Entry::new_with_metadata(&self.entry_title, metadata, ciphertext);
-            let _ = vault.add_entry(entry);
+            if let Err(e) = vault.add_entry(entry) {
+                self.set_status(format!("Failed to add entry: {}", e));
+                return Task::none();
+            }
         }
 
-        let _ = self.store.save_vault(vault, key);
+        if let Err(e) = self.store.save_vault(vault, key) {
+            self.set_status(format!("Failed to save vault: {}", e));
+            return Task::none();
+        }
 
         // Refresh entries
         self.refresh_vault_entries();
@@ -2010,8 +2024,14 @@ impl LilypadApp {
 
         if index < vault.entries.len() {
             let label = vault.entries[index].label.clone();
-            let _ = vault.remove_entry(&label);
-            let _ = self.store.save_vault(vault, key);
+            if let Err(e) = vault.remove_entry(&label) {
+                self.set_status(format!("Failed to remove entry: {}", e));
+                return Task::none();
+            }
+            if let Err(e) = self.store.save_vault(vault, key) {
+                self.set_status(format!("Failed to save vault: {}", e));
+                return Task::none();
+            }
             self.refresh_vault_entries();
             self.set_status("Entry deleted");
         }
@@ -2033,8 +2053,14 @@ impl LilypadApp {
         if let Some(entry) = vault.entries.get(index) {
             let label = entry.label.clone();
             let new_favorite = !entry.is_favorite;
-            let _ = vault.set_entry_favorite(&label, new_favorite);
-            let _ = self.store.save_vault(vault, key);
+            if let Err(e) = vault.set_entry_favorite(&label, new_favorite) {
+                self.set_status(format!("Failed to toggle favorite: {}", e));
+                return Task::none();
+            }
+            if let Err(e) = self.store.save_vault(vault, key) {
+                self.set_status(format!("Failed to save vault: {}", e));
+                return Task::none();
+            }
             // Update in place to avoid scroll reset
             if let Some(ui_entry) = self.vault_entries.get_mut(index) {
                 ui_entry.is_favorite = new_favorite;
@@ -2368,13 +2394,17 @@ impl LilypadApp {
                                         let entry = Entry::new_with_metadata(
                                             &label, metadata, ciphertext,
                                         );
-                                        let _ = vault.add_entry(entry);
-                                        imported += 1;
+                                        if vault.add_entry(entry).is_ok() {
+                                            imported += 1;
+                                        }
                                     }
                                 }
                             }
 
-                            let _ = self.store.save_vault(vault, key);
+                            if let Err(e) = self.store.save_vault(vault, key) {
+                                self.set_status(format!("Failed to save vault: {}", e));
+                                return Task::none();
+                            }
                             self.refresh_vault_entries();
                             self.set_status(format!("{} entries imported", imported));
                         } else {
@@ -2711,15 +2741,12 @@ impl LilypadApp {
     /// Downloads the vault file and saves it to disk, then the user can unlock it.
     fn sync_pull_to_unlock(&mut self) -> Task<Message> {
         if !self.github_authenticated {
-            eprintln!("[sync_pull_to_unlock] Not authenticated");
             self.set_status("Login to GitHub first");
             return Task::none();
         }
 
         let vault_name = self.active_vault.clone();
         let store_root = std::path::PathBuf::from(&self.config.data_dir);
-
-        eprintln!("[sync_pull_to_unlock] Starting pull for vault '{}' to {:?}", vault_name, store_root);
 
         self.sync_in_progress = true;
         self.sync_started_at = Some(Instant::now());
@@ -2728,27 +2755,23 @@ impl LilypadApp {
         Task::perform(
             async move {
                 tokio::task::spawn_blocking(move || {
-                    eprintln!("[sync_pull_to_unlock] Creating backend from stored token...");
                     let mut backend = lilypad_oauth::GitHubSyncBackend::from_stored_token()
-                        .map_err(|e| { eprintln!("[sync_pull_to_unlock] Backend error: {}", e); format!("{}", e) })?;
-                    eprintln!("[sync_pull_to_unlock] Pulling from GitHub...");
+                        .map_err(|e| format!("{}", e))?;
                     let payload = backend
                         .pull(&vault_name)
-                        .map_err(|e| { eprintln!("[sync_pull_to_unlock] Pull error: {}", e); format!("{}", e) })?;
+                        .map_err(|e| format!("{}", e))?;
 
                     match payload {
                         Some(data) => {
-                            eprintln!("[sync_pull_to_unlock] Got {} bytes from GitHub", data.len());
                             let config = lilypad_core::AppConfig {
                                 data_dir: store_root.to_string_lossy().to_string(),
                                 ..lilypad_core::default_config()
                             };
                             let store =
-                                lilypad_storage::LocalStore::new(&config).map_err(|e| { eprintln!("[sync_pull_to_unlock] Store error: {}", e); format!("{}", e) })?;
+                                lilypad_storage::LocalStore::new(&config).map_err(|e| format!("{}", e))?;
                             store
                                 .apply_sync_payload(&vault_name, &data)
-                                .map_err(|e| { eprintln!("[sync_pull_to_unlock] Apply error: {}", e); format!("{}", e) })?;
-                            eprintln!("[sync_pull_to_unlock] Vault saved successfully!");
+                                .map_err(|e| format!("{}", e))?;
                             Ok(format!(
                                 "Vault '{}' pulled from GitHub ({} bytes)",
                                 vault_name,
@@ -2756,7 +2779,6 @@ impl LilypadApp {
                             ))
                         }
                         None => {
-                            eprintln!("[sync_pull_to_unlock] No vault found on GitHub");
                             Ok("No remote vault found on GitHub".to_string())
                         }
                     }
@@ -2929,13 +2951,17 @@ impl LilypadApp {
                     ..Default::default()
                 };
                 let entry = Entry::new_with_metadata(&label, metadata, ciphertext);
-                let _ = vault.add_entry(entry);
-                imported += 1;
+                if vault.add_entry(entry).is_ok() {
+                    imported += 1;
+                }
             }
         }
 
         if imported > 0 {
-            let _ = self.store.save_vault(vault, key);
+            if let Err(e) = self.store.save_vault(vault, key) {
+                self.set_status(format!("Failed to save vault: {}", e));
+                return Task::none();
+            }
         }
         // `vault` and `key` borrows end here (NLL)
 
@@ -3040,7 +3066,7 @@ impl LilypadApp {
             return Task::none();
         }
 
-        let kdf_params = KeyDerivationParams::generate();
+        let kdf_params = KeyDerivationParams::generate_adaptive();
         let new_key = match derive_key(&self.new_master_password, &kdf_params) {
             Ok(k) => k,
             Err(e) => {
@@ -3088,9 +3114,9 @@ impl LilypadApp {
             }
         }
 
-        // Update key file with new KDF params (CLI backward compat)
+        // Update key file with new KDF params (CLI backward compat, non-fatal)
         let key_file = KeyFile::from_kdf(kdf_params);
-        let _ = save_key(&self.key_path(), &key_file);
+        let _compat = save_key(&self.key_path(), &key_file);
 
         // Update the active key and reload
         self.vault_key = Some(new_key.clone());

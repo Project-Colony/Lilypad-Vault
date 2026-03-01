@@ -667,6 +667,76 @@ impl Vault {
             .collect()
     }
 
+    /// Merges entries from a remote vault into this (local) vault.
+    ///
+    /// Conflict resolution strategy (per-entry, last-modified-wins):
+    /// - Entries only in local → kept
+    /// - Entries only in remote → added
+    /// - Entries in both with same `updated_at` → kept as-is (in sync)
+    /// - Entries in both with different `updated_at` → newer version wins
+    ///
+    /// Entries are matched by label. Returns a summary of the merge.
+    pub fn merge_from(&mut self, remote: &Vault) -> MergeResult {
+        use std::collections::HashMap;
+
+        let mut result = MergeResult::default();
+
+        // Build a lookup of local entries by label → (index, updated_at)
+        let local_map: HashMap<String, (usize, u64)> = self
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.label.clone(), (i, e.updated_at)))
+            .collect();
+
+        // Collect updates and additions separately to avoid borrow conflicts
+        let mut updates: Vec<(usize, Entry)> = Vec::new();
+        let mut additions: Vec<Entry> = Vec::new();
+
+        for remote_entry in &remote.entries {
+            match local_map.get(&remote_entry.label) {
+                Some(&(idx, local_updated_at)) => {
+                    if local_updated_at == remote_entry.updated_at {
+                        result.unchanged.push(remote_entry.label.clone());
+                    } else if remote_entry.updated_at > local_updated_at {
+                        updates.push((idx, remote_entry.clone()));
+                        result.updated_from_remote.push(remote_entry.label.clone());
+                    } else {
+                        result.kept_local.push(remote_entry.label.clone());
+                    }
+                }
+                None => {
+                    additions.push(remote_entry.clone());
+                    result.added_from_remote.push(remote_entry.label.clone());
+                }
+            }
+        }
+
+        // Apply updates
+        for (idx, entry) in updates {
+            self.entries[idx] = entry;
+        }
+
+        // Apply additions
+        self.entries.extend(additions);
+
+        // Entries only in local are implicitly kept (no action needed).
+        let remote_labels: std::collections::HashSet<&str> =
+            remote.entries.iter().map(|e| e.label.as_str()).collect();
+        for entry in &self.entries {
+            if !remote_labels.contains(entry.label.as_str())
+                && !result.added_from_remote.contains(&entry.label)
+            {
+                result.local_only.push(entry.label.clone());
+            }
+        }
+
+        self.touch();
+        self.record_event(AuditEvent::new("vault_merged", None));
+
+        result
+    }
+
     fn record_event(&mut self, mut event: AuditEvent) {
         if event.timestamp == 0 {
             event.timestamp = current_timestamp();
@@ -676,6 +746,56 @@ impl Vault {
 
     fn touch(&mut self) {
         self.updated_at = current_timestamp();
+    }
+}
+
+/// Summary of a vault merge operation.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MergeResult {
+    /// Entries that existed in both vaults with the same timestamp.
+    pub unchanged: Vec<String>,
+    /// Entries updated to the remote version (remote was newer).
+    pub updated_from_remote: Vec<String>,
+    /// Entries where the local version was kept (local was newer).
+    pub kept_local: Vec<String>,
+    /// New entries added from the remote vault.
+    pub added_from_remote: Vec<String>,
+    /// Entries that existed only locally.
+    pub local_only: Vec<String>,
+}
+
+impl MergeResult {
+    /// Returns true if the merge made any changes to the local vault.
+    pub fn has_changes(&self) -> bool {
+        !self.updated_from_remote.is_empty() || !self.added_from_remote.is_empty()
+    }
+
+    /// Returns a human-readable summary of the merge.
+    pub fn summary(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.added_from_remote.is_empty() {
+            parts.push(format!("{} added from remote", self.added_from_remote.len()));
+        }
+        if !self.updated_from_remote.is_empty() {
+            parts.push(format!(
+                "{} updated from remote",
+                self.updated_from_remote.len()
+            ));
+        }
+        if !self.kept_local.is_empty() {
+            parts.push(format!("{} kept local (newer)", self.kept_local.len()));
+        }
+        if !self.unchanged.is_empty() {
+            parts.push(format!("{} unchanged", self.unchanged.len()));
+        }
+        if !self.local_only.is_empty() {
+            parts.push(format!("{} local only", self.local_only.len()));
+        }
+        if parts.is_empty() {
+            "No changes".to_string()
+        } else {
+            parts.join(", ")
+        }
     }
 }
 

@@ -270,6 +270,25 @@ pub struct FuzzyMatchResult {
 /// - Bonus for matching at the start of the text.
 /// - Bonus for matching at the start of a word (after a non-alphanumeric char).
 /// - Penalty for large gaps between matched characters.
+///
+/// # Examples
+///
+/// ```
+/// use lilypad_common::fuzzy_match;
+///
+/// // Exact prefix match scores high
+/// let score = fuzzy_match("git", "github.com");
+/// assert!(score > 0);
+///
+/// // Non-matching query returns 0
+/// assert_eq!(fuzzy_match("xyz", "github"), 0);
+///
+/// // Empty query returns 0
+/// assert_eq!(fuzzy_match("", "anything"), 0);
+///
+/// // Case-insensitive matching
+/// assert!(fuzzy_match("GIT", "github") > 0);
+/// ```
 pub fn fuzzy_match(query: &str, text: &str) -> u32 {
     let query_lower: Vec<char> = query.to_lowercase().chars().collect();
     let text_lower: Vec<char> = text.to_lowercase().chars().collect();

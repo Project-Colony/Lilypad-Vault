@@ -30,8 +30,8 @@ pub const ARGON2_MEMORY_KIB: u32 = 64 * 1024;
 /// Argon2 iteration count.
 pub const ARGON2_ITERATIONS: u32 = 3;
 
-/// Argon2 parallelism (number of lanes/threads).
-pub const ARGON2_PARALLELISM: u32 = 4;
+/// Argon2 parallelism fallback (adaptive mode uses up to `min(cpu_count, 4)`).
+pub const ARGON2_PARALLELISM: u32 = 1;
 
 /// Minimum Argon2 memory in KiB (16 MiB).
 pub const ARGON2_MIN_MEMORY_KIB: u32 = 16 * 1024;

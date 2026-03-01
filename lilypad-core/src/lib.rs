@@ -9,7 +9,7 @@ pub use errors::{CoreError, Result};
 pub use models::{
     Attachment, AuditEvent, CustomField, CustomFieldType, EmbeddedKdfParams, Entry,
     EntryChangeType, EntryColor, EntryHistoryRecord, EntryMetadata, EntrySecret, EntryType,
-    KeyMetadata, TotpBackupCode, Vault,
+    KeyMetadata, MergeResult, TotpBackupCode, Vault,
     // Size limit constants
     MAX_ATTACHMENT_SIZE, MAX_ATTACHMENTS_PER_ENTRY, MAX_CUSTOM_FIELDS_PER_ENTRY,
     MAX_CUSTOM_FIELD_NAME_LENGTH, MAX_CUSTOM_FIELD_VALUE_SIZE, MAX_FOLDER_DEPTH, MAX_FOLDER_LENGTH,

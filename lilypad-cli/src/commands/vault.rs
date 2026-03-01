@@ -33,7 +33,7 @@ pub fn init_vault(
         if !strength.is_acceptable() {
             eprintln!("Warning: {}", strength.feedback());
         }
-        let params = KeyDerivationParams::generate();
+        let params = KeyDerivationParams::generate_adaptive();
         let key = derive_key(password, &params)?;
         (key, KeyFile::from_kdf(params))
     } else {

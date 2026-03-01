@@ -237,6 +237,8 @@ pub fn update_entry(
     url: Option<String>,
     notes: Option<String>,
     tags: Vec<String>,
+    remove_tags: Vec<String>,
+    clear_tags: bool,
     folder: Option<String>,
     entry_type: Option<String>,
     totp_secret: Option<String>,
@@ -269,6 +271,12 @@ pub fn update_entry(
         (existing.metadata.clone(), decrypted, old_pw)
     };
     apply_metadata_updates(&mut metadata, username, url, tags, folder, entry_type)?;
+    // Handle tag removal: --clear-tags removes all, --remove-tag removes specific
+    if clear_tags {
+        metadata.tags.clear();
+    } else if !remove_tags.is_empty() {
+        metadata.tags.retain(|t| !remove_tags.contains(t));
+    }
     // Validate metadata
     metadata.validate()?;
 
@@ -327,6 +335,103 @@ pub fn remove_entry(
         .with_context(|| format!("entry '{label}' not found"))?;
     store.save_vault(&vault, &key)?;
     println!("Entry '{label}' removed.");
+    Ok(())
+}
+
+/// Rename an entry's label within a vault.
+pub fn rename_entry(
+    store: &LocalStore,
+    config: &lilypad_core::AppConfig,
+    vault_name: &str,
+    old_label: &str,
+    new_label: &str,
+    master_password: Option<&str>,
+) -> Result<()> {
+    let key = load_vault_key(store, config, vault_name, master_password)?;
+    let mut vault = store
+        .load_vault(vault_name, &key)
+        .with_context(|| format!("vault not found: {vault_name}"))?;
+
+    // Check that old entry exists
+    if vault.find_entry(old_label).is_none() {
+        return Err(anyhow!("entry '{}' not found", old_label));
+    }
+    // Check that new label doesn't conflict
+    if vault.find_entry(new_label).is_some() {
+        return Err(anyhow!("an entry with label '{}' already exists", new_label));
+    }
+
+    // Find the entry by index and rename it
+    let index = vault
+        .entries
+        .iter()
+        .position(|e| e.label == old_label)
+        .ok_or_else(|| anyhow!("entry '{}' not found", old_label))?;
+    vault.entries[index].label = new_label.to_string();
+
+    store.save_vault(&vault, &key)?;
+    println!("Entry '{}' renamed to '{}'.", old_label, new_label);
+    Ok(())
+}
+
+/// Search entries across all vaults.
+pub fn search_all_vaults(
+    store: &LocalStore,
+    config: &lilypad_core::AppConfig,
+    query: &str,
+    output_format: OutputFormat,
+    master_password: Option<&str>,
+) -> Result<()> {
+    let vault_names = store.list_vaults()?;
+    if vault_names.is_empty() {
+        println!("No vaults found.");
+        return Ok(());
+    }
+
+    let mut total_matches = 0;
+    for vault_name in &vault_names {
+        let key = match load_vault_key(store, config, vault_name, master_password) {
+            Ok(k) => k,
+            Err(_) => continue, // skip vaults we can't unlock
+        };
+        let vault = match store.load_vault(vault_name, &key) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let matches = vault.search_entries(query);
+        if matches.is_empty() {
+            continue;
+        }
+        total_matches += matches.len();
+        match output_format {
+            OutputFormat::Json => {
+                let results: Vec<_> = matches
+                    .iter()
+                    .map(|e| {
+                        serde_json::json!({
+                            "vault": vault_name,
+                            "label": e.label,
+                            "type": entry_type_label(&e.metadata.entry_type),
+                            "username": e.metadata.username,
+                            "url": e.metadata.url,
+                        })
+                    })
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&results)?);
+            }
+            OutputFormat::Text => {
+                println!("[{}]", vault_name);
+                for entry in &matches {
+                    let updated = format_timestamp_relative(entry.updated_at);
+                    println!("  - {} (updated: {})", entry.label, updated);
+                }
+            }
+        }
+    }
+
+    if total_matches == 0 {
+        println!("No entries match '{}' in any vault.", query);
+    }
     Ok(())
 }
 

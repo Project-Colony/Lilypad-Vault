@@ -185,7 +185,7 @@ impl OAuthConfig {
     /// - `LILYPAD_OAUTH_PORT` - Callback port (optional)
     pub fn from_env() -> Result<Self> {
         let client_id = std::env::var("LILYPAD_GITHUB_CLIENT_ID")
-            .unwrap_or_else(|_| crate::DEFAULT_GITHUB_CLIENT_ID.to_string());
+            .unwrap_or_else(|_| crate::BUILTIN_GITHUB_CLIENT_ID.to_string());
 
         let mut config = Self::github(client_id);
 

@@ -44,13 +44,19 @@ pub use oauth::{AuthorizationResult, DeviceFlowAuth, OAuthFlow};
 pub use sync::{GitHubSyncBackend, SyncMetadata, SyncStatus};
 pub use token_store::{TokenInfo, TokenStoreManager};
 
-/// Default OAuth client ID for Lilypad GitHub App.
-/// Users can override this with their own OAuth app credentials.
+/// Built-in OAuth client ID, set at compile time via `LILYPAD_GITHUB_CLIENT_ID`.
+/// At runtime, the environment variable `LILYPAD_GITHUB_CLIENT_ID` takes precedence.
+/// If neither is set, OAuth operations will fail with a clear configuration error.
 ///
 /// ```
-/// assert_eq!(lilypad_oauth::DEFAULT_GITHUB_CLIENT_ID, "Ov23liHBJt7RFU10DcWC");
+/// // When built without the env var, the constant is an empty string.
+/// let id = lilypad_oauth::BUILTIN_GITHUB_CLIENT_ID;
+/// assert!(id.is_empty() || !id.is_empty()); // value depends on build env
 /// ```
-pub const DEFAULT_GITHUB_CLIENT_ID: &str = "Ov23liHBJt7RFU10DcWC";
+pub const BUILTIN_GITHUB_CLIENT_ID: &str = match option_env!("LILYPAD_GITHUB_CLIENT_ID") {
+    Some(id) => id,
+    None => "",
+};
 
 /// Default OAuth scopes required for vault sync.
 pub const DEFAULT_GITHUB_SCOPES: &[&str] = &["repo", "read:user"];

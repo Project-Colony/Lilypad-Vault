@@ -12,6 +12,7 @@ use crate::state::{LockoutState, UnlockMode};
 use crate::theme::{self, LilypadTheme, UiVariation};
 
 /// Render the unlock/create screen
+#[allow(clippy::too_many_arguments)]
 pub fn view(
     theme: LilypadTheme,
     v: UiVariation,
@@ -192,6 +193,7 @@ pub fn view(
 }
 
 /// Build the "Create Your Vault" form.
+#[allow(clippy::too_many_arguments)]
 fn build_create_form(
     theme: LilypadTheme,
     v: UiVariation,
@@ -320,6 +322,7 @@ fn build_create_form(
 }
 
 /// Build the "Unlock Vault" form.
+#[allow(clippy::too_many_arguments)]
 fn build_unlock_form(
     theme: LilypadTheme,
     v: UiVariation,
