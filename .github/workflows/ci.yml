@@ -75,6 +75,13 @@ jobs:
   security:
     name: Security Audit
     runs-on: ubuntu-latest
+    # audit-check publishes its findings as a check run. This repository's
+    # default workflow token is read-only, so without this block the action
+    # dies on "Resource not accessible by integration" before it can report
+    # anything at all.
+    permissions:
+      contents: read
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - uses: rustsec/audit-check@v2.0.0

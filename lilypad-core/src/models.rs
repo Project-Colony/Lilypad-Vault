@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::crypto::{Ciphertext, CryptoAlgorithm, KeyMaterial};
 use crate::errors::{CoreError, Result};
 use rand_core::{OsRng, RngCore};
+use std::cmp::Reverse;
 use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -349,7 +350,7 @@ impl Vault {
             .iter()
             .filter(|entry| entry.access_count > 0)
             .collect();
-        entries.sort_by(|a, b| b.access_count.cmp(&a.access_count));
+        entries.sort_by_key(|entry| Reverse(entry.access_count));
         entries.into_iter().take(limit).collect()
     }
 

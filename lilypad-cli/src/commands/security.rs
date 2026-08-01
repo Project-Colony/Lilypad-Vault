@@ -12,7 +12,9 @@ use lilypad_core::{
 use lilypad_storage::LocalStore;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
-use std::fs::{self, Permissions};
+use std::fs;
+#[cfg(unix)]
+use std::fs::Permissions;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use totp_rs::{Algorithm, Secret, TOTP};

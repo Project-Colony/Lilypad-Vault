@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use csv::WriterBuilder;
 use lilypad_common::time::format_timestamp_relative;
 use lilypad_storage::LocalStore;
+use std::cmp::Reverse;
 use super::import::{CsvEntry, EntryExport, VaultExport};
 use super::utils::{
     atomic_write, decrypt_entry_secret, entry_type_label, load_vault_key, parse_date_to_timestamp,
@@ -154,7 +155,7 @@ pub fn export_audit_log(
         .collect();
 
     // Sort by timestamp (most recent first for display)
-    events.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    events.sort_by_key(|event| Reverse(event.timestamp));
 
     // Apply limit
     if let Some(limit) = limit {

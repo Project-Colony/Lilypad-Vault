@@ -363,7 +363,7 @@ impl GitHubSyncBackend {
 
     /// Deletes a vault file (and its metadata) from the remote GitHub repository.
     pub fn delete(&mut self, vault_name: &str) -> Result<()> {
-        let repo_name = format!("{}-{}", crate::VAULT_REPO_PREFIX, &self.username);
+        let repo_name = format!("{}-{}", crate::VAULT_REPO_PREFIX, self.username);
 
         // Delete the vault data file
         match self.client.get_file(&self.username, &repo_name, crate::VAULT_DATA_FILENAME) {

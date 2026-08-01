@@ -1,19 +1,25 @@
 # cargo-deny configuration
 # Run: cargo deny check
 # Install: cargo install cargo-deny
+#
+# This file targets the cargo-deny 2.x schema, which is what
+# EmbarkStudios/cargo-deny-action@v2 runs in CI.
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
+# cargo-deny 2.x always errors on `vulnerability` and `unsound` advisories, so
+# the old `vulnerability` / `notice` keys no longer exist. `unmaintained` now
+# selects which crates are checked rather than a severity: "workspace" reports
+# unmaintained crates this workspace depends on directly, and ignores ones that
+# only appear deeper in the tree where we cannot act on them.
+unmaintained = "workspace"
 yanked = "warn"
-notice = "warn"
 
 [licenses]
-unlicensed = "deny"
+# Third-party dependencies must be permissively licensed. GPL-3.0-or-later is
+# deliberately NOT in this list: it is Lilypad's own licence, granted only to
+# Lilypad's own crates through the `exceptions` table below. Adding it here
+# would also accept a copyleft dependency, which is what we want to avoid.
 allow = [
-    # Lilypad's own crates. Explicitly allowed so the `copyleft = "deny"`
-    # fallback below still applies to third-party dependencies.
-    "GPL-3.0-or-later",
     "Apache-2.0",
     "MIT",
     "BSD-2-Clause",
@@ -26,7 +32,18 @@ allow = [
     "CC0-1.0",
     "OpenSSL",
 ]
-copyleft = "deny"
+
+# Lilypad's own workspace crates, which are GPL-3.0-or-later. An exception is
+# scoped to a single named crate, so this grant cannot leak to a dependency.
+exceptions = [
+    { name = "lilypad-cli", allow = ["GPL-3.0-or-later"] },
+    { name = "lilypad-common", allow = ["GPL-3.0-or-later"] },
+    { name = "lilypad-core", allow = ["GPL-3.0-or-later"] },
+    { name = "lilypad-desktop", allow = ["GPL-3.0-or-later"] },
+    { name = "lilypad-oauth", allow = ["GPL-3.0-or-later"] },
+    { name = "lilypad-storage", allow = ["GPL-3.0-or-later"] },
+    { name = "lilypad-tui", allow = ["GPL-3.0-or-later"] },
+]
 
 [bans]
 multiple-versions = "warn"

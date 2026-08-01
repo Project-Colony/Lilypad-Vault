@@ -32,6 +32,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
+use std::cmp::Reverse;
 use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -355,7 +356,7 @@ impl App {
             });
         }
 
-        entries.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+        entries.sort_by_key(|entry| Reverse(entry.updated_at));
         Ok(entries)
     }
 

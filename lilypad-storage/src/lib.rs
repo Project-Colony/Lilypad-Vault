@@ -7,6 +7,7 @@ use lilypad_core::{
 use rand::Rng as _;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::cmp::Reverse;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -391,7 +392,7 @@ impl LocalStore {
         }
 
         // Sort by creation time, most recent first
-        backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        backups.sort_by_key(|backup| Reverse(backup.created_at));
         Ok(backups)
     }
 

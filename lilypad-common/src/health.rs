@@ -4,6 +4,7 @@
 //! including health scores, issue detection, and recommendations.
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 use std::collections::HashMap;
 
 use crate::validation::{validate_password_strength, PasswordStrength};
@@ -552,7 +553,7 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
     let info_count = issues.iter().filter(|i| i.severity == IssueSeverity::Info).count();
 
     // Sort issues by severity (critical first)
-    issues.sort_by(|a, b| b.severity.cmp(&a.severity));
+    issues.sort_by_key(|issue| Reverse(issue.severity));
 
     HealthReport {
         score: HealthScore {

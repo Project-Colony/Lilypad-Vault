@@ -4,6 +4,7 @@
 //! for finding entries in a vault.
 
 use serde::{Deserialize, Serialize};
+use std::cmp::Reverse;
 
 /// Sort order for search results.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -677,7 +678,7 @@ impl AdvancedSearch {
             .collect();
 
         // Sort by fuzzy score descending (best matches first)
-        scored.sort_by(|a, b| b.1.cmp(&a.1));
+        scored.sort_by_key(|(_, score)| Reverse(*score));
 
         let total_count = scored.len();
 
