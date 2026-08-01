@@ -856,9 +856,7 @@ fn entry_form(params: EntryFormParams<'_>) -> Element<'static, Message> {
     let type_row = row(type_buttons).spacing(4);
 
     // ── Section 1: General ──────────────────────────────────────────────
-    let title_input = labeled_input(theme, v, "Title", "e.g., GitHub", entry_title.to_string(), |s| {
-        Message::EntryTitleChanged(s)
-    });
+    let title_input = labeled_input(theme, v, "Title", "e.g., GitHub", entry_title.to_string(), Message::EntryTitleChanged);
 
     let general_section = form_section(theme, v, icons::INFO, "General", title_input);
 
