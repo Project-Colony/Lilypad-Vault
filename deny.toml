@@ -11,6 +11,9 @@ notice = "warn"
 [licenses]
 unlicensed = "deny"
 allow = [
+    # Lilypad's own crates. Explicitly allowed so the `copyleft = "deny"`
+    # fallback below still applies to third-party dependencies.
+    "GPL-3.0-or-later",
     "Apache-2.0",
     "MIT",
     "BSD-2-Clause",

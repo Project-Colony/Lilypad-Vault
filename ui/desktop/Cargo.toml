@@ -3,7 +3,7 @@ name = "lilypad-desktop"
 version = "0.1.0"
 edition = "2021"
 authors = ["Lilypad Contributors"]
-license = "Apache-2.0"
+license = "GPL-3.0-or-later"
 description = "Lilypad desktop GUI built with Iced"
 
 [dependencies]

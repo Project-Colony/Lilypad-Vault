@@ -40,3 +40,10 @@ Feel free to prototype multiple interface layers in parallel, but keep the crypt
 - Keep new folders accompanied by a short Markdown explainer as described in [`doc/structure.md`](doc/structure.md).
 - Expand [`doc/doc.md`](doc/doc.md) with implementation notes, diagrams, and troubleshooting steps as new crates or interfaces are added.
 - Ensure all contributor-facing text remains in English until the localization plan is introduced.
+
+## License
+Lilypad is licensed under the **GNU General Public License, version 3 or (at your option) any later version** (`GPL-3.0-or-later`). The full text is in [`LICENSE`](LICENSE).
+
+Contributions are accepted under the same terms: by submitting a patch you agree that it may be distributed under GPL-3.0-or-later.
+
+The bundled JetBrains Mono fonts under `ui/Assets/Fonts/` and `ui/desktop/assets/fonts/` are third-party assets distributed under the SIL Open Font License 1.1 and are not covered by the GPL.

@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Sync**: GitHub-based encrypted vault synchronization
 - **CI/CD**: GitHub Actions pipeline (check, build, test, clippy, fmt, deny, audit, coverage)
 - **CI/CD**: Release workflow with cross-platform binary builds
-- **Project**: Apache-2.0 LICENSE file
+- **Project**: GPL-3.0-or-later LICENSE file
 - **Project**: `deny.toml` for cargo-deny license and vulnerability checking
 - **Project**: Comprehensive `.gitignore`
 
