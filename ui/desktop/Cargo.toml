@@ -8,7 +8,10 @@ description = "Lilypad desktop GUI built with Iced"
 
 [dependencies]
 # GUI Framework - Iced
-iced = { version = "0.14", features = ["advanced", "tokio", "image"] }
+# NOTE: no "image" feature. It is unused (the GUI draws no bitmaps, only Nerd
+# Font glyphs) and it turns on image/default, whose "avif" codec drags in
+# ravif -> rav1e, a full AV1 video encoder, plus ~50 crates of asm/SIMD code.
+iced = { version = "0.14", features = ["advanced", "tokio"] }
 
 # Async runtime
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "time"] }

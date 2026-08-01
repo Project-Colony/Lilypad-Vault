@@ -15,10 +15,11 @@ unmaintained = "workspace"
 yanked = "warn"
 
 [licenses]
-# Third-party dependencies must be permissively licensed. GPL-3.0-or-later is
+# Third-party dependencies must be licensed compatibly with GPL-3.0-or-later and
+# must not impose copyleft on Lilypad's own code. GPL-3.0-or-later is
 # deliberately NOT in this list: it is Lilypad's own licence, granted only to
 # Lilypad's own crates through the `exceptions` table below. Adding it here
-# would also accept a copyleft dependency, which is what we want to avoid.
+# would also accept a strong-copyleft dependency, which is what we want to avoid.
 allow = [
     "Apache-2.0",
     "MIT",
@@ -31,6 +32,20 @@ allow = [
     "BSL-1.0",
     "CC0-1.0",
     "OpenSSL",
+    # MPL-2.0 is weak, file-level copyleft, not strong copyleft: it reaches only
+    # the MPL-licensed files themselves, never the work they are linked into, so
+    # it cannot infect Lilypad's own code. It is also explicitly GPL-compatible
+    # by construction -- MPL-2.0 s1.12 names GPL-2.0+/LGPL-2.1+/AGPL-3.0+ as
+    # "Secondary Licenses" and s3.3 permits redistribution under one of them,
+    # unless the crate marks its sources "Incompatible With Secondary Licenses"
+    # (Exhibit B). Reached today via option-ext <- dirs-sys <- directories, which
+    # carries no Exhibit B notice, so shipping it inside a GPL-3.0-or-later
+    # binary is fine. Lilypad does not modify these crates, and it publishes its
+    # source anyway, so MPL's source-availability duty costs nothing.
+    # Caveat for reviewers: this is a blanket allow, so a future MPL crate that
+    # DOES carry the Exhibit B notice would be GPL-incompatible and would pass
+    # this check silently. Check Exhibit B when a new MPL dependency appears.
+    "MPL-2.0",
 ]
 
 # Lilypad's own workspace crates, which are GPL-3.0-or-later. An exception is
