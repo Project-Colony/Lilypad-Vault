@@ -3,7 +3,10 @@
 use anyhow::{anyhow, Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use lilypad_common::keyfile::load_key;
-use lilypad_core::{decrypt, derive_key, encrypt, Attachment, Entry, EntryMetadata, EntrySecret, EntryType, KeyMaterial, Vault};
+use lilypad_core::{
+    decrypt, derive_key, encrypt, Attachment, Entry, EntryMetadata, EntrySecret, EntryType,
+    KeyMaterial, Vault,
+};
 use lilypad_storage::LocalStore;
 use std::fs;
 use std::io::Write;
@@ -83,14 +86,13 @@ pub fn load_vault_key(
 ) -> Result<KeyMaterial> {
     // Try V2: read embedded KDF params from the vault file
     if let Ok(Some(embedded)) = store.load_vault_kdf_params(vault_name) {
-        let password = master_password
-            .ok_or_else(|| anyhow!("master password required for this vault"))?;
+        let password =
+            master_password.ok_or_else(|| anyhow!("master password required for this vault"))?;
         if password.trim().is_empty() {
             return Err(anyhow!("master password cannot be empty"));
         }
         let kdf_params = embedded.to_kdf_params();
-        let key = derive_key(password, &kdf_params)
-            .context("key derivation failed")?;
+        let key = derive_key(password, &kdf_params).context("key derivation failed")?;
         return Ok(key);
     }
 
@@ -294,7 +296,9 @@ pub fn parse_date_to_timestamp(date_str: &str) -> Result<u64> {
 /// Validates URL format (basic validation).
 pub fn validate_url_format(url: &str) -> Result<()> {
     // Check for valid URL schemes
-    let valid_schemes = ["http://", "https://", "ftp://", "ftps://", "ssh://", "file://"];
+    let valid_schemes = [
+        "http://", "https://", "ftp://", "ftps://", "ssh://", "file://",
+    ];
     let has_valid_scheme = valid_schemes
         .iter()
         .any(|scheme| url.to_lowercase().starts_with(scheme));

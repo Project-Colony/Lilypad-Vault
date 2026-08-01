@@ -6,8 +6,8 @@ use std::fs;
 use std::time::{Duration, Instant};
 
 use directories::ProjectDirs;
-use iced::widget::{column, container};
 use iced::alignment::{Horizontal, Vertical};
+use iced::widget::{column, container};
 use iced::{Color, Element, Length, Subscription, Task};
 use rand::RngExt;
 
@@ -19,8 +19,8 @@ use lilypad_common::{
     EntryHealthData,
 };
 use lilypad_core::{
-    decrypt, default_config, derive_key, encrypt, AppConfig, CryptoAlgorithm, Entry,
-    EntryMetadata, EntrySecret, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
+    decrypt, default_config, derive_key, encrypt, AppConfig, CryptoAlgorithm, Entry, EntryMetadata,
+    EntrySecret, KeyDerivationParams, KeyMaterial, KeyMetadata, Vault,
 };
 use lilypad_storage::LocalStore;
 use zeroize::Zeroize;
@@ -35,7 +35,11 @@ use crate::views;
 
 /// Convert a string to `Some(string)` if non-empty, or `None` otherwise.
 fn non_empty(s: impl Into<String> + AsRef<str>) -> Option<String> {
-    if s.as_ref().is_empty() { None } else { Some(s.into()) }
+    if s.as_ref().is_empty() {
+        None
+    } else {
+        Some(s.into())
+    }
 }
 
 /// Main Lilypad application
@@ -298,7 +302,7 @@ impl LilypadApp {
             theme_sort_by_color: false,
             lockout_state: LockoutState::default(),
             last_activity: now,
-                    clipboard_clear_time: None,
+            clipboard_clear_time: None,
             clipboard_value: None,
             show_reauth_modal: false,
             reauth_password: String::new(),
@@ -350,7 +354,8 @@ impl LilypadApp {
                 app.github_authenticated = true;
                 let token_store = lilypad_oauth::TokenStoreManager::new().ok();
                 if let Some(store) = token_store {
-                    if let Ok(Some(token)) = store.load_token(lilypad_oauth::OAuthProvider::GitHub) {
+                    if let Ok(Some(token)) = store.load_token(lilypad_oauth::OAuthProvider::GitHub)
+                    {
                         app.github_username = token.username.clone();
                     }
                 }
@@ -358,7 +363,9 @@ impl LilypadApp {
         }
 
         // Load persisted state
-        if let Some(project_dirs) = ProjectDirs::from_path(std::path::PathBuf::from("Colony/Lilypad")) {
+        if let Some(project_dirs) =
+            ProjectDirs::from_path(std::path::PathBuf::from("Colony/Lilypad"))
+        {
             let config_dir = project_dirs.config_dir();
             let welcome_ack_path = config_dir.join("welcome_ack");
             let settings_path = config_dir.join("settings.json");
@@ -496,12 +503,10 @@ impl LilypadApp {
             Message::OnboardingEnsureRepo => {
                 return self.ensure_github_repo();
             }
-            Message::OnboardingRepoResult(result) => {
-                match result {
-                    Ok(msg) => self.set_status(msg),
-                    Err(e) => self.set_status(format!("Repository setup failed: {}", e)),
-                }
-            }
+            Message::OnboardingRepoResult(result) => match result {
+                Ok(msg) => self.set_status(msg),
+                Err(e) => self.set_status(format!("Repository setup failed: {}", e)),
+            },
 
             // Search
             Message::SearchChanged(query) => {
@@ -795,7 +800,9 @@ impl LilypadApp {
                     if !new_name.is_empty() && new_name != old_name {
                         match self.store.rename_vault(&old_name, &new_name) {
                             Ok(()) => {
-                                if let Some(v) = self.available_vaults.iter_mut().find(|v| *v == &old_name) {
+                                if let Some(v) =
+                                    self.available_vaults.iter_mut().find(|v| *v == &old_name)
+                                {
                                     *v = new_name.clone();
                                 }
                                 if self.active_vault == old_name {
@@ -1061,7 +1068,10 @@ impl LilypadApp {
                 if breached.is_empty() {
                     self.set_status("No breached passwords found!");
                 } else {
-                    self.set_status(format!("{} potentially breached passwords found", breached.len()));
+                    self.set_status(format!(
+                        "{} potentially breached passwords found",
+                        breached.len()
+                    ));
                 }
             }
 
@@ -1233,7 +1243,12 @@ impl LilypadApp {
                 show_advanced_fields: self.show_advanced_fields,
                 hovered_entry_index: self.hovered_entry_index,
             }),
-            Category::Health => views::health::view(self.theme, v, self.health_report.as_ref(), &self.breached_entries),
+            Category::Health => views::health::view(
+                self.theme,
+                v,
+                self.health_report.as_ref(),
+                &self.breached_entries,
+            ),
             Category::Generator => views::generator::view(views::generator::GeneratorViewParams {
                 theme: self.theme,
                 variation: v,
@@ -1357,25 +1372,26 @@ impl LilypadApp {
 
         // Toast notification overlay
         if let Some(ref msg) = self.status_message {
-            let toast_pill: Element<Message> = container(
-                iced::widget::text(msg)
-                    .size(13)
-                    .color(Color::WHITE),
-            )
-            .padding([10, 20])
-            .style(move |_| theme::toast_container(self.theme, v))
-            .into();
+            let toast_pill: Element<Message> =
+                container(iced::widget::text(msg).size(13).color(Color::WHITE))
+                    .padding([10, 20])
+                    .style(move |_| theme::toast_container(self.theme, v))
+                    .into();
 
             let toast_overlay: Element<Message> = container(toast_pill)
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .align_x(Horizontal::Center)
                 .align_y(Vertical::Bottom)
-                .padding(iced::Padding { top: 0.0, right: 0.0, bottom: 20.0, left: 0.0 })
+                .padding(iced::Padding {
+                    top: 0.0,
+                    right: 0.0,
+                    bottom: 20.0,
+                    left: 0.0,
+                })
                 .into();
 
-            iced::widget::stack![content, toast_overlay]
-                .into()
+            iced::widget::stack![content, toast_overlay].into()
         } else {
             content
         }
@@ -1519,7 +1535,10 @@ impl LilypadApp {
 
     fn verify_master_password(&self, password: &str) -> bool {
         use subtle::ConstantTimeEq;
-        password.as_bytes().ct_eq(self.master_password.as_bytes()).into()
+        password
+            .as_bytes()
+            .ct_eq(self.master_password.as_bytes())
+            .into()
     }
 
     fn try_unlock_vault(&mut self) -> Task<Message> {
@@ -1722,16 +1741,13 @@ impl LilypadApp {
                 let strength = validate_password_strength(&secret.password);
                 let is_expired = entry.is_password_expired();
 
-                let username = entry
-                    .metadata
-                    .username
-                    .clone()
-                    .unwrap_or_default();
+                let username = entry.metadata.username.clone().unwrap_or_default();
                 let url = entry.metadata.url.clone().unwrap_or_default();
 
-                let totp_code = secret.totp_secret.as_ref().and_then(|s| {
-                    generate_totp_code(s)
-                });
+                let totp_code = secret
+                    .totp_secret
+                    .as_ref()
+                    .and_then(|s| generate_totp_code(s));
 
                 Some(VaultEntry {
                     title: entry.label.clone(),
@@ -1814,7 +1830,10 @@ impl LilypadApp {
             self.available_vaults.push(name.clone());
             self.show_new_vault_modal = false;
             self.new_vault_name.clear();
-            self.set_status(format!("Vault '{}' created. Switch to it and enter your password.", name));
+            self.set_status(format!(
+                "Vault '{}' created. Switch to it and enter your password.",
+                name
+            ));
         } else {
             self.set_status("A vault with this name already exists");
         }
@@ -1861,24 +1880,23 @@ impl LilypadApp {
                 .collect();
             self.entry_type = format!("{:?}", entry.entry_type);
             // Load raw attachment data from vault for editing
-            self.entry_attachments = if let (Some(ref vault), Some(ref key)) =
-                (&self.vault, &self.vault_key)
-            {
-                vault
-                    .entries
-                    .get(index)
-                    .and_then(|e| decrypt(key, &e.ciphertext).ok())
-                    .and_then(|bytes| serde_json::from_slice::<EntrySecret>(&bytes).ok())
-                    .map(|s| {
-                        s.attachments
-                            .into_iter()
-                            .map(|a| (a.filename, a.data_base64))
-                            .collect()
-                    })
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            };
+            self.entry_attachments =
+                if let (Some(ref vault), Some(ref key)) = (&self.vault, &self.vault_key) {
+                    vault
+                        .entries
+                        .get(index)
+                        .and_then(|e| decrypt(key, &e.ciphertext).ok())
+                        .and_then(|bytes| serde_json::from_slice::<EntrySecret>(&bytes).ok())
+                        .map(|s| {
+                            s.attachments
+                                .into_iter()
+                                .map(|a| (a.filename, a.data_base64))
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                } else {
+                    Vec::new()
+                };
             self.edit_mode = true;
             self.edit_index = Some(index);
             self.show_add_entry = true;
@@ -2135,15 +2153,16 @@ impl LilypadApp {
                 let password_age_days = (now.saturating_sub(e.updated_at)) / (24 * 60 * 60);
 
                 // Cross-reference with the core Entry for password expiry data
-                let (days_until_expiry, is_expired_from_entry) =
-                    if let Some(core_entry) = vault_entries_ref.and_then(|entries| entries.get(i)) {
-                        (
-                            core_entry.days_until_password_expires(),
-                            core_entry.is_password_expired(),
-                        )
-                    } else {
-                        (None, e.is_expired)
-                    };
+                let (days_until_expiry, is_expired_from_entry) = if let Some(core_entry) =
+                    vault_entries_ref.and_then(|entries| entries.get(i))
+                {
+                    (
+                        core_entry.days_until_password_expires(),
+                        core_entry.is_password_expired(),
+                    )
+                } else {
+                    (None, e.is_expired)
+                };
 
                 EntryHealthData {
                     label: e.title.clone(),
@@ -2211,9 +2230,7 @@ impl LilypadApp {
         for entry in &vault.entries {
             match decrypt(key, &entry.ciphertext) {
                 Ok(decrypted) => {
-                    if let Ok(secret) =
-                        serde_json::from_slice::<EntrySecret>(&decrypted)
-                    {
+                    if let Ok(secret) = serde_json::from_slice::<EntrySecret>(&decrypted) {
                         entries_json.push(serde_json::json!({
                             "label": entry.label,
                             "username": entry.metadata.username,
@@ -2352,16 +2369,11 @@ impl LilypadApp {
                                         .as_str()
                                         .unwrap_or("Imported")
                                         .to_string();
-                                    let username = entry_val["username"]
-                                        .as_str()
-                                        .unwrap_or("")
-                                        .to_string();
-                                    let password = entry_val["password"]
-                                        .as_str()
-                                        .unwrap_or("")
-                                        .to_string();
-                                    let url =
-                                        entry_val["url"].as_str().unwrap_or("").to_string();
+                                    let username =
+                                        entry_val["username"].as_str().unwrap_or("").to_string();
+                                    let password =
+                                        entry_val["password"].as_str().unwrap_or("").to_string();
+                                    let url = entry_val["url"].as_str().unwrap_or("").to_string();
                                     let notes =
                                         entry_val["notes"].as_str().unwrap_or("").to_string();
                                     let email =
@@ -2374,8 +2386,7 @@ impl LilypadApp {
                                                 .collect()
                                         })
                                         .unwrap_or_default();
-                                    let folder =
-                                        entry_val["folder"].as_str().map(String::from);
+                                    let folder = entry_val["folder"].as_str().map(String::from);
 
                                     let mut secret = EntrySecret::new(&password);
                                     secret.notes = non_empty(notes);
@@ -2391,9 +2402,8 @@ impl LilypadApp {
                                             folder,
                                             ..Default::default()
                                         };
-                                        let entry = Entry::new_with_metadata(
-                                            &label, metadata, ciphertext,
-                                        );
+                                        let entry =
+                                            Entry::new_with_metadata(&label, metadata, ciphertext);
                                         if vault.add_entry(entry).is_ok() {
                                             imported += 1;
                                         }
@@ -2509,13 +2519,10 @@ impl LilypadApp {
                         Ok(t) => t,
                         Err(e) => return Err(format!("{}", e)),
                     };
-                    let token_info = result
-                        .to_token_info()
-                        .with_username(user.login.clone());
-                    if let Err(e) = token_store.save_token(
-                        lilypad_oauth::OAuthProvider::GitHub,
-                        token_info,
-                    ) {
+                    let token_info = result.to_token_info().with_username(user.login.clone());
+                    if let Err(e) =
+                        token_store.save_token(lilypad_oauth::OAuthProvider::GitHub, token_info)
+                    {
                         return Err(format!("{}", e));
                     }
 
@@ -2701,9 +2708,7 @@ impl LilypadApp {
                 tokio::task::spawn_blocking(move || {
                     let mut backend = lilypad_oauth::GitHubSyncBackend::from_stored_token()
                         .map_err(|e| format!("{}", e))?;
-                    let payload = backend
-                        .pull(&vault_name)
-                        .map_err(|e| format!("{}", e))?;
+                    let payload = backend.pull(&vault_name).map_err(|e| format!("{}", e))?;
 
                     match payload {
                         Some(data) => {
@@ -2712,8 +2717,8 @@ impl LilypadApp {
                                 data_dir: store_root.to_string_lossy().to_string(),
                                 ..lilypad_core::default_config()
                             };
-                            let store =
-                                lilypad_storage::LocalStore::new(&config).map_err(|e| format!("{}", e))?;
+                            let store = lilypad_storage::LocalStore::new(&config)
+                                .map_err(|e| format!("{}", e))?;
                             store
                                 .apply_sync_payload(&vault_name, &data)
                                 .map_err(|e| format!("{}", e))?;
@@ -2757,9 +2762,7 @@ impl LilypadApp {
                 tokio::task::spawn_blocking(move || {
                     let mut backend = lilypad_oauth::GitHubSyncBackend::from_stored_token()
                         .map_err(|e| format!("{}", e))?;
-                    let payload = backend
-                        .pull(&vault_name)
-                        .map_err(|e| format!("{}", e))?;
+                    let payload = backend.pull(&vault_name).map_err(|e| format!("{}", e))?;
 
                     match payload {
                         Some(data) => {
@@ -2767,8 +2770,8 @@ impl LilypadApp {
                                 data_dir: store_root.to_string_lossy().to_string(),
                                 ..lilypad_core::default_config()
                             };
-                            let store =
-                                lilypad_storage::LocalStore::new(&config).map_err(|e| format!("{}", e))?;
+                            let store = lilypad_storage::LocalStore::new(&config)
+                                .map_err(|e| format!("{}", e))?;
                             store
                                 .apply_sync_payload(&vault_name, &data)
                                 .map_err(|e| format!("{}", e))?;
@@ -2778,9 +2781,7 @@ impl LilypadApp {
                                 data.len()
                             ))
                         }
-                        None => {
-                            Ok("No remote vault found on GitHub".to_string())
-                        }
+                        None => Ok("No remote vault found on GitHub".to_string()),
                     }
                 })
                 .await
@@ -2841,7 +2842,11 @@ impl LilypadApp {
 
         if let Some(path) = file {
             match std::fs::write(&path, csv_data.as_bytes()) {
-                Ok(()) => self.set_status(format!("{} entries exported to {}", exported, path.display())),
+                Ok(()) => self.set_status(format!(
+                    "{} entries exported to {}",
+                    exported,
+                    path.display()
+                )),
                 Err(e) => self.set_status(format!("CSV export failed: {}", e)),
             }
         }
@@ -2888,7 +2893,10 @@ impl LilypadApp {
             .from_reader(contents.as_bytes());
 
         let headers: Vec<String> = match reader.headers() {
-            Ok(h) => h.iter().map(|s| s.to_lowercase().trim().to_string()).collect(),
+            Ok(h) => h
+                .iter()
+                .map(|s| s.to_lowercase().trim().to_string())
+                .collect(),
             Err(e) => {
                 self.set_status(format!("Invalid CSV headers: {}", e));
                 return Task::none();
@@ -2897,14 +2905,42 @@ impl LilypadApp {
 
         // Detect format based on headers
         // Supports: Chrome, Firefox, Bitwarden, LastPass, 1Password, KeePass, Dashlane, NordPass
-        let name_col = headers.iter().position(|h| matches!(h.as_str(), "name" | "title" | "login_name" | "login_label" | "entry"));
-        let url_col = headers.iter().position(|h| matches!(h.as_str(), "url" | "login_uri" | "web site" | "website" | "urls"));
-        let user_col = headers.iter().position(|h| matches!(h.as_str(), "username" | "login_username" | "user name" | "login" | "login_name"));
-        let pass_col = headers.iter().position(|h| matches!(h.as_str(), "password" | "login_password" | "pass"));
-        let notes_col = headers.iter().position(|h| matches!(h.as_str(), "notes" | "extra" | "comments" | "note"));
-        let folder_col = headers.iter().position(|h| matches!(h.as_str(), "folder" | "group" | "grouping" | "collection_ids" | "category"));
-        let totp_col = headers.iter().position(|h| matches!(h.as_str(), "totp" | "login_totp" | "otpauth" | "2fa"));
-        let email_col = headers.iter().position(|h| matches!(h.as_str(), "email" | "e-mail"));
+        let name_col = headers.iter().position(|h| {
+            matches!(
+                h.as_str(),
+                "name" | "title" | "login_name" | "login_label" | "entry"
+            )
+        });
+        let url_col = headers.iter().position(|h| {
+            matches!(
+                h.as_str(),
+                "url" | "login_uri" | "web site" | "website" | "urls"
+            )
+        });
+        let user_col = headers.iter().position(|h| {
+            matches!(
+                h.as_str(),
+                "username" | "login_username" | "user name" | "login" | "login_name"
+            )
+        });
+        let pass_col = headers
+            .iter()
+            .position(|h| matches!(h.as_str(), "password" | "login_password" | "pass"));
+        let notes_col = headers
+            .iter()
+            .position(|h| matches!(h.as_str(), "notes" | "extra" | "comments" | "note"));
+        let folder_col = headers.iter().position(|h| {
+            matches!(
+                h.as_str(),
+                "folder" | "group" | "grouping" | "collection_ids" | "category"
+            )
+        });
+        let totp_col = headers
+            .iter()
+            .position(|h| matches!(h.as_str(), "totp" | "login_totp" | "otpauth" | "2fa"));
+        let email_col = headers
+            .iter()
+            .position(|h| matches!(h.as_str(), "email" | "e-mail"));
 
         let mut imported = 0u32;
 
@@ -2915,9 +2951,7 @@ impl LilypadApp {
             };
 
             let get_field = |col: Option<usize>| -> String {
-                col.and_then(|i| record.get(i))
-                    .unwrap_or("")
-                    .to_string()
+                col.and_then(|i| record.get(i)).unwrap_or("").to_string()
             };
 
             let name = get_field(name_col);
@@ -2931,7 +2965,9 @@ impl LilypadApp {
 
             // Skip empty entries
             let label = if name.is_empty() {
-                if url.is_empty() { continue; }
+                if url.is_empty() {
+                    continue;
+                }
                 url.clone()
             } else {
                 name
@@ -3005,7 +3041,7 @@ impl LilypadApp {
         Task::perform(
             async move {
                 tokio::task::spawn_blocking(move || {
-                    use sha1::{Sha1, Digest};
+                    use sha1::{Digest, Sha1};
                     let client = reqwest::blocking::Client::builder()
                         .timeout(std::time::Duration::from_secs(10))
                         .user_agent("Lilypad-BreachCheck/1.0")
@@ -3152,9 +3188,10 @@ impl LilypadApp {
             self.history_entries = entry
                 .get_history()
                 .map(|h| {
-                    let desc = h.description.clone().unwrap_or_else(|| {
-                        format!("{:?}", h.change_type)
-                    });
+                    let desc = h
+                        .description
+                        .clone()
+                        .unwrap_or_else(|| format!("{:?}", h.change_type));
                     (h.timestamp, desc)
                 })
                 .collect();

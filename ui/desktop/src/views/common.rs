@@ -25,11 +25,12 @@ pub fn separator(theme: LilypadTheme, _v: UiVariation) -> Element<'static, Messa
 pub fn padded_separator(theme: LilypadTheme, _v: UiVariation) -> Element<'static, Message> {
     let palette = theme.palette();
     container(
-        container(Space::new().width(Length::Fill).height(Length::Fixed(1.0)))
-            .style(move |_| container::Style {
+        container(Space::new().width(Length::Fill).height(Length::Fixed(1.0))).style(move |_| {
+            container::Style {
                 background: Some(iced::Background::Color(palette.border)),
                 ..Default::default()
-            }),
+            }
+        }),
     )
     .padding([8, 0])
     .into()
@@ -72,9 +73,11 @@ pub fn modal_header(
     let title = text(title_text.to_string())
         .size(20)
         .color(palette.text_primary);
-    let close_btn = button(
-        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
-    )
+    let close_btn = button(fonts::centered_icon_colored(
+        icons::CLOSE,
+        16.0,
+        palette.text_muted,
+    ))
     .padding([8, 12])
     .style(theme::icon_style(theme, v))
     .on_press(close_msg);
@@ -98,14 +101,22 @@ pub fn modal_header_with_icon(
     let title = text(title_text.to_string())
         .size(20)
         .color(palette.text_primary);
-    let close_btn = button(
-        fonts::centered_icon_colored(icons::CLOSE, 16.0, palette.text_muted),
-    )
+    let close_btn = button(fonts::centered_icon_colored(
+        icons::CLOSE,
+        16.0,
+        palette.text_muted,
+    ))
     .padding([8, 12])
     .style(theme::icon_style(theme, v))
     .on_press(close_msg);
 
-    row![icon_el, Space::new().width(12), title, Space::new().width(Length::Fill), close_btn,]
-        .align_y(Vertical::Center)
-        .into()
+    row![
+        icon_el,
+        Space::new().width(12),
+        title,
+        Space::new().width(Length::Fill),
+        close_btn,
+    ]
+    .align_y(Vertical::Center)
+    .into()
 }

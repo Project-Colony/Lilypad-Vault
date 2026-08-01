@@ -57,10 +57,14 @@ fn bench_derive_key(c: &mut Criterion) {
 }
 
 fn bench_key_generate(c: &mut Criterion) {
-    c.bench_function("KeyMaterial::generate", |b| {
-        b.iter(KeyMaterial::generate)
-    });
+    c.bench_function("KeyMaterial::generate", |b| b.iter(KeyMaterial::generate));
 }
 
-criterion_group!(benches, bench_encrypt, bench_decrypt, bench_derive_key, bench_key_generate);
+criterion_group!(
+    benches,
+    bench_encrypt,
+    bench_decrypt,
+    bench_derive_key,
+    bench_key_generate
+);
 criterion_main!(benches);

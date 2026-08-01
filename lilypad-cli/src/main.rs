@@ -12,8 +12,9 @@ use std::io;
 use std::path::PathBuf;
 
 use commands::{
-    backup, entries, export, import, oauth, security, vault,
+    backup, entries, export, import, oauth, security,
     utils::{non_empty_value, OutputFormat, SecureString},
+    vault,
 };
 use lilypad_core::default_config;
 use lilypad_storage::LocalStore;
@@ -413,7 +414,6 @@ enum Commands {
     },
 
     // ============== GitHub OAuth & Sync Commands ==============
-
     /// Log in to GitHub for vault synchronization.
     Login,
 
@@ -473,7 +473,9 @@ fn main() -> Result<()> {
         eprintln!("         Prefer interactive entry or LILYPAD_MASTER_PASSWORD with caution.");
     }
     if std::env::var("LILYPAD_MASTER_PASSWORD").is_ok() {
-        eprintln!("WARNING: Using master password from LILYPAD_MASTER_PASSWORD environment variable.");
+        eprintln!(
+            "WARNING: Using master password from LILYPAD_MASTER_PASSWORD environment variable."
+        );
         eprintln!("         This may be visible in process listings and shell history.");
         eprintln!("         Consider unsetting it after use: unset LILYPAD_MASTER_PASSWORD");
     }
@@ -497,78 +499,298 @@ fn main() -> Result<()> {
 
     match cli.command {
         // Vault commands
-        Commands::Init { vault, use_master_password } => {
-            vault::init_vault(&store, &config, &vault, use_master_password, master_password.as_ref().map(|s| s.as_str()))
-        }
+        Commands::Init {
+            vault,
+            use_master_password,
+        } => vault::init_vault(
+            &store,
+            &config,
+            &vault,
+            use_master_password,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
         Commands::Vaults => vault::list_vaults(&store, output_format),
         Commands::RenameVault { from, to } => vault::rename_vault(&store, &from, &to),
         Commands::DeleteVault { vault, force } => vault::delete_vault(&store, &vault, force),
         Commands::VerifyVault { vault } => vault::verify_vault(&store, &vault),
 
         // Entry commands
-        Commands::Add { vault, label, value, username, url, notes, tags, folder, entry_type, totp_secret, attachment, require_strong, expires_in } => {
-            entries::add_entry(&store, &config, &vault, &label, &value, username, url, notes, tags, folder, entry_type, totp_secret, attachment, require_strong, expires_in, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::List { vault } => {
-            entries::list_entries(&store, &config, &vault, output_format, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::Get { vault, label, copy, clipboard_timeout, show_password } => {
-            entries::get_entry(&store, &config, &vault, &label, copy, clipboard_timeout, show_password, output_format, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::Update { vault, label, value, username, url, notes, tags, remove_tags, clear_tags, folder, entry_type, totp_secret, attachment, require_strong, expires_in } => {
-            entries::update_entry(&store, &config, &vault, &label, &value, username, url, notes, tags, remove_tags, clear_tags, folder, entry_type, totp_secret, attachment, require_strong, expires_in, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::Remove { vault, label } => {
-            entries::remove_entry(&store, &config, &vault, &label, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::RenameEntry { vault, label, new_label } => {
-            entries::rename_entry(&store, &config, &vault, &label, &new_label, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::Search { vault, query, all_vaults } => {
+        Commands::Add {
+            vault,
+            label,
+            value,
+            username,
+            url,
+            notes,
+            tags,
+            folder,
+            entry_type,
+            totp_secret,
+            attachment,
+            require_strong,
+            expires_in,
+        } => entries::add_entry(
+            &store,
+            &config,
+            &vault,
+            &label,
+            &value,
+            username,
+            url,
+            notes,
+            tags,
+            folder,
+            entry_type,
+            totp_secret,
+            attachment,
+            require_strong,
+            expires_in,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::List { vault } => entries::list_entries(
+            &store,
+            &config,
+            &vault,
+            output_format,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::Get {
+            vault,
+            label,
+            copy,
+            clipboard_timeout,
+            show_password,
+        } => entries::get_entry(
+            &store,
+            &config,
+            &vault,
+            &label,
+            copy,
+            clipboard_timeout,
+            show_password,
+            output_format,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::Update {
+            vault,
+            label,
+            value,
+            username,
+            url,
+            notes,
+            tags,
+            remove_tags,
+            clear_tags,
+            folder,
+            entry_type,
+            totp_secret,
+            attachment,
+            require_strong,
+            expires_in,
+        } => entries::update_entry(
+            &store,
+            &config,
+            &vault,
+            &label,
+            &value,
+            username,
+            url,
+            notes,
+            tags,
+            remove_tags,
+            clear_tags,
+            folder,
+            entry_type,
+            totp_secret,
+            attachment,
+            require_strong,
+            expires_in,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::Remove { vault, label } => entries::remove_entry(
+            &store,
+            &config,
+            &vault,
+            &label,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::RenameEntry {
+            vault,
+            label,
+            new_label,
+        } => entries::rename_entry(
+            &store,
+            &config,
+            &vault,
+            &label,
+            &new_label,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::Search {
+            vault,
+            query,
+            all_vaults,
+        } => {
             if all_vaults {
-                entries::search_all_vaults(&store, &config, &query, output_format, master_password.as_ref().map(|s| s.as_str()))
+                entries::search_all_vaults(
+                    &store,
+                    &config,
+                    &query,
+                    output_format,
+                    master_password.as_ref().map(|s| s.as_str()),
+                )
             } else {
-                let vault_name = vault.ok_or_else(|| anyhow::anyhow!("vault name is required (or use --all-vaults)"))?;
-                entries::search_entries(&store, &config, &vault_name, &query, output_format, master_password.as_ref().map(|s| s.as_str()))
+                let vault_name = vault.ok_or_else(|| {
+                    anyhow::anyhow!("vault name is required (or use --all-vaults)")
+                })?;
+                entries::search_entries(
+                    &store,
+                    &config,
+                    &vault_name,
+                    &query,
+                    output_format,
+                    master_password.as_ref().map(|s| s.as_str()),
+                )
             }
         }
-        Commands::Generate { length, uppercase, lowercase, digits, symbols, copy, clipboard_timeout } => {
-            entries::generate_password(length, uppercase, lowercase, digits, symbols, copy, clipboard_timeout)
-        }
+        Commands::Generate {
+            length,
+            uppercase,
+            lowercase,
+            digits,
+            symbols,
+            copy,
+            clipboard_timeout,
+        } => entries::generate_password(
+            length,
+            uppercase,
+            lowercase,
+            digits,
+            symbols,
+            copy,
+            clipboard_timeout,
+        ),
 
         // Import/Export commands
-        Commands::Export { vault, output, format, allow_plaintext } => {
-            export::export_vault(&store, &config, &vault, &output, &format, allow_plaintext, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::Import { vault, input, format, source } => {
-            import::import_vault(&store, &config, &vault, &input, &format, &source, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::AuditLog { vault, output, format, action, entry, after, before, limit } => {
-            export::export_audit_log(&store, &config, &vault, output.as_deref(), &format, action.as_deref(), entry.as_deref(), after.as_deref(), before.as_deref(), limit, master_password.as_ref().map(|s| s.as_str()))
-        }
+        Commands::Export {
+            vault,
+            output,
+            format,
+            allow_plaintext,
+        } => export::export_vault(
+            &store,
+            &config,
+            &vault,
+            &output,
+            &format,
+            allow_plaintext,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::Import {
+            vault,
+            input,
+            format,
+            source,
+        } => import::import_vault(
+            &store,
+            &config,
+            &vault,
+            &input,
+            &format,
+            &source,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::AuditLog {
+            vault,
+            output,
+            format,
+            action,
+            entry,
+            after,
+            before,
+            limit,
+        } => export::export_audit_log(
+            &store,
+            &config,
+            &vault,
+            output.as_deref(),
+            &format,
+            action.as_deref(),
+            entry.as_deref(),
+            after.as_deref(),
+            before.as_deref(),
+            limit,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
 
         // Security commands
-        Commands::RotateKey { vault, use_master_password, new_master_password, skip_backup } => {
-            security::rotate_key(&store, &config, &vault, use_master_password, new_master_password.as_deref(), skip_backup, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::ChangeMasterPassword { vault } => {
-            security::change_master_password(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::BreachCheck { vault, entry } => {
-            security::breach_check(&store, &config, &vault, entry.as_deref(), master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::Totp { vault, label } => {
-            security::show_totp(&store, &config, &vault, &label, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::BackupCodes { vault, label, generate, verify } => {
-            security::backup_codes(&store, &config, &vault, &label, generate, verify.as_deref(), master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::Audit { vault } => {
-            security::audit_vault(&store, &config, &vault, output_format, master_password.as_ref().map(|s| s.as_str()))
-        }
-        Commands::History { vault, label, limit } => {
-            security::show_entry_history(&store, &config, &vault, &label, limit, master_password.as_ref().map(|s| s.as_str()))
-        }
+        Commands::RotateKey {
+            vault,
+            use_master_password,
+            new_master_password,
+            skip_backup,
+        } => security::rotate_key(
+            &store,
+            &config,
+            &vault,
+            use_master_password,
+            new_master_password.as_deref(),
+            skip_backup,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::ChangeMasterPassword { vault } => security::change_master_password(
+            &store,
+            &config,
+            &vault,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::BreachCheck { vault, entry } => security::breach_check(
+            &store,
+            &config,
+            &vault,
+            entry.as_deref(),
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::Totp { vault, label } => security::show_totp(
+            &store,
+            &config,
+            &vault,
+            &label,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::BackupCodes {
+            vault,
+            label,
+            generate,
+            verify,
+        } => security::backup_codes(
+            &store,
+            &config,
+            &vault,
+            &label,
+            generate,
+            verify.as_deref(),
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::Audit { vault } => security::audit_vault(
+            &store,
+            &config,
+            &vault,
+            output_format,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
+        Commands::History {
+            vault,
+            label,
+            limit,
+        } => security::show_entry_history(
+            &store,
+            &config,
+            &vault,
+            &label,
+            limit,
+            master_password.as_ref().map(|s| s.as_str()),
+        ),
 
         // Backup commands
         Commands::Backup { vault } => backup::create_backup(&store, &vault),
@@ -589,18 +811,30 @@ fn main() -> Result<()> {
         Commands::Logout => oauth::logout(output_format),
         Commands::AuthStatus => oauth::status(output_format),
         Commands::Sync(sync_cmd) => match sync_cmd {
-            SyncCommands::Push { vault, force } => {
-                oauth::sync_push(&store, &config, &vault, force, master_password.as_ref().map(|s| s.as_str()), output_format)
-            }
-            SyncCommands::Pull { vault, force } => {
-                oauth::sync_pull(&store, &config, &vault, force, master_password.as_ref().map(|s| s.as_str()), output_format)
-            }
-            SyncCommands::Delete { vault } => {
-                oauth::sync_delete(&vault, output_format)
-            }
-            SyncCommands::Status { vault } => {
-                oauth::sync_status(&store, &config, &vault, master_password.as_ref().map(|s| s.as_str()), output_format)
-            }
+            SyncCommands::Push { vault, force } => oauth::sync_push(
+                &store,
+                &config,
+                &vault,
+                force,
+                master_password.as_ref().map(|s| s.as_str()),
+                output_format,
+            ),
+            SyncCommands::Pull { vault, force } => oauth::sync_pull(
+                &store,
+                &config,
+                &vault,
+                force,
+                master_password.as_ref().map(|s| s.as_str()),
+                output_format,
+            ),
+            SyncCommands::Delete { vault } => oauth::sync_delete(&vault, output_format),
+            SyncCommands::Status { vault } => oauth::sync_status(
+                &store,
+                &config,
+                &vault,
+                master_password.as_ref().map(|s| s.as_str()),
+                output_format,
+            ),
         },
     }
 }

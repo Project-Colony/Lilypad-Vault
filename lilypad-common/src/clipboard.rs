@@ -327,7 +327,10 @@ mod tests {
         let rx = clear_clipboard_after("some_secret_value".to_string(), 0);
         // Should not block or hang; recv should return quickly
         let result = rx.recv().expect("receiver should get a value");
-        assert!(!result, "zero timeout should return false (no clearing performed)");
+        assert!(
+            !result,
+            "zero timeout should return false (no clearing performed)"
+        );
 
         // Multiple calls should each return their own independent receiver
         let rx2 = clear_clipboard_after("another_value".to_string(), 0);

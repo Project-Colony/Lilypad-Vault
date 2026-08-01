@@ -30,10 +30,14 @@ pub fn view(
     let error_message_owned = error_message.map(|s| s.to_string());
 
     // Logo/Brand
-    let logo: Element<'static, Message> = container(fonts::centered_icon_colored(icons::SHIELD, 56.0, palette.primary))
-        .width(Length::Fill)
-        .align_x(Horizontal::Center)
-        .into();
+    let logo: Element<'static, Message> = container(fonts::centered_icon_colored(
+        icons::SHIELD,
+        56.0,
+        palette.primary,
+    ))
+    .width(Length::Fill)
+    .align_x(Horizontal::Center)
+    .into();
 
     let title = text("Lilypad")
         .size(36)
@@ -135,7 +139,6 @@ pub fn view(
     }
     .align_x(Horizontal::Center);
 
-
     // Vault selector (top-left corner)
     let vault_selector: Element<'static, Message> = if available_vaults.len() > 1 {
         let active_vault_owned = active_vault.to_string();
@@ -147,8 +150,16 @@ pub fn view(
                 button(
                     text(name.clone())
                         .size(13)
-                        .font(if is_active { fonts::FONT_SEMIBOLD } else { fonts::FONT_REGULAR })
-                        .color(if is_active { palette.primary } else { palette.text_muted }),
+                        .font(if is_active {
+                            fonts::FONT_SEMIBOLD
+                        } else {
+                            fonts::FONT_REGULAR
+                        })
+                        .color(if is_active {
+                            palette.primary
+                        } else {
+                            palette.text_muted
+                        }),
                 )
                 .padding([6, 12])
                 .style(move |t, s| {
@@ -163,12 +174,10 @@ pub fn view(
             })
             .collect();
 
-        container(
-            row(vault_buttons).spacing(4).align_y(Vertical::Center),
-        )
-        .padding([12, 20])
-        .width(Length::Fill)
-        .into()
+        container(row(vault_buttons).spacing(4).align_y(Vertical::Center))
+            .padding([12, 20])
+            .width(Length::Fill)
+            .into()
     } else {
         Space::new().height(0).into()
     };
@@ -251,25 +260,17 @@ fn build_create_form(
             s if s.score() >= 40 => ("Fair", palette.warning),
             _ => ("Weak", palette.danger),
         };
-        Some(
-            text(label)
-                .size(12)
-                .font(fonts::FONT_MEDIUM)
-                .color(color),
-        )
+        Some(text(label).size(12).font(fonts::FONT_MEDIUM).color(color))
     };
 
-    let can_create =
-        !master_password.is_empty() && !confirm_password.is_empty() && master_password == confirm_password;
+    let can_create = !master_password.is_empty()
+        && !confirm_password.is_empty()
+        && master_password == confirm_password;
 
     let create_btn = button(
-        container(
-            text("Create Vault")
-                .size(15)
-                .font(fonts::FONT_SEMIBOLD),
-        )
-        .width(Length::Fill)
-        .align_x(Horizontal::Center),
+        container(text("Create Vault").size(15).font(fonts::FONT_SEMIBOLD))
+            .width(Length::Fill)
+            .align_x(Horizontal::Center),
     )
     .width(Length::Fill)
     .padding([14, 24])
@@ -357,13 +358,9 @@ fn build_unlock_form(
         .style(theme::text_input_style_closure(theme, v));
 
     let unlock_btn = button(
-        container(
-            text("Unlock Vault")
-                .size(15)
-                .font(fonts::FONT_SEMIBOLD),
-        )
-        .width(Length::Fill)
-        .align_x(Horizontal::Center),
+        container(text("Unlock Vault").size(15).font(fonts::FONT_SEMIBOLD))
+            .width(Length::Fill)
+            .align_x(Horizontal::Center),
     )
     .width(Length::Fill)
     .padding([14, 24])

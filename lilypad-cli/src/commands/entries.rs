@@ -2,8 +2,7 @@
 
 use anyhow::{anyhow, Context, Result};
 use lilypad_common::{
-    clipboard::copy_to_clipboard_with_timeout,
-    time::format_timestamp_relative,
+    clipboard::copy_to_clipboard_with_timeout, time::format_timestamp_relative,
     validation::validate_password_strength,
 };
 use lilypad_core::{Entry, EntrySecret};
@@ -358,7 +357,10 @@ pub fn rename_entry(
     }
     // Check that new label doesn't conflict
     if vault.find_entry(new_label).is_some() {
-        return Err(anyhow!("an entry with label '{}' already exists", new_label));
+        return Err(anyhow!(
+            "an entry with label '{}' already exists",
+            new_label
+        ));
     }
 
     // Find the entry by index and rename it

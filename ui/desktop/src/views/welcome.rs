@@ -135,7 +135,11 @@ pub fn view(params: OnboardingParams<'_>) -> Element<'static, Message> {
 // Page 1 — Welcome
 // ============================================================================
 
-fn welcome_page(_theme: LilypadTheme, _v: UiVariation, palette: &LilypadPalette) -> Element<'static, Message> {
+fn welcome_page(
+    _theme: LilypadTheme,
+    _v: UiVariation,
+    palette: &LilypadPalette,
+) -> Element<'static, Message> {
     let logo = fonts::centered_icon_colored(icons::FLOWER, 64.0, palette.primary);
 
     let title = text("Welcome to Lilypad")
@@ -170,7 +174,11 @@ fn welcome_page(_theme: LilypadTheme, _v: UiVariation, palette: &LilypadPalette)
 // Page 2 — Features
 // ============================================================================
 
-fn features_page(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) -> Element<'static, Message> {
+fn features_page(
+    theme: LilypadTheme,
+    v: UiVariation,
+    palette: &LilypadPalette,
+) -> Element<'static, Message> {
     let title = text("What Lilypad Does")
         .size(24)
         .font(fonts::FONT_BOLD)
@@ -242,14 +250,12 @@ fn feature_item(
     title_text: &'static str,
     description: &'static str,
 ) -> Element<'static, Message> {
-    let icon_el = container(
-        fonts::centered_icon_colored(icon, 20.0, palette.primary),
-    )
-    .width(Length::Fixed(40.0))
-    .height(Length::Fixed(40.0))
-    .align_x(Horizontal::Center)
-    .align_y(Vertical::Center)
-    .style(move |_| theme::elevated_container(theme, v));
+    let icon_el = container(fonts::centered_icon_colored(icon, 20.0, palette.primary))
+        .width(Length::Fixed(40.0))
+        .height(Length::Fixed(40.0))
+        .align_x(Horizontal::Center)
+        .align_y(Vertical::Center)
+        .style(move |_| theme::elevated_container(theme, v));
 
     let text_col = column![
         text(title_text)
@@ -272,7 +278,11 @@ fn feature_item(
 // Page 3 — Colony
 // ============================================================================
 
-fn colony_page(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) -> Element<'static, Message> {
+fn colony_page(
+    theme: LilypadTheme,
+    v: UiVariation,
+    palette: &LilypadPalette,
+) -> Element<'static, Message> {
     let globe = fonts::centered_icon_colored(icons::GLOBE, 48.0, palette.primary);
 
     let title = text("Part of Colony")
@@ -375,7 +385,11 @@ fn tutorial_page(
     .into()
 }
 
-fn tutorial_generate(theme: LilypadTheme, v: UiVariation, palette: &LilypadPalette) -> Element<'static, Message> {
+fn tutorial_generate(
+    theme: LilypadTheme,
+    v: UiVariation,
+    palette: &LilypadPalette,
+) -> Element<'static, Message> {
     let instruction = text("Step 1 of 3 — Generate a password")
         .size(14)
         .font(fonts::FONT_MEDIUM)
@@ -771,9 +785,7 @@ fn github_connected(
         .color(palette.success);
 
     let username_row = row![
-        text("Logged in as")
-            .size(13)
-            .color(palette.text_secondary),
+        text("Logged in as").size(13).color(palette.text_secondary),
         Space::new().width(6),
         text(user_display)
             .size(13)
@@ -962,8 +974,9 @@ fn create_vault_page(
     };
 
     // Create vault button
-    let can_create =
-        !master_password.is_empty() && !confirm_password.is_empty() && master_password == confirm_password;
+    let can_create = !master_password.is_empty()
+        && !confirm_password.is_empty()
+        && master_password == confirm_password;
 
     let create_btn = button(
         container(

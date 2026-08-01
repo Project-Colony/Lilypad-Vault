@@ -21,9 +21,7 @@ pub fn view(
 ) -> Element<'static, Message> {
     let palette = theme.palette();
 
-    let title = text("Password Health")
-        .size(24)
-        .color(palette.text_primary);
+    let title = text("Password Health").size(24).color(palette.text_primary);
 
     let subtitle = text("Monitor the security of your credentials")
         .size(14)
@@ -43,31 +41,31 @@ pub fn view(
         let score_value = report.score.score;
         let grade_card = container(
             row![
-                container(
-                    text(grade_letter)
-                        .size(48)
-                        .color(grade_color),
-                )
-                .width(Length::Fixed(80.0))
-                .height(Length::Fixed(80.0))
-                .align_x(Horizontal::Center)
-                .align_y(Vertical::Center)
-                .style(move |_| container::Style {
-                    background: Some(iced::Background::Color(iced::Color {
-                        a: 0.15,
-                        ..grade_color
-                    })),
-                    border: iced::Border {
-                        radius: 12.0.into(),
+                container(text(grade_letter).size(48).color(grade_color),)
+                    .width(Length::Fixed(80.0))
+                    .height(Length::Fixed(80.0))
+                    .align_x(Horizontal::Center)
+                    .align_y(Vertical::Center)
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(iced::Color {
+                            a: 0.15,
+                            ..grade_color
+                        })),
+                        border: iced::Border {
+                            radius: 12.0.into(),
+                            ..Default::default()
+                        },
                         ..Default::default()
-                    },
-                    ..Default::default()
-                }),
+                    }),
                 Space::new().width(24),
                 column![
-                    text("Overall Health Score").size(16).color(palette.text_primary),
+                    text("Overall Health Score")
+                        .size(16)
+                        .color(palette.text_primary),
                     Space::new().height(4),
-                    text(format!("{} / 100", score_value)).size(28).color(grade_color),
+                    text(format!("{} / 100", score_value))
+                        .size(28)
+                        .color(grade_color),
                     Space::new().height(4),
                     text(grade_description(&report.score.grade))
                         .size(13)
@@ -142,77 +140,75 @@ pub fn view(
             .size(16)
             .color(palette.text_primary);
 
-        let issues_content: Element<'static, Message> = if weak_passwords == 0
-            && reused_passwords == 0
-            && expired_passwords == 0
-        {
-            container(
-                column![
-                    fonts::centered_icon_colored(icons::CIRCLE_CHECK, 32.0, palette.success),
-                    Space::new().height(12),
-                    text("All passwords are healthy!")
-                        .size(14)
-                        .color(palette.text_secondary),
-                ]
-                .align_x(Horizontal::Center),
-            )
-            .width(Length::Fill)
-            .padding(32)
-            .align_x(Horizontal::Center)
-            .into()
-        } else {
-            let mut issues: Vec<Element<'static, Message>> = Vec::new();
-
-            if weak_passwords > 0 {
-                issues.push(issue_item(
-                    theme,
-                    v,
-                    "Weak Passwords",
-                    format!(
-                        "{} password{} need{} to be strengthened",
-                        weak_passwords,
-                        if weak_passwords == 1 { "" } else { "s" },
-                        if weak_passwords == 1 { "s" } else { "" }
-                    ),
-                    palette.warning,
-                ));
-            }
-
-            if reused_passwords > 0 {
-                issues.push(issue_item(
-                    theme,
-                    v,
-                    "Reused Passwords",
-                    format!(
-                        "{} password{} {} being reused across accounts",
-                        reused_passwords,
-                        if reused_passwords == 1 { "" } else { "s" },
-                        if reused_passwords == 1 { "is" } else { "are" }
-                    ),
-                    palette.danger,
-                ));
-            }
-
-            if expired_passwords > 0 {
-                issues.push(issue_item(
-                    theme,
-                    v,
-                    "Expired Passwords",
-                    format!(
-                        "{} password{} {} older than recommended",
-                        expired_passwords,
-                        if expired_passwords == 1 { "" } else { "s" },
-                        if expired_passwords == 1 { "is" } else { "are" }
-                    ),
-                    palette.warning,
-                ));
-            }
-
-            scrollable(column(issues).spacing(12))
-                .height(Length::Fill)
-                .style(move |_theme, _status| theme::scrollable_style(theme, v))
+        let issues_content: Element<'static, Message> =
+            if weak_passwords == 0 && reused_passwords == 0 && expired_passwords == 0 {
+                container(
+                    column![
+                        fonts::centered_icon_colored(icons::CIRCLE_CHECK, 32.0, palette.success),
+                        Space::new().height(12),
+                        text("All passwords are healthy!")
+                            .size(14)
+                            .color(palette.text_secondary),
+                    ]
+                    .align_x(Horizontal::Center),
+                )
+                .width(Length::Fill)
+                .padding(32)
+                .align_x(Horizontal::Center)
                 .into()
-        };
+            } else {
+                let mut issues: Vec<Element<'static, Message>> = Vec::new();
+
+                if weak_passwords > 0 {
+                    issues.push(issue_item(
+                        theme,
+                        v,
+                        "Weak Passwords",
+                        format!(
+                            "{} password{} need{} to be strengthened",
+                            weak_passwords,
+                            if weak_passwords == 1 { "" } else { "s" },
+                            if weak_passwords == 1 { "s" } else { "" }
+                        ),
+                        palette.warning,
+                    ));
+                }
+
+                if reused_passwords > 0 {
+                    issues.push(issue_item(
+                        theme,
+                        v,
+                        "Reused Passwords",
+                        format!(
+                            "{} password{} {} being reused across accounts",
+                            reused_passwords,
+                            if reused_passwords == 1 { "" } else { "s" },
+                            if reused_passwords == 1 { "is" } else { "are" }
+                        ),
+                        palette.danger,
+                    ));
+                }
+
+                if expired_passwords > 0 {
+                    issues.push(issue_item(
+                        theme,
+                        v,
+                        "Expired Passwords",
+                        format!(
+                            "{} password{} {} older than recommended",
+                            expired_passwords,
+                            if expired_passwords == 1 { "" } else { "s" },
+                            if expired_passwords == 1 { "is" } else { "are" }
+                        ),
+                        palette.warning,
+                    ));
+                }
+
+                scrollable(column(issues).spacing(12))
+                    .height(Length::Fill)
+                    .style(move |_theme, _status| theme::scrollable_style(theme, v))
+                    .into()
+            };
 
         // Refresh button
         let refresh_btn = button(
@@ -242,15 +238,17 @@ pub fn view(
 
         // Breached entries section
         let breach_section: Element<'static, Message> = if !breached_entries.is_empty() {
-            let breach_title = text("Breached Passwords")
-                .size(16)
-                .color(palette.danger);
+            let breach_title = text("Breached Passwords").size(16).color(palette.danger);
 
             let breach_hint = text(format!(
                 "{} password{} found in known data breaches. Change {} immediately!",
                 breached_entries.len(),
                 if breached_entries.len() == 1 { "" } else { "s" },
-                if breached_entries.len() == 1 { "it" } else { "them" }
+                if breached_entries.len() == 1 {
+                    "it"
+                } else {
+                    "them"
+                }
             ))
             .size(13)
             .color(palette.text_secondary);
@@ -261,7 +259,11 @@ pub fn view(
                     let label = entry_label.clone();
                     container(
                         row![
-                            fonts::centered_icon_colored(icons::TRIANGLE_EXCLAMATION, 14.0, palette.danger),
+                            fonts::centered_icon_colored(
+                                icons::TRIANGLE_EXCLAMATION,
+                                14.0,
+                                palette.danger
+                            ),
                             Space::new().width(12),
                             text(label).size(14).color(palette.text_primary),
                             Space::new().width(Length::Fill),
@@ -443,15 +445,19 @@ fn issue_item(
 
     container(
         row![
-            container(Space::new().width(Length::Fixed(4.0)).height(Length::Fixed(40.0)))
-                .style(move |_| container::Style {
-                    background: Some(iced::Background::Color(accent_color)),
-                    border: iced::Border {
-                        radius: 2.0.into(),
-                        ..Default::default()
-                    },
+            container(
+                Space::new()
+                    .width(Length::Fixed(4.0))
+                    .height(Length::Fixed(40.0))
+            )
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(accent_color)),
+                border: iced::Border {
+                    radius: 2.0.into(),
                     ..Default::default()
-                }),
+                },
+                ..Default::default()
+            }),
             Space::new().width(16),
             column![
                 text(title).size(14).color(palette.text_primary),

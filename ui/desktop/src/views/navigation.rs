@@ -52,7 +52,11 @@ const NAV_ITEMS: [NavItem; 6] = [
 ];
 
 /// Render the navigation bar
-pub fn view(theme: LilypadTheme, v: UiVariation, selected_category: usize) -> Element<'static, Message> {
+pub fn view(
+    theme: LilypadTheme,
+    v: UiVariation,
+    selected_category: usize,
+) -> Element<'static, Message> {
     let palette = theme.palette();
 
     let nav_buttons: Vec<Element<'static, Message>> = NAV_ITEMS

@@ -258,25 +258,23 @@ mod tests {
         let valid_config = OAuthConfig::github("client-id");
         assert!(valid_config.validate().is_ok());
 
-        let invalid_auth_code = OAuthConfig::github("client-id")
-            .with_flow(AuthFlow::AuthorizationCode);
+        let invalid_auth_code =
+            OAuthConfig::github("client-id").with_flow(AuthFlow::AuthorizationCode);
         assert!(invalid_auth_code.validate().is_err());
     }
 
     #[test]
     fn test_config_scopes_string() {
-        let config = OAuthConfig::github("id123")
-            .with_scopes(vec![
-                "repo".to_string(),
-                "read:user".to_string(),
-                "gist".to_string(),
-            ]);
+        let config = OAuthConfig::github("id123").with_scopes(vec![
+            "repo".to_string(),
+            "read:user".to_string(),
+            "gist".to_string(),
+        ]);
 
         assert_eq!(config.scopes_string(), "repo read:user gist");
 
         // Single scope
-        let single = OAuthConfig::github("id123")
-            .with_scopes(vec!["repo".to_string()]);
+        let single = OAuthConfig::github("id123").with_scopes(vec!["repo".to_string()]);
         assert_eq!(single.scopes_string(), "repo");
 
         // Default scopes

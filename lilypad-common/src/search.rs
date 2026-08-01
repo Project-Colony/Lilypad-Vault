@@ -594,11 +594,7 @@ impl AdvancedSearch {
     }
 
     /// Sorts entries by the specified field and order.
-    fn sort_entries(
-        entries: &mut [&SearchableEntry],
-        field: SortField,
-        order: SortOrder,
-    ) {
+    fn sort_entries(entries: &mut [&SearchableEntry], field: SortField, order: SortOrder) {
         entries.sort_by(|a, b| {
             let cmp = match field {
                 SortField::Label => a.label.to_lowercase().cmp(&b.label.to_lowercase()),
@@ -609,9 +605,10 @@ impl AdvancedSearch {
                 }
                 SortField::CreatedAt => a.created_at.cmp(&b.created_at),
                 SortField::UpdatedAt => a.updated_at.cmp(&b.updated_at),
-                SortField::LastAccessed => {
-                    a.last_accessed_at.unwrap_or(0).cmp(&b.last_accessed_at.unwrap_or(0))
-                }
+                SortField::LastAccessed => a
+                    .last_accessed_at
+                    .unwrap_or(0)
+                    .cmp(&b.last_accessed_at.unwrap_or(0)),
                 SortField::AccessCount => a.access_count.cmp(&b.access_count),
                 SortField::PasswordAge => a.password_age_days.cmp(&b.password_age_days),
             };
@@ -756,10 +753,7 @@ mod tests {
 
     #[test]
     fn test_favorites_filter() {
-        let mut entries = vec![
-            create_test_entry("Entry1"),
-            create_test_entry("Entry2"),
-        ];
+        let mut entries = vec![create_test_entry("Entry1"), create_test_entry("Entry2")];
         entries[0].is_favorite = true;
 
         let filter = SearchFilter::new().favorites_only();
@@ -771,10 +765,7 @@ mod tests {
 
     #[test]
     fn test_folder_filter() {
-        let mut entries = vec![
-            create_test_entry("Entry1"),
-            create_test_entry("Entry2"),
-        ];
+        let mut entries = vec![create_test_entry("Entry1"), create_test_entry("Entry2")];
         entries[0].folder = Some("Work".to_string());
         entries[1].folder = Some("Work/Projects".to_string());
 
@@ -1089,7 +1080,11 @@ mod tests {
     fn test_fuzzy_match_basic() {
         // "gml" should match "Gmail" (g...m...l in order)
         let score = fuzzy_match("gml", "Gmail");
-        assert!(score > 0, "gml should fuzzy-match Gmail, got score {}", score);
+        assert!(
+            score > 0,
+            "gml should fuzzy-match Gmail, got score {}",
+            score
+        );
     }
 
     #[test]
@@ -1211,10 +1206,7 @@ mod tests {
 
     #[test]
     fn test_fuzzy_search_respects_other_filters() {
-        let mut entries = vec![
-            create_test_entry("Gmail"),
-            create_test_entry("GitHub"),
-        ];
+        let mut entries = vec![create_test_entry("Gmail"), create_test_entry("GitHub")];
         entries[0].is_favorite = true;
         entries[1].is_favorite = false;
 
@@ -1241,15 +1233,15 @@ mod tests {
         let filter = SearchFilter::new().with_query("gml");
         let result = AdvancedSearch::fuzzy_search(&entries, &filter);
         assert_eq!(result.total_count, 2);
-        assert_eq!(result.entries[0], "Gmail", "Gmail should rank first due to tighter match");
+        assert_eq!(
+            result.entries[0], "Gmail",
+            "Gmail should rank first due to tighter match"
+        );
     }
 
     #[test]
     fn test_fuzzy_search_empty_query() {
-        let entries = vec![
-            create_test_entry("Gmail"),
-            create_test_entry("GitHub"),
-        ];
+        let entries = vec![create_test_entry("Gmail"), create_test_entry("GitHub")];
 
         // No query means return all (via normal search path)
         let filter = SearchFilter::new();

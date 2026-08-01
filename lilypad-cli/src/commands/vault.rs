@@ -56,7 +56,10 @@ pub fn init_vault(
     let new_vault = Vault::new(vault, metadata);
     store.save_vault(&new_vault, &key)?;
 
-    println!("Vault '{}' initialized in {}.", new_vault.name, config.data_dir);
+    println!(
+        "Vault '{}' initialized in {}.",
+        new_vault.name, config.data_dir
+    );
     Ok(())
 }
 

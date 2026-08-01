@@ -219,28 +219,52 @@ impl ImportRecord for CsvEntry {
         self.label.clone()
     }
     fn username(&self) -> Option<String> {
-        if self.username.is_empty() { None } else { Some(self.username.clone()) }
+        if self.username.is_empty() {
+            None
+        } else {
+            Some(self.username.clone())
+        }
     }
     fn url(&self) -> Option<String> {
-        if self.url.is_empty() { None } else { Some(self.url.clone()) }
+        if self.url.is_empty() {
+            None
+        } else {
+            Some(self.url.clone())
+        }
     }
     fn folder(&self) -> Option<String> {
-        if self.folder.is_empty() { None } else { Some(self.folder.clone()) }
+        if self.folder.is_empty() {
+            None
+        } else {
+            Some(self.folder.clone())
+        }
     }
     fn tags(&self) -> Vec<String> {
         parse_tags(&self.tags)
     }
     fn entry_type(&self) -> Option<String> {
-        if self.entry_type.is_empty() { None } else { Some(self.entry_type.clone()) }
+        if self.entry_type.is_empty() {
+            None
+        } else {
+            Some(self.entry_type.clone())
+        }
     }
     fn password(&self) -> String {
         self.password.clone()
     }
     fn notes(&self) -> Option<String> {
-        if self.notes.is_empty() { None } else { Some(self.notes.clone()) }
+        if self.notes.is_empty() {
+            None
+        } else {
+            Some(self.notes.clone())
+        }
     }
     fn totp_secret(&self) -> Option<String> {
-        if self.totp_secret.is_empty() { None } else { Some(self.totp_secret.clone()) }
+        if self.totp_secret.is_empty() {
+            None
+        } else {
+            Some(self.totp_secret.clone())
+        }
     }
 }
 
@@ -253,13 +277,25 @@ impl ImportRecord for LastPassEntry {
         }
     }
     fn username(&self) -> Option<String> {
-        if self.username.is_empty() { None } else { Some(self.username.clone()) }
+        if self.username.is_empty() {
+            None
+        } else {
+            Some(self.username.clone())
+        }
     }
     fn url(&self) -> Option<String> {
-        if self.url.is_empty() { None } else { Some(self.url.clone()) }
+        if self.url.is_empty() {
+            None
+        } else {
+            Some(self.url.clone())
+        }
     }
     fn folder(&self) -> Option<String> {
-        if self.grouping.is_empty() { None } else { Some(self.grouping.clone()) }
+        if self.grouping.is_empty() {
+            None
+        } else {
+            Some(self.grouping.clone())
+        }
     }
     fn tags(&self) -> Vec<String> {
         Vec::new() // LastPass uses grouping, not tags
@@ -271,10 +307,18 @@ impl ImportRecord for LastPassEntry {
         self.password.clone()
     }
     fn notes(&self) -> Option<String> {
-        if self.extra.is_empty() { None } else { Some(self.extra.clone()) }
+        if self.extra.is_empty() {
+            None
+        } else {
+            Some(self.extra.clone())
+        }
     }
     fn totp_secret(&self) -> Option<String> {
-        if self.totp.is_empty() { None } else { Some(extract_totp_secret(&self.totp)) }
+        if self.totp.is_empty() {
+            None
+        } else {
+            Some(extract_totp_secret(&self.totp))
+        }
     }
 }
 
@@ -283,13 +327,25 @@ impl ImportRecord for BitwardenEntry {
         self.name.clone()
     }
     fn username(&self) -> Option<String> {
-        if self.login_username.is_empty() { None } else { Some(self.login_username.clone()) }
+        if self.login_username.is_empty() {
+            None
+        } else {
+            Some(self.login_username.clone())
+        }
     }
     fn url(&self) -> Option<String> {
-        if self.login_uri.is_empty() { None } else { Some(self.login_uri.clone()) }
+        if self.login_uri.is_empty() {
+            None
+        } else {
+            Some(self.login_uri.clone())
+        }
     }
     fn folder(&self) -> Option<String> {
-        if self.folder.is_empty() { None } else { Some(self.folder.clone()) }
+        if self.folder.is_empty() {
+            None
+        } else {
+            Some(self.folder.clone())
+        }
     }
     fn tags(&self) -> Vec<String> {
         Vec::new()
@@ -301,10 +357,18 @@ impl ImportRecord for BitwardenEntry {
         self.login_password.clone()
     }
     fn notes(&self) -> Option<String> {
-        if self.notes.is_empty() { None } else { Some(self.notes.clone()) }
+        if self.notes.is_empty() {
+            None
+        } else {
+            Some(self.notes.clone())
+        }
     }
     fn totp_secret(&self) -> Option<String> {
-        if self.login_totp.is_empty() { None } else { Some(extract_totp_secret(&self.login_totp)) }
+        if self.login_totp.is_empty() {
+            None
+        } else {
+            Some(extract_totp_secret(&self.login_totp))
+        }
     }
 }
 
@@ -313,10 +377,18 @@ impl ImportRecord for OnePasswordEntry {
         self.title.clone()
     }
     fn username(&self) -> Option<String> {
-        if self.username.is_empty() { None } else { Some(self.username.clone()) }
+        if self.username.is_empty() {
+            None
+        } else {
+            Some(self.username.clone())
+        }
     }
     fn url(&self) -> Option<String> {
-        if self.url.is_empty() { None } else { Some(self.url.clone()) }
+        if self.url.is_empty() {
+            None
+        } else {
+            Some(self.url.clone())
+        }
     }
     fn folder(&self) -> Option<String> {
         None
@@ -331,10 +403,18 @@ impl ImportRecord for OnePasswordEntry {
         self.password.clone()
     }
     fn notes(&self) -> Option<String> {
-        if self.notes.is_empty() { None } else { Some(self.notes.clone()) }
+        if self.notes.is_empty() {
+            None
+        } else {
+            Some(self.notes.clone())
+        }
     }
     fn totp_secret(&self) -> Option<String> {
-        if self.otp_auth.is_empty() { None } else { Some(extract_totp_secret(&self.otp_auth)) }
+        if self.otp_auth.is_empty() {
+            None
+        } else {
+            Some(extract_totp_secret(&self.otp_auth))
+        }
     }
 }
 
@@ -347,10 +427,18 @@ impl ImportRecord for ChromeEntry {
         }
     }
     fn username(&self) -> Option<String> {
-        if self.username.is_empty() { None } else { Some(self.username.clone()) }
+        if self.username.is_empty() {
+            None
+        } else {
+            Some(self.username.clone())
+        }
     }
     fn url(&self) -> Option<String> {
-        if self.url.is_empty() { None } else { Some(self.url.clone()) }
+        if self.url.is_empty() {
+            None
+        } else {
+            Some(self.url.clone())
+        }
     }
     fn folder(&self) -> Option<String> {
         None
@@ -365,7 +453,11 @@ impl ImportRecord for ChromeEntry {
         self.password.clone()
     }
     fn notes(&self) -> Option<String> {
-        if self.note.is_empty() { None } else { Some(self.note.clone()) }
+        if self.note.is_empty() {
+            None
+        } else {
+            Some(self.note.clone())
+        }
     }
     fn totp_secret(&self) -> Option<String> {
         None
@@ -377,10 +469,18 @@ impl ImportRecord for FirefoxEntry {
         extract_domain_from_url(&self.url).unwrap_or_else(|| "Unnamed Entry".to_string())
     }
     fn username(&self) -> Option<String> {
-        if self.username.is_empty() { None } else { Some(self.username.clone()) }
+        if self.username.is_empty() {
+            None
+        } else {
+            Some(self.username.clone())
+        }
     }
     fn url(&self) -> Option<String> {
-        if self.url.is_empty() { None } else { Some(self.url.clone()) }
+        if self.url.is_empty() {
+            None
+        } else {
+            Some(self.url.clone())
+        }
     }
     fn folder(&self) -> Option<String> {
         None
@@ -407,13 +507,25 @@ impl ImportRecord for DashlaneEntry {
         self.title.clone()
     }
     fn username(&self) -> Option<String> {
-        if self.username.is_empty() { None } else { Some(self.username.clone()) }
+        if self.username.is_empty() {
+            None
+        } else {
+            Some(self.username.clone())
+        }
     }
     fn url(&self) -> Option<String> {
-        if self.url.is_empty() { None } else { Some(self.url.clone()) }
+        if self.url.is_empty() {
+            None
+        } else {
+            Some(self.url.clone())
+        }
     }
     fn folder(&self) -> Option<String> {
-        if self.category.is_empty() { None } else { Some(self.category.clone()) }
+        if self.category.is_empty() {
+            None
+        } else {
+            Some(self.category.clone())
+        }
     }
     fn tags(&self) -> Vec<String> {
         Vec::new()
@@ -425,10 +537,18 @@ impl ImportRecord for DashlaneEntry {
         self.password.clone()
     }
     fn notes(&self) -> Option<String> {
-        if self.note.is_empty() { None } else { Some(self.note.clone()) }
+        if self.note.is_empty() {
+            None
+        } else {
+            Some(self.note.clone())
+        }
     }
     fn totp_secret(&self) -> Option<String> {
-        if self.otp_secret.is_empty() { None } else { Some(self.otp_secret.clone()) }
+        if self.otp_secret.is_empty() {
+            None
+        } else {
+            Some(self.otp_secret.clone())
+        }
     }
 }
 
@@ -437,13 +557,25 @@ impl ImportRecord for KeePassEntry {
         self.title.clone()
     }
     fn username(&self) -> Option<String> {
-        if self.username.is_empty() { None } else { Some(self.username.clone()) }
+        if self.username.is_empty() {
+            None
+        } else {
+            Some(self.username.clone())
+        }
     }
     fn url(&self) -> Option<String> {
-        if self.url.is_empty() { None } else { Some(self.url.clone()) }
+        if self.url.is_empty() {
+            None
+        } else {
+            Some(self.url.clone())
+        }
     }
     fn folder(&self) -> Option<String> {
-        if self.group.is_empty() { None } else { Some(self.group.clone()) }
+        if self.group.is_empty() {
+            None
+        } else {
+            Some(self.group.clone())
+        }
     }
     fn tags(&self) -> Vec<String> {
         Vec::new()
@@ -455,10 +587,18 @@ impl ImportRecord for KeePassEntry {
         self.password.clone()
     }
     fn notes(&self) -> Option<String> {
-        if self.notes.is_empty() { None } else { Some(self.notes.clone()) }
+        if self.notes.is_empty() {
+            None
+        } else {
+            Some(self.notes.clone())
+        }
     }
     fn totp_secret(&self) -> Option<String> {
-        if self.totp.is_empty() { None } else { Some(extract_totp_secret(&self.totp)) }
+        if self.totp.is_empty() {
+            None
+        } else {
+            Some(extract_totp_secret(&self.totp))
+        }
     }
 }
 
@@ -611,8 +751,8 @@ pub fn import_vault(
 
 // ============== Export Types (for JSON import) ==============
 
-use serde::Serialize;
 use lilypad_core::EntryMetadata;
+use serde::Serialize;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VaultExport {

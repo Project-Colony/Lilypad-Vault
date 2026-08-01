@@ -30,9 +30,7 @@ pub enum OAuthError {
     },
 
     /// GitHub rate limit exceeded.
-    RateLimitExceeded {
-        reset_at: Option<u64>,
-    },
+    RateLimitExceeded { reset_at: Option<u64> },
 
     /// Repository not found.
     RepoNotFound(String),
@@ -41,10 +39,7 @@ pub enum OAuthError {
     RepoAlreadyExists(String),
 
     /// File not found in repository.
-    FileNotFound {
-        repo: String,
-        path: String,
-    },
+    FileNotFound { repo: String, path: String },
 
     /// Conflict during sync (file was modified remotely).
     SyncConflict {
@@ -242,26 +237,22 @@ mod tests {
         assert!(format!("{}", OAuthError::TokenExpired).contains("expired"));
         assert!(format!("{}", OAuthError::InvalidToken).contains("invalid"));
         assert!(format!("{}", OAuthError::AuthorizationDenied).contains("denied"));
-        assert!(
-            format!(
-                "{}",
-                OAuthError::GitHubApiError {
-                    status: Some(404),
-                    message: "not found".to_string()
-                }
-            )
-            .contains("404")
-        );
-        assert!(
-            format!(
-                "{}",
-                OAuthError::SyncConflict {
-                    local_sha: "abc".to_string(),
-                    remote_sha: "xyz".to_string()
-                }
-            )
-            .contains("abc")
-        );
+        assert!(format!(
+            "{}",
+            OAuthError::GitHubApiError {
+                status: Some(404),
+                message: "not found".to_string()
+            }
+        )
+        .contains("404"));
+        assert!(format!(
+            "{}",
+            OAuthError::SyncConflict {
+                local_sha: "abc".to_string(),
+                remote_sha: "xyz".to_string()
+            }
+        )
+        .contains("abc"));
     }
 
     #[test]
@@ -316,10 +307,7 @@ mod tests {
 
         match &oauth_err {
             OAuthError::ParseError(msg) => {
-                assert!(
-                    !msg.is_empty(),
-                    "ParseError message should not be empty"
-                );
+                assert!(!msg.is_empty(), "ParseError message should not be empty");
             }
             other => panic!("Expected ParseError variant, got {:?}", other),
         }

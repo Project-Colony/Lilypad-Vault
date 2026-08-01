@@ -30,7 +30,10 @@ pub fn view(
         row![
             fonts::centered_icon_colored(icons::VAULT, 14.0, palette.primary),
             Space::new().width(8),
-            text(active_vault_owned).size(14).font(fonts::FONT_MEDIUM).color(palette.text_primary),
+            text(active_vault_owned)
+                .size(14)
+                .font(fonts::FONT_MEDIUM)
+                .color(palette.text_primary),
             Space::new().width(8),
             fonts::centered_icon_colored(icons::CHEVRON_DOWN, 10.0, palette.text_muted),
         ]
@@ -55,19 +58,21 @@ pub fn view(
     let has_search = !search_query.is_empty();
     let clear_search_btn: Option<Element<'static, Message>> = if has_search {
         Some(
-            button(fonts::centered_icon_colored(icons::CLOSE, 12.0, palette.text_muted))
-                .padding([8, 10])
-                .style(theme::icon_style(theme, v))
-                .on_press(Message::ClearSearch)
-                .into(),
+            button(fonts::centered_icon_colored(
+                icons::CLOSE,
+                12.0,
+                palette.text_muted,
+            ))
+            .padding([8, 10])
+            .style(theme::icon_style(theme, v))
+            .on_press(Message::ClearSearch)
+            .into(),
         )
     } else {
         None
     };
 
-    let mut search_row = row![search_input,]
-        .align_y(Vertical::Center)
-        .spacing(4);
+    let mut search_row = row![search_input,].align_y(Vertical::Center).spacing(4);
 
     if let Some(btn) = clear_search_btn {
         search_row = search_row.push(btn);
@@ -93,15 +98,23 @@ pub fn view(
         fonts::centered_icon_colored(icons::CIRCLE, 10.0, palette.text_muted)
     };
 
-    let settings_btn = button(fonts::centered_icon_colored(icons::COG, 16.0, palette.text_secondary))
-        .padding([10, 12])
-        .style(theme::icon_style(theme, v))
-        .on_press(Message::ShowSettings);
+    let settings_btn = button(fonts::centered_icon_colored(
+        icons::COG,
+        16.0,
+        palette.text_secondary,
+    ))
+    .padding([10, 12])
+    .style(theme::icon_style(theme, v))
+    .on_press(Message::ShowSettings);
 
-    let lock_btn = button(fonts::centered_icon_colored(icons::LOCK, 16.0, palette.text_secondary))
-        .padding([10, 12])
-        .style(theme::icon_style(theme, v))
-        .on_press(Message::LockVault);
+    let lock_btn = button(fonts::centered_icon_colored(
+        icons::LOCK,
+        16.0,
+        palette.text_secondary,
+    ))
+    .padding([10, 12])
+    .style(theme::icon_style(theme, v))
+    .on_press(Message::LockVault);
 
     // Main header row (dropdown is rendered as overlay in app.rs)
     let header_content = row![
@@ -150,17 +163,24 @@ pub fn vault_dropdown_overlay(
                         .font(fonts::FONT_REGULAR)
                         .color(palette.primary)
                         .width(Length::Fixed(16.0)),
-                    text(name.clone()).size(14).font(fonts::FONT_REGULAR).color(palette.text_primary),
+                    text(name.clone())
+                        .size(14)
+                        .font(fonts::FONT_REGULAR)
+                        .color(palette.text_primary),
                     Space::new().width(Length::Fill),
-                    button(
-                        fonts::centered_icon_colored(icons::EDIT, 12.0, palette.text_muted),
-                    )
+                    button(fonts::centered_icon_colored(
+                        icons::EDIT,
+                        12.0,
+                        palette.text_muted
+                    ),)
                     .padding([4, 6])
                     .style(theme::icon_style(theme, v))
                     .on_press(Message::StartRenameVault(name_for_rename)),
-                    button(
-                        fonts::centered_icon_colored(icons::TRASH, 12.0, palette.text_muted),
-                    )
+                    button(fonts::centered_icon_colored(
+                        icons::TRASH,
+                        12.0,
+                        palette.text_muted
+                    ),)
                     .padding([4, 6])
                     .style(theme::icon_style(theme, v))
                     .on_press(Message::DeleteVault(name_for_delete)),

@@ -69,7 +69,9 @@ impl HealthGrade {
     pub fn description(&self) -> &'static str {
         match self {
             HealthGrade::A => "Excellent - Your vault security is outstanding",
-            HealthGrade::B => "Good - Your vault security is strong with minor improvements possible",
+            HealthGrade::B => {
+                "Good - Your vault security is strong with minor improvements possible"
+            }
             HealthGrade::C => "Fair - Your vault has some security concerns to address",
             HealthGrade::D => "Poor - Your vault has significant security issues",
             HealthGrade::F => "Critical - Your vault requires immediate attention",
@@ -133,8 +135,8 @@ impl IssueSeverity {
     /// Returns the color for this severity (for UI).
     pub fn color(&self) -> &'static str {
         match self {
-            IssueSeverity::Info => "#3B82F6",    // Blue
-            IssueSeverity::Warning => "#EAB308", // Yellow
+            IssueSeverity::Info => "#3B82F6",     // Blue
+            IssueSeverity::Warning => "#EAB308",  // Yellow
             IssueSeverity::Critical => "#EF4444", // Red
         }
     }
@@ -431,7 +433,8 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
                 expired_entries.len()
             ),
             affected_entries: expired_entries,
-            recommendation: "Change these passwords as soon as possible to maintain security.".to_string(),
+            recommendation: "Change these passwords as soon as possible to maintain security."
+                .to_string(),
         });
     }
 
@@ -446,7 +449,8 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
                 weak_entries.len()
             ),
             affected_entries: weak_entries,
-            recommendation: "Consider using the password generator to create stronger passwords.".to_string(),
+            recommendation: "Consider using the password generator to create stronger passwords."
+                .to_string(),
         });
     }
 
@@ -491,7 +495,8 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
                 old_password_entries.len()
             ),
             affected_entries: old_password_entries,
-            recommendation: "Consider rotating these passwords periodically for better security.".to_string(),
+            recommendation: "Consider rotating these passwords periodically for better security."
+                .to_string(),
         });
     }
 
@@ -536,7 +541,9 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
                 incomplete_entries.len()
             ),
             affected_entries: incomplete_entries,
-            recommendation: "Add usernames to these entries for better organization and autofill support.".to_string(),
+            recommendation:
+                "Add usernames to these entries for better organization and autofill support."
+                    .to_string(),
         });
     }
 
@@ -546,11 +553,21 @@ pub fn analyze_vault_health(entries: &[EntryHealthData]) -> HealthReport {
     let freshness_score = calculate_freshness_score(&stats);
     let two_factor_score = calculate_2fa_score(&stats);
 
-    let total_score = password_strength_score + uniqueness_score + freshness_score + two_factor_score;
+    let total_score =
+        password_strength_score + uniqueness_score + freshness_score + two_factor_score;
 
-    let critical_count = issues.iter().filter(|i| i.severity == IssueSeverity::Critical).count();
-    let warning_count = issues.iter().filter(|i| i.severity == IssueSeverity::Warning).count();
-    let info_count = issues.iter().filter(|i| i.severity == IssueSeverity::Info).count();
+    let critical_count = issues
+        .iter()
+        .filter(|i| i.severity == IssueSeverity::Critical)
+        .count();
+    let warning_count = issues
+        .iter()
+        .filter(|i| i.severity == IssueSeverity::Warning)
+        .count();
+    let info_count = issues
+        .iter()
+        .filter(|i| i.severity == IssueSeverity::Info)
+        .count();
 
     // Sort issues by severity (critical first)
     issues.sort_by_key(|issue| Reverse(issue.severity));
@@ -660,7 +677,10 @@ pub fn detect_duplicates(entries: &[EntryHealthData]) -> HashMap<String, Vec<Str
     }
 
     // Only return duplicates (2+ entries with same password)
-    password_map.into_iter().filter(|(_, v)| v.len() > 1).collect()
+    password_map
+        .into_iter()
+        .filter(|(_, v)| v.len() > 1)
+        .collect()
 }
 
 /// Severity level for password expiry notifications.
@@ -692,7 +712,10 @@ pub struct ExpiryNotification {
 ///
 /// Entries without a `days_until_expiry` value are skipped. The returned list
 /// is sorted by urgency (expired first, then by fewest days remaining).
-pub fn get_expiring_entries(entries: &[EntryHealthData], within_days: u32) -> Vec<ExpiryNotification> {
+pub fn get_expiring_entries(
+    entries: &[EntryHealthData],
+    within_days: u32,
+) -> Vec<ExpiryNotification> {
     let mut notifications: Vec<ExpiryNotification> = entries
         .iter()
         .filter_map(|entry| {
@@ -757,62 +780,69 @@ mod tests {
 
     #[test]
     fn test_weak_password_detection() {
-        let entries = vec![
-            EntryHealthData {
-                label: "test".to_string(),
-                password: "weak".to_string(),
-                has_username: true,
-                has_url: true,
-                has_totp: false,
-                password_age_days: 10,
-                days_until_expiry: None,
-                is_expired: false,
-                is_compromised: false,
-            },
-        ];
+        let entries = vec![EntryHealthData {
+            label: "test".to_string(),
+            password: "weak".to_string(),
+            has_username: true,
+            has_url: true,
+            has_totp: false,
+            password_age_days: 10,
+            days_until_expiry: None,
+            is_expired: false,
+            is_compromised: false,
+        }];
         let report = analyze_vault_health(&entries);
-        assert!(report.issues.iter().any(|i| i.category == IssueCategory::WeakPassword));
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.category == IssueCategory::WeakPassword));
     }
 
     #[test]
     fn test_compromised_detection() {
-        let entries = vec![
-            EntryHealthData {
-                label: "breached_site".to_string(),
-                password: "Str0ng!P@ssw0rd#2024".to_string(),
-                has_username: true,
-                has_url: true,
-                has_totp: false,
-                password_age_days: 10,
-                days_until_expiry: None,
-                is_expired: false,
-                is_compromised: true,
-            },
-        ];
+        let entries = vec![EntryHealthData {
+            label: "breached_site".to_string(),
+            password: "Str0ng!P@ssw0rd#2024".to_string(),
+            has_username: true,
+            has_url: true,
+            has_totp: false,
+            password_age_days: 10,
+            days_until_expiry: None,
+            is_expired: false,
+            is_compromised: true,
+        }];
         let report = analyze_vault_health(&entries);
-        assert!(report.issues.iter().any(|i| i.category == IssueCategory::Compromised));
-        let issue = report.issues.iter().find(|i| i.category == IssueCategory::Compromised).unwrap();
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.category == IssueCategory::Compromised));
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == IssueCategory::Compromised)
+            .unwrap();
         assert_eq!(issue.severity, IssueSeverity::Critical);
         assert_eq!(issue.affected_entries, vec!["breached_site"]);
     }
 
     #[test]
     fn test_incomplete_entry_detection() {
-        let entries = vec![
-            EntryHealthData {
-                label: "no_username".to_string(),
-                password: "Str0ng!P@ssw0rd#2024".to_string(),
-                has_username: false,
-                has_url: true,
-                has_totp: false,
-                password_age_days: 10,
-                days_until_expiry: None,
-                is_expired: false,
-                is_compromised: false,
-            },
-        ];
+        let entries = vec![EntryHealthData {
+            label: "no_username".to_string(),
+            password: "Str0ng!P@ssw0rd#2024".to_string(),
+            has_username: false,
+            has_url: true,
+            has_totp: false,
+            password_age_days: 10,
+            days_until_expiry: None,
+            is_expired: false,
+            is_compromised: false,
+        }];
         let report = analyze_vault_health(&entries);
-        assert!(report.issues.iter().any(|i| i.category == IssueCategory::IncompleteEntry));
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.category == IssueCategory::IncompleteEntry));
     }
 
     #[test]
@@ -903,48 +933,55 @@ mod tests {
 
     #[test]
     fn test_expired_password_detection() {
-        let entries = vec![
-            EntryHealthData {
-                label: "expired_account".to_string(),
-                password: "Str0ng!P@ssw0rd#2024".to_string(),
-                has_username: true,
-                has_url: true,
-                has_totp: true,
-                password_age_days: 100,
-                days_until_expiry: Some(-5),
-                is_expired: true,
-                is_compromised: false,
-            },
-        ];
+        let entries = vec![EntryHealthData {
+            label: "expired_account".to_string(),
+            password: "Str0ng!P@ssw0rd#2024".to_string(),
+            has_username: true,
+            has_url: true,
+            has_totp: true,
+            password_age_days: 100,
+            days_until_expiry: Some(-5),
+            is_expired: true,
+            is_compromised: false,
+        }];
         let report = analyze_vault_health(&entries);
-        assert!(report.issues.iter().any(|i| i.category == IssueCategory::ExpiredPassword
-            && i.severity == IssueSeverity::Critical));
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.category == IssueCategory::ExpiredPassword
+                && i.severity == IssueSeverity::Critical));
         let issue = report
             .issues
             .iter()
-            .find(|i| i.category == IssueCategory::ExpiredPassword && i.severity == IssueSeverity::Critical)
+            .find(|i| {
+                i.category == IssueCategory::ExpiredPassword
+                    && i.severity == IssueSeverity::Critical
+            })
             .expect("should have expired password issue");
-        assert!(issue.affected_entries.contains(&"expired_account".to_string()));
+        assert!(issue
+            .affected_entries
+            .contains(&"expired_account".to_string()));
         assert_eq!(report.stats.expired_passwords, 1);
     }
 
     #[test]
     fn test_missing_2fa_detection() {
-        let entries = vec![
-            EntryHealthData {
-                label: "no_2fa_site".to_string(),
-                password: "Str0ng!P@ssw0rd#2024".to_string(),
-                has_username: true,
-                has_url: true,  // has URL, so Missing2FA should trigger
-                has_totp: false,
-                password_age_days: 10,
-                days_until_expiry: None,
-                is_expired: false,
-                is_compromised: false,
-            },
-        ];
+        let entries = vec![EntryHealthData {
+            label: "no_2fa_site".to_string(),
+            password: "Str0ng!P@ssw0rd#2024".to_string(),
+            has_username: true,
+            has_url: true, // has URL, so Missing2FA should trigger
+            has_totp: false,
+            password_age_days: 10,
+            days_until_expiry: None,
+            is_expired: false,
+            is_compromised: false,
+        }];
         let report = analyze_vault_health(&entries);
-        assert!(report.issues.iter().any(|i| i.category == IssueCategory::Missing2FA));
+        assert!(report
+            .issues
+            .iter()
+            .any(|i| i.category == IssueCategory::Missing2FA));
         let issue = report
             .issues
             .iter()
@@ -987,19 +1024,17 @@ mod tests {
     #[test]
     fn test_multiple_issues_same_entry() {
         // Entry with a very weak password AND no 2FA (and has URL so 2FA check applies)
-        let entries = vec![
-            EntryHealthData {
-                label: "problematic_entry".to_string(),
-                password: "bad".to_string(), // VeryWeak
-                has_username: true,
-                has_url: true,
-                has_totp: false,
-                password_age_days: 10,
-                days_until_expiry: None,
-                is_expired: false,
-                is_compromised: false,
-            },
-        ];
+        let entries = vec![EntryHealthData {
+            label: "problematic_entry".to_string(),
+            password: "bad".to_string(), // VeryWeak
+            has_username: true,
+            has_url: true,
+            has_totp: false,
+            password_age_days: 10,
+            days_until_expiry: None,
+            is_expired: false,
+            is_compromised: false,
+        }];
         let report = analyze_vault_health(&entries);
 
         // Should have at least a WeakPassword issue and a Missing2FA issue
@@ -1025,8 +1060,12 @@ mod tests {
             .iter()
             .find(|i| i.category == IssueCategory::Missing2FA)
             .expect("missing 2FA issue");
-        assert!(weak_issue.affected_entries.contains(&"problematic_entry".to_string()));
-        assert!(no_2fa_issue.affected_entries.contains(&"problematic_entry".to_string()));
+        assert!(weak_issue
+            .affected_entries
+            .contains(&"problematic_entry".to_string()));
+        assert!(no_2fa_issue
+            .affected_entries
+            .contains(&"problematic_entry".to_string()));
     }
 
     #[test]
@@ -1047,8 +1086,14 @@ mod tests {
         );
 
         // Should have no critical or warning issues
-        assert_eq!(report.score.critical_issues, 0, "should have no critical issues");
-        assert_eq!(report.score.warning_issues, 0, "should have no warning issues");
+        assert_eq!(
+            report.score.critical_issues, 0,
+            "should have no critical issues"
+        );
+        assert_eq!(
+            report.score.warning_issues, 0,
+            "should have no warning issues"
+        );
 
         // Stats should reflect all strong
         assert_eq!(report.stats.strong_passwords, 3);
@@ -1062,7 +1107,11 @@ mod tests {
     // Expiry notification tests
     // ========================================================================
 
-    fn make_expiry_entry(label: &str, days_until_expiry: Option<i64>, is_expired: bool) -> EntryHealthData {
+    fn make_expiry_entry(
+        label: &str,
+        days_until_expiry: Option<i64>,
+        is_expired: bool,
+    ) -> EntryHealthData {
         EntryHealthData {
             label: label.to_string(),
             password: "Str0ng!P@ssw0rd#2024".to_string(),
@@ -1078,9 +1127,7 @@ mod tests {
 
     #[test]
     fn test_get_expiring_entries_expired() {
-        let entries = vec![
-            make_expiry_entry("Expired Account", Some(-5), true),
-        ];
+        let entries = vec![make_expiry_entry("Expired Account", Some(-5), true)];
         let notifications = get_expiring_entries(&entries, 30);
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].label, "Expired Account");
@@ -1090,9 +1137,7 @@ mod tests {
 
     #[test]
     fn test_get_expiring_entries_critical() {
-        let entries = vec![
-            make_expiry_entry("Almost Gone", Some(1), false),
-        ];
+        let entries = vec![make_expiry_entry("Almost Gone", Some(1), false)];
         let notifications = get_expiring_entries(&entries, 30);
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].label, "Almost Gone");
@@ -1102,9 +1147,7 @@ mod tests {
 
     #[test]
     fn test_get_expiring_entries_warning() {
-        let entries = vec![
-            make_expiry_entry("Expiring Soon", Some(5), false),
-        ];
+        let entries = vec![make_expiry_entry("Expiring Soon", Some(5), false)];
         let notifications = get_expiring_entries(&entries, 30);
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].severity, ExpirySeverity::Warning);
@@ -1112,9 +1155,7 @@ mod tests {
 
     #[test]
     fn test_get_expiring_entries_info() {
-        let entries = vec![
-            make_expiry_entry("Expiring Later", Some(15), false),
-        ];
+        let entries = vec![make_expiry_entry("Expiring Later", Some(15), false)];
         let notifications = get_expiring_entries(&entries, 30);
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].severity, ExpirySeverity::Info);
@@ -1122,9 +1163,7 @@ mod tests {
 
     #[test]
     fn test_get_expiring_entries_outside_window() {
-        let entries = vec![
-            make_expiry_entry("Far Away", Some(60), false),
-        ];
+        let entries = vec![make_expiry_entry("Far Away", Some(60), false)];
         // within_days=30, so 60 days out should not be included
         let notifications = get_expiring_entries(&entries, 30);
         assert!(notifications.is_empty());
@@ -1132,9 +1171,7 @@ mod tests {
 
     #[test]
     fn test_get_expiring_entries_no_expiry() {
-        let entries = vec![
-            make_expiry_entry("No Expiry", None, false),
-        ];
+        let entries = vec![make_expiry_entry("No Expiry", None, false)];
         let notifications = get_expiring_entries(&entries, 30);
         assert!(notifications.is_empty());
     }
@@ -1196,15 +1233,24 @@ mod tests {
         assert_eq!(at_zero.severity, ExpirySeverity::Critical);
 
         // 3 days: Warning (3..=7)
-        let at_three = notifications.iter().find(|n| n.label == "At Three").unwrap();
+        let at_three = notifications
+            .iter()
+            .find(|n| n.label == "At Three")
+            .unwrap();
         assert_eq!(at_three.severity, ExpirySeverity::Warning);
 
         // 7 days: Warning (3..=7)
-        let at_seven = notifications.iter().find(|n| n.label == "At Seven").unwrap();
+        let at_seven = notifications
+            .iter()
+            .find(|n| n.label == "At Seven")
+            .unwrap();
         assert_eq!(at_seven.severity, ExpirySeverity::Warning);
 
         // 8 days: Info (> 7)
-        let at_eight = notifications.iter().find(|n| n.label == "At Eight").unwrap();
+        let at_eight = notifications
+            .iter()
+            .find(|n| n.label == "At Eight")
+            .unwrap();
         assert_eq!(at_eight.severity, ExpirySeverity::Info);
     }
 }

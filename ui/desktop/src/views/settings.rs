@@ -46,40 +46,30 @@ pub fn account_view(
     );
 
     // Security preferences
-    let security_title = text("Security")
-        .size(16)
-        .color(palette.text_primary);
+    let security_title = text("Security").size(16).color(palette.text_primary);
 
     let two_factor_hint = text("Two-factor authentication — coming soon")
         .size(13)
         .color(palette.text_muted);
 
-    let security_section = container(
-        column![
-            security_title,
-            Space::new().height(16),
-            two_factor_hint,
-        ]
-        .padding(24),
-    )
-    .width(Length::Fill)
-    .style(move |_| theme::card_container(theme, v));
+    let security_section =
+        container(column![security_title, Space::new().height(16), two_factor_hint,].padding(24))
+            .width(Length::Fill)
+            .style(move |_| theme::card_container(theme, v));
 
     // Preferences
-    let prefs_title = text("Preferences")
-        .size(16)
-        .color(palette.text_primary);
+    let prefs_title = text("Preferences").size(16).color(palette.text_primary);
 
-    let marketing_check = checkbox(marketing_opt_in).label("Receive product updates and tips")
+    let marketing_check = checkbox(marketing_opt_in)
+        .label("Receive product updates and tips")
         .on_toggle(Message::ToggleMarketingOptIn)
         .text_size(14)
         .spacing(10);
 
-    let prefs_section = container(
-        column![prefs_title, Space::new().height(16), marketing_check,].padding(24),
-    )
-    .width(Length::Fill)
-    .style(move |_| theme::card_container(theme, v));
+    let prefs_section =
+        container(column![prefs_title, Space::new().height(16), marketing_check,].padding(24))
+            .width(Length::Fill)
+            .style(move |_| theme::card_container(theme, v));
 
     let content = column![
         title,
@@ -118,9 +108,7 @@ fn github_auth_section(
 ) -> Element<'static, Message> {
     let palette = theme.palette();
 
-    let section_title = text("GitHub Account")
-        .size(16)
-        .color(palette.text_primary);
+    let section_title = text("GitHub Account").size(16).color(palette.text_primary);
 
     let content: Element<'static, Message> = if authenticated {
         let user_display = username.unwrap_or("Unknown").to_string();
@@ -141,11 +129,9 @@ fn github_auth_section(
             ],
             Space::new().height(16),
             button(
-                container(
-                    text("Logout from GitHub").size(14)
-                )
-                .width(Length::Fill)
-                .align_x(Horizontal::Center),
+                container(text("Logout from GitHub").size(14))
+                    .width(Length::Fill)
+                    .align_x(Horizontal::Center),
             )
             .width(Length::Fill)
             .padding([10, 16])
@@ -166,17 +152,15 @@ fn github_auth_section(
         ]
         .into()
     } else if in_progress {
-        let mut items: Vec<Element<'static, Message>> = vec![
-            row![
-                fonts::centered_icon(icons::CLOCK, 16.0),
-                Space::new().width(8),
-                text("Authenticating with GitHub...")
-                    .size(14)
-                    .color(palette.text_primary),
-            ]
-            .align_y(Vertical::Center)
-            .into(),
-        ];
+        let mut items: Vec<Element<'static, Message>> = vec![row![
+            fonts::centered_icon(icons::CLOCK, 16.0),
+            Space::new().width(8),
+            text("Authenticating with GitHub...")
+                .size(14)
+                .color(palette.text_primary),
+        ]
+        .align_y(Vertical::Center)
+        .into()];
 
         if let (Some(code), Some(_uri)) = (device_code, device_uri) {
             let code_owned = code.to_string();
@@ -191,9 +175,7 @@ fn github_auth_section(
                         Space::new().height(8),
                         button(
                             row![
-                                text(code_owned)
-                                    .size(24)
-                                    .color(palette.primary),
+                                text(code_owned).size(24).color(palette.primary),
                                 Space::new().width(12),
                                 fonts::centered_icon_colored(icons::COPY, 14.0, palette.text_muted),
                             ]
@@ -220,7 +202,9 @@ fn github_auth_section(
                             .color(palette.text_muted),
                         Space::new().height(8),
                         button(
-                            text("https://github.com/login/device").size(12).color(palette.primary)
+                            text("https://github.com/login/device")
+                                .size(12)
+                                .color(palette.primary)
                         )
                         .padding([4, 8])
                         .style(theme::ghost_style(theme, v))
@@ -273,12 +257,10 @@ fn github_auth_section(
         .into()
     };
 
-    container(
-        column![section_title, Space::new().height(16), content,].padding(24),
-    )
-    .width(Length::Fill)
-    .style(move |_| theme::card_container(theme, v))
-    .into()
+    container(column![section_title, Space::new().height(16), content,].padding(24))
+        .width(Length::Fill)
+        .style(move |_| theme::card_container(theme, v))
+        .into()
 }
 
 /// Render the security settings section
@@ -303,9 +285,7 @@ pub fn security_view(
         .color(palette.text_secondary);
 
     // Auto-lock section
-    let autolock_title = text("Auto-Lock")
-        .size(16)
-        .color(palette.text_primary);
+    let autolock_title = text("Auto-Lock").size(16).color(palette.text_primary);
 
     let autolock_value = if auto_lock_minutes == 0 {
         "Disabled".to_string()
@@ -321,7 +301,8 @@ pub fn security_view(
         text(autolock_value).size(14).color(palette.text_primary),
     ];
 
-    let autolock_slider = slider(0..=60, auto_lock_minutes, Message::ChangeAutoLock).width(Length::Fill);
+    let autolock_slider =
+        slider(0..=60, auto_lock_minutes, Message::ChangeAutoLock).width(Length::Fill);
 
     let autolock_section = container(
         column![
@@ -359,10 +340,10 @@ pub fn security_view(
         slider(0..=120, clipboard_timeout, Message::ChangeClipboardTimeout).width(Length::Fill);
 
     let require_master_check = checkbox(require_master_on_copy)
-    .label("Require master password when copying passwords")
-    .on_toggle(Message::ToggleRequireMasterOnCopy)
-    .text_size(14)
-    .spacing(10);
+        .label("Require master password when copying passwords")
+        .on_toggle(Message::ToggleRequireMasterOnCopy)
+        .text_size(14)
+        .spacing(10);
 
     let clipboard_section = container(
         column![
@@ -393,16 +374,13 @@ pub fn security_view(
         Message::RecoveryEmailChanged,
     );
 
-    let recovery_section = container(
-        column![recovery_title, Space::new().height(16), recovery_input,].padding(24),
-    )
-    .width(Length::Fill)
-    .style(move |_| theme::card_container(theme, v));
+    let recovery_section =
+        container(column![recovery_title, Space::new().height(16), recovery_input,].padding(24))
+            .width(Length::Fill)
+            .style(move |_| theme::card_container(theme, v));
 
     // Master password section
-    let master_pw_title = text("Master Password")
-        .size(16)
-        .color(palette.text_primary);
+    let master_pw_title = text("Master Password").size(16).color(palette.text_primary);
 
     let change_pw_btn = button(
         container(
@@ -421,9 +399,10 @@ pub fn security_view(
     .style(theme::danger_style(theme, v))
     .on_press(Message::ChangeMasterPassword);
 
-    let master_pw_hint = text("Re-encrypts all vault entries with a new key derived from your new password")
-        .size(12)
-        .color(palette.text_muted);
+    let master_pw_hint =
+        text("Re-encrypts all vault entries with a new key derived from your new password")
+            .size(12)
+            .color(palette.text_muted);
 
     let master_pw_section = container(
         column![
@@ -439,9 +418,7 @@ pub fn security_view(
     .style(move |_| theme::card_container(theme, v));
 
     // Audit log section
-    let audit_title = text("Audit Log")
-        .size(16)
-        .color(palette.text_primary);
+    let audit_title = text("Audit Log").size(16).color(palette.text_primary);
 
     let audit_btn = button(
         container(
@@ -559,19 +536,16 @@ pub fn security_view(
     .style(move |_| theme::card_container(theme, v));
 
     // Trusted devices — coming soon
-    let devices_title = text("Trusted Devices")
-        .size(16)
-        .color(palette.text_primary);
+    let devices_title = text("Trusted Devices").size(16).color(palette.text_primary);
 
     let devices_hint = text("Device management — coming soon")
         .size(13)
         .color(palette.text_muted);
 
-    let devices_section = container(
-        column![devices_title, Space::new().height(16), devices_hint].padding(24),
-    )
-    .width(Length::Fill)
-    .style(move |_| theme::card_container(theme, v));
+    let devices_section =
+        container(column![devices_title, Space::new().height(16), devices_hint].padding(24))
+            .width(Length::Fill)
+            .style(move |_| theme::card_container(theme, v));
 
     let content = column![
         title,
@@ -604,4 +578,3 @@ pub fn security_view(
     .style(move |_theme, _status| theme::scrollable_style(theme, v))
     .into()
 }
-

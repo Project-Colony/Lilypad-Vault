@@ -552,7 +552,10 @@ pub fn show_entry_history(
         .find_entry(label)
         .ok_or_else(|| anyhow!("entry '{label}' not found"))?;
 
-    println!("History for '{}' (showing up to {} records):\n", label, limit);
+    println!(
+        "History for '{}' (showing up to {} records):\n",
+        label, limit
+    );
 
     if entry.history.is_empty() {
         println!("No history records found.");

@@ -144,7 +144,11 @@ pub fn centered_icon<M: 'static>(glyph: &str, size: f32) -> Element<'static, M> 
 }
 
 /// Create a centered Nerd Font icon element with an explicit color.
-pub fn centered_icon_colored<M: 'static>(glyph: &str, size: f32, color: Color) -> Element<'static, M> {
+pub fn centered_icon_colored<M: 'static>(
+    glyph: &str,
+    size: f32,
+    color: Color,
+) -> Element<'static, M> {
     let nudge = size * 0.18;
     container(
         text(glyph.to_string())

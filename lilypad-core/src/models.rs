@@ -334,19 +334,23 @@ impl Vault {
 
     /// Returns recently used entries, sorted by last access time (most recent first).
     pub fn recently_used(&self, limit: usize) -> Vec<&Entry> {
-        let mut entries: Vec<&Entry> = self.entries
+        let mut entries: Vec<&Entry> = self
+            .entries
             .iter()
             .filter(|entry| entry.last_accessed_at.is_some())
             .collect();
         entries.sort_by(|a, b| {
-            b.last_accessed_at.unwrap_or(0).cmp(&a.last_accessed_at.unwrap_or(0))
+            b.last_accessed_at
+                .unwrap_or(0)
+                .cmp(&a.last_accessed_at.unwrap_or(0))
         });
         entries.into_iter().take(limit).collect()
     }
 
     /// Returns most frequently used entries, sorted by access count (highest first).
     pub fn most_used(&self, limit: usize) -> Vec<&Entry> {
-        let mut entries: Vec<&Entry> = self.entries
+        let mut entries: Vec<&Entry> = self
+            .entries
             .iter()
             .filter(|entry| entry.access_count > 0)
             .collect();
@@ -493,7 +497,9 @@ impl Vault {
     pub fn entries_without_folder(&self) -> Vec<&Entry> {
         self.entries
             .iter()
-            .filter(|entry| entry.metadata.folder.is_none() || entry.metadata.folder.as_deref() == Some(""))
+            .filter(|entry| {
+                entry.metadata.folder.is_none() || entry.metadata.folder.as_deref() == Some("")
+            })
             .collect()
     }
 
@@ -551,7 +557,11 @@ impl Vault {
     }
 
     /// Moves multiple entries to a folder. Returns the number of entries moved.
-    pub fn bulk_move_to_folder(&mut self, labels: &[&str], folder: Option<String>) -> Result<usize> {
+    pub fn bulk_move_to_folder(
+        &mut self,
+        labels: &[&str],
+        folder: Option<String>,
+    ) -> Result<usize> {
         if let Some(ref f) = folder {
             Self::validate_folder_path(f)?;
         }
@@ -775,7 +785,10 @@ impl MergeResult {
     pub fn summary(&self) -> String {
         let mut parts = Vec::new();
         if !self.added_from_remote.is_empty() {
-            parts.push(format!("{} added from remote", self.added_from_remote.len()));
+            parts.push(format!(
+                "{} added from remote",
+                self.added_from_remote.len()
+            ));
         }
         if !self.updated_from_remote.is_empty() {
             parts.push(format!(
@@ -974,7 +987,9 @@ impl Entry {
             icon: None,
             color: None,
         };
-        entry.history.push(EntryHistoryRecord::new(EntryChangeType::Created));
+        entry
+            .history
+            .push(EntryHistoryRecord::new(EntryChangeType::Created));
         entry
     }
 
@@ -1014,7 +1029,8 @@ impl Entry {
         if let Some(prev) = previous_ciphertext {
             self.history.push(EntryHistoryRecord::password_change(prev));
         } else {
-            self.history.push(EntryHistoryRecord::new(EntryChangeType::PasswordChanged));
+            self.history
+                .push(EntryHistoryRecord::new(EntryChangeType::PasswordChanged));
         }
         self.updated_at = current_timestamp();
     }
@@ -1026,7 +1042,8 @@ impl Entry {
 
     /// Gets the number of password changes recorded in history.
     pub fn password_change_count(&self) -> usize {
-        self.history.iter()
+        self.history
+            .iter()
             .filter(|h| matches!(h.change_type, EntryChangeType::PasswordChanged))
             .count()
     }
@@ -1051,7 +1068,8 @@ impl Entry {
     /// Records that the password was changed (updates password_changed_at and adds to history).
     pub fn record_password_change(&mut self) {
         self.password_changed_at = current_timestamp();
-        self.history.push(EntryHistoryRecord::new(EntryChangeType::PasswordChanged));
+        self.history
+            .push(EntryHistoryRecord::new(EntryChangeType::PasswordChanged));
         self.updated_at = current_timestamp();
     }
 
@@ -1430,7 +1448,10 @@ impl EntrySecret {
     /// Returns the generated codes (should be shown to user once).
     pub fn generate_backup_codes(&mut self) -> Vec<String> {
         self.totp_backup_codes = TotpBackupCode::generate_set(TOTP_BACKUP_CODE_COUNT);
-        self.totp_backup_codes.iter().map(|c| c.code.clone()).collect()
+        self.totp_backup_codes
+            .iter()
+            .map(|c| c.code.clone())
+            .collect()
     }
 
     /// Verifies and consumes a backup code. Returns true if valid.
@@ -1571,7 +1592,8 @@ fn is_valid_phone(phone: &str) -> bool {
         return false;
     }
     // Remove common formatting characters
-    let cleaned: String = phone.chars()
+    let cleaned: String = phone
+        .chars()
         .filter(|c| !matches!(c, ' ' | '-' | '(' | ')' | '.'))
         .collect();
 
@@ -1633,7 +1655,10 @@ impl Attachment {
         }
 
         // Check for path traversal in filename
-        if self.filename.contains("..") || self.filename.contains('/') || self.filename.contains('\\') {
+        if self.filename.contains("..")
+            || self.filename.contains('/')
+            || self.filename.contains('\\')
+        {
             return Err(CoreError::InvalidInput(
                 "attachment filename contains invalid characters".to_string(),
             ));
@@ -1648,9 +1673,7 @@ impl Attachment {
         if decoded_size > MAX_ATTACHMENT_SIZE {
             return Err(CoreError::InvalidInput(format!(
                 "attachment '{}' exceeds maximum size ({} bytes, max {} bytes)",
-                self.filename,
-                decoded_size,
-                MAX_ATTACHMENT_SIZE
+                self.filename, decoded_size, MAX_ATTACHMENT_SIZE
             )));
         }
 
@@ -1812,9 +1835,7 @@ mod tests {
         assert!(vault.find_entry("email").is_some());
         let updated = encrypt(&key, b"new").expect("encrypt");
         vault.update_entry("email", updated).expect("update");
-        vault
-            .add_entry_tag("email", "personal")
-            .expect("tag add");
+        vault.add_entry_tag("email", "personal").expect("tag add");
         vault
             .set_entry_folder("email", Some("accounts".to_string()))
             .expect("folder update");
@@ -1896,8 +1917,8 @@ mod tests {
 
     #[test]
     fn test_entry_history_record_new() {
-        use super::EntryHistoryRecord;
         use super::EntryChangeType;
+        use super::EntryHistoryRecord;
 
         let record = EntryHistoryRecord::new(EntryChangeType::Created);
         assert!(record.timestamp > 0);
@@ -1908,8 +1929,8 @@ mod tests {
 
     #[test]
     fn test_entry_history_with_description() {
-        use super::EntryHistoryRecord;
         use super::EntryChangeType;
+        use super::EntryHistoryRecord;
 
         let record = EntryHistoryRecord::with_description(
             EntryChangeType::MetadataUpdated,
@@ -2304,8 +2325,8 @@ mod tests {
 
         let key = KeyMaterial::generate();
         let params = KeyDerivationParams::generate();
-        let metadata = KeyMetadata::new(&key, CryptoAlgorithm::XChaCha20Poly1305)
-            .with_embedded_kdf(&params);
+        let metadata =
+            KeyMetadata::new(&key, CryptoAlgorithm::XChaCha20Poly1305).with_embedded_kdf(&params);
 
         assert!(metadata.kdf_params.is_some());
         assert_eq!(metadata.kdf.as_deref(), Some("argon2id"));

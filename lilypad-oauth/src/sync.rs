@@ -189,7 +189,10 @@ impl GitHubSyncBackend {
             resp.token_type.unwrap_or_else(|| "bearer".to_string()),
             resp.scope.unwrap_or_else(|| token.scope.clone()),
         )
-        .with_refresh_token(resp.refresh_token.or_else(|| token.refresh_token().map(String::from)))
+        .with_refresh_token(
+            resp.refresh_token
+                .or_else(|| token.refresh_token().map(String::from)),
+        )
         .with_expires_in(resp.expires_in)
         .with_username(token.username.clone().unwrap_or_default());
 
@@ -303,11 +306,9 @@ impl GitHubSyncBackend {
             .map(|(_, sha)| sha);
 
         // Upload vault data
-        let new_sha = self.client.save_vault_data(
-            &self.username,
-            payload,
-            sha.as_deref(),
-        )?;
+        let new_sha = self
+            .client
+            .save_vault_data(&self.username, payload, sha.as_deref())?;
 
         // Calculate checksum
         let checksum = calculate_checksum(payload);
@@ -323,7 +324,8 @@ impl GitHubSyncBackend {
             .get_sync_metadata(&self.username)?
             .map(|(_, sha)| sha);
 
-        self.client.save_sync_metadata(&self.username, &meta_json, meta_sha.as_deref())?;
+        self.client
+            .save_sync_metadata(&self.username, &meta_json, meta_sha.as_deref())?;
 
         // Update cached state
         self.metadata = Some(meta);
@@ -366,7 +368,10 @@ impl GitHubSyncBackend {
         let repo_name = format!("{}-{}", crate::VAULT_REPO_PREFIX, self.username);
 
         // Delete the vault data file
-        match self.client.get_file(&self.username, &repo_name, crate::VAULT_DATA_FILENAME) {
+        match self
+            .client
+            .get_file(&self.username, &repo_name, crate::VAULT_DATA_FILENAME)
+        {
             Ok(file) => {
                 self.client.delete_file(
                     &self.username,
@@ -383,7 +388,10 @@ impl GitHubSyncBackend {
         }
 
         // Also delete sync metadata if present
-        match self.client.get_file(&self.username, &repo_name, crate::SYNC_META_FILENAME) {
+        match self
+            .client
+            .get_file(&self.username, &repo_name, crate::SYNC_META_FILENAME)
+        {
             Ok(file) => {
                 self.client.delete_file(
                     &self.username,
@@ -471,7 +479,8 @@ mod tests {
             "testuser".to_string(),
             "abc123".to_string(),
             "def456".to_string(),
-        ).with_device_id("my-device-001".to_string());
+        )
+        .with_device_id("my-device-001".to_string());
 
         assert_eq!(meta.device_id, "my-device-001");
         assert_eq!(meta.github_username, "testuser");
@@ -509,7 +518,10 @@ mod tests {
 
         for variant in &variants {
             let formatted = format!("{:?}", variant);
-            assert!(!formatted.is_empty(), "SyncStatus variant should have non-empty Debug output");
+            assert!(
+                !formatted.is_empty(),
+                "SyncStatus variant should have non-empty Debug output"
+            );
         }
 
         // Verify specific Debug representations

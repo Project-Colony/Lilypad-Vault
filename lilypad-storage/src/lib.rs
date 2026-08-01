@@ -560,13 +560,13 @@ fn compute_checksum(ciphertext: &lilypad_core::Ciphertext) -> String {
 /// Verifies a vault file's integrity without decrypting it.
 /// Returns Ok(()) if the vault passes integrity checks, or an error describing the issue.
 pub fn verify_vault_integrity(path: &Path) -> Result<()> {
-    let bytes = fs::read(path)
-        .with_context(|| format!("failed to read vault file: {}", path.display()))?;
+    let bytes =
+        fs::read(path).with_context(|| format!("failed to read vault file: {}", path.display()))?;
 
     let stored_bytes = strip_header(&bytes)?;
 
-    let stored: StoredVault = serde_json::from_slice(stored_bytes)
-        .context("failed to parse vault JSON")?;
+    let stored: StoredVault =
+        serde_json::from_slice(stored_bytes).context("failed to parse vault JSON")?;
 
     if let Some(ref expected_checksum) = stored.checksum {
         let actual_checksum = compute_checksum(&stored.ciphertext);
@@ -605,14 +605,20 @@ fn secure_delete(path: &Path) -> Result<()> {
     }
 
     // Open file for writing
-    let mut file = OpenOptions::new()
-        .write(true)
-        .open(path)
-        .with_context(|| format!("failed to open file for secure deletion: {}", path.display()))?;
+    let mut file = OpenOptions::new().write(true).open(path).with_context(|| {
+        format!(
+            "failed to open file for secure deletion: {}",
+            path.display()
+        )
+    })?;
 
     // Acquire exclusive lock
-    file.lock_exclusive()
-        .with_context(|| format!("failed to lock file for secure deletion: {}", path.display()))?;
+    file.lock_exclusive().with_context(|| {
+        format!(
+            "failed to lock file for secure deletion: {}",
+            path.display()
+        )
+    })?;
 
     // Buffer for random data (use chunks for large files)
     let chunk_size = 64 * 1024; // 64KB chunks
@@ -651,8 +657,12 @@ fn secure_delete(path: &Path) -> Result<()> {
     drop(file);
 
     // Remove the file from the filesystem
-    fs::remove_file(path)
-        .with_context(|| format!("failed to remove file after secure deletion: {}", path.display()))?;
+    fs::remove_file(path).with_context(|| {
+        format!(
+            "failed to remove file after secure deletion: {}",
+            path.display()
+        )
+    })?;
 
     Ok(())
 }
@@ -706,7 +716,8 @@ mod tests {
         // Create a file with some content
         {
             let mut file = fs::File::create(&file_path).expect("create file");
-            file.write_all(b"super secret password 12345").expect("write");
+            file.write_all(b"super secret password 12345")
+                .expect("write");
         }
 
         assert!(file_path.exists());
@@ -749,25 +760,16 @@ mod tests {
         LocalStore::new(&config).expect("create store")
     }
 
-    fn make_test_vault(
-        name: &str,
-        key: &lilypad_core::KeyMaterial,
-    ) -> lilypad_core::Vault {
-        let metadata = lilypad_core::KeyMetadata::new(
-            key,
-            lilypad_core::CryptoAlgorithm::XChaCha20Poly1305,
-        );
+    fn make_test_vault(name: &str, key: &lilypad_core::KeyMaterial) -> lilypad_core::Vault {
+        let metadata =
+            lilypad_core::KeyMetadata::new(key, lilypad_core::CryptoAlgorithm::XChaCha20Poly1305);
         lilypad_core::Vault::new(name, metadata)
     }
 
-    fn make_test_entry(
-        label: &str,
-        key: &lilypad_core::KeyMaterial,
-    ) -> lilypad_core::Entry {
+    fn make_test_entry(label: &str, key: &lilypad_core::KeyMaterial) -> lilypad_core::Entry {
         let secret = lilypad_core::EntrySecret::new("test-password");
         let plaintext = serde_json::to_vec(&secret).expect("serialize secret");
-        let ciphertext =
-            lilypad_core::encrypt(key, &plaintext).expect("encrypt secret");
+        let ciphertext = lilypad_core::encrypt(key, &plaintext).expect("encrypt secret");
         lilypad_core::Entry::new_with_metadata(
             label,
             lilypad_core::EntryMetadata::default(),
@@ -909,9 +911,7 @@ mod tests {
         let vault = make_test_vault("backup-test", &key);
         store.save_vault(&vault, &key).expect("save vault");
 
-        let backup_name = store
-            .create_backup("backup-test")
-            .expect("create backup");
+        let backup_name = store.create_backup("backup-test").expect("create backup");
 
         // Verify backup file exists on disk
         let backup_path = store.backup_dir().join(&backup_name);
@@ -968,9 +968,7 @@ mod tests {
         store.save_vault(&vault, &key).expect("save original");
 
         // Create a backup of the original state
-        let backup_name = store
-            .create_backup("restore-test")
-            .expect("create backup");
+        let backup_name = store.create_backup("restore-test").expect("create backup");
 
         // Modify the vault (add another entry, remove original)
         vault
@@ -1026,9 +1024,7 @@ mod tests {
         assert_eq!(before.len(), 5);
 
         // Prune to keep only 2
-        let deleted = store
-            .prune_backups("prune-test", 2)
-            .expect("prune backups");
+        let deleted = store.prune_backups("prune-test", 2).expect("prune backups");
         assert_eq!(deleted, 3, "should have pruned 3 backups");
 
         let after = store.list_backups("prune-test").expect("list after");
@@ -1226,14 +1222,16 @@ mod tests {
     fn make_v2_test_vault(
         name: &str,
         password: &str,
-    ) -> (lilypad_core::Vault, lilypad_core::KeyMaterial, lilypad_core::KeyDerivationParams) {
+    ) -> (
+        lilypad_core::Vault,
+        lilypad_core::KeyMaterial,
+        lilypad_core::KeyDerivationParams,
+    ) {
         let params = lilypad_core::KeyDerivationParams::generate();
         let key = lilypad_core::derive_key(password, &params).expect("derive key");
-        let metadata = lilypad_core::KeyMetadata::new(
-            &key,
-            lilypad_core::CryptoAlgorithm::XChaCha20Poly1305,
-        )
-        .with_embedded_kdf(&params);
+        let metadata =
+            lilypad_core::KeyMetadata::new(&key, lilypad_core::CryptoAlgorithm::XChaCha20Poly1305)
+                .with_embedded_kdf(&params);
         let vault = lilypad_core::Vault::new(name, metadata);
         (vault, key, params)
     }
@@ -1272,7 +1270,8 @@ mod tests {
         store.save_vault(&vault, &key).expect("save V2 vault");
 
         // Try to load with a wrong password (different derived key)
-        let wrong_key = lilypad_core::derive_key(wrong_password, &params).expect("derive wrong key");
+        let wrong_key =
+            lilypad_core::derive_key(wrong_password, &params).expect("derive wrong key");
         let result = store.load_vault("v2-reject", &wrong_key);
         assert!(result.is_err(), "V2 vault should reject wrong password");
         let err_msg = result.unwrap_err().to_string();
@@ -1309,7 +1308,9 @@ mod tests {
         let store = make_test_store(dir.path());
         let key = lilypad_core::KeyMaterial::generate();
 
-        assert!(!store.vault_exists("nonexistent").expect("check nonexistent"));
+        assert!(!store
+            .vault_exists("nonexistent")
+            .expect("check nonexistent"));
 
         let vault = make_test_vault("exists-test", &key);
         store.save_vault(&vault, &key).expect("save vault");
@@ -1353,7 +1354,10 @@ mod tests {
         let result = store
             .load_vault_kdf_params("v1-no-kdf")
             .expect("load kdf params");
-        assert!(result.is_none(), "V1 vault should not have embedded KDF params");
+        assert!(
+            result.is_none(),
+            "V1 vault should not have embedded KDF params"
+        );
     }
 
     #[test]

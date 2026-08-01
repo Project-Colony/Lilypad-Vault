@@ -174,10 +174,11 @@ impl TokenStoreManager {
 
     /// Returns the default token store path.
     pub fn default_path() -> Result<PathBuf> {
-        let project_dirs = directories::ProjectDirs::from_path(std::path::PathBuf::from("Colony/Lilypad"))
-            .ok_or_else(|| {
-                OAuthError::TokenStoreError("could not determine config directory".to_string())
-            })?;
+        let project_dirs =
+            directories::ProjectDirs::from_path(std::path::PathBuf::from("Colony/Lilypad"))
+                .ok_or_else(|| {
+                    OAuthError::TokenStoreError("could not determine config directory".to_string())
+                })?;
 
         Ok(project_dirs.config_dir().join(TOKEN_FILENAME))
     }
@@ -185,14 +186,19 @@ impl TokenStoreManager {
     /// Saves a token for a provider.
     pub fn save_token(&self, provider: OAuthProvider, token: TokenInfo) -> Result<()> {
         let mut store = self.load_store()?;
-        store.tokens.insert(provider.to_string().to_lowercase(), token);
+        store
+            .tokens
+            .insert(provider.to_string().to_lowercase(), token);
         self.save_store(&store)
     }
 
     /// Loads a token for a provider.
     pub fn load_token(&self, provider: OAuthProvider) -> Result<Option<TokenInfo>> {
         let store = self.load_store()?;
-        Ok(store.tokens.get(&provider.to_string().to_lowercase()).cloned())
+        Ok(store
+            .tokens
+            .get(&provider.to_string().to_lowercase())
+            .cloned())
     }
 
     /// Removes a token for a provider.
@@ -333,13 +339,13 @@ impl TokenStoreManager {
 
             // Final: truncate to zero
             file.set_len(0).map_err(|e| {
-                OAuthError::TokenStoreError(format!(
-                    "truncate failed during secure delete: {}",
-                    e
-                ))
+                OAuthError::TokenStoreError(format!("truncate failed during secure delete: {}", e))
             })?;
             file.sync_all().map_err(|e| {
-                OAuthError::TokenStoreError(format!("final sync failed during secure delete: {}", e))
+                OAuthError::TokenStoreError(format!(
+                    "final sync failed during secure delete: {}",
+                    e
+                ))
             })?;
         }
 
@@ -407,11 +413,11 @@ fn decrypt_token_data(data: &[u8]) -> Result<Vec<u8>> {
     let key = Key::from_slice(&key_bytes);
     let cipher = XChaCha20Poly1305::new(key);
 
-    cipher
-        .decrypt(nonce, &data[ct_start..])
-        .map_err(|_| OAuthError::TokenStoreError(
+    cipher.decrypt(nonce, &data[ct_start..]).map_err(|_| {
+        OAuthError::TokenStoreError(
             "failed to decrypt token store (machine key mismatch or corrupted file)".to_string(),
-        ))
+        )
+    })
 }
 
 /// Returns the current Unix timestamp.
@@ -599,10 +605,7 @@ mod tests {
 
         // Destroy the store
         store.destroy().unwrap();
-        assert!(
-            !path.exists(),
-            "Token file should be deleted after destroy"
-        );
+        assert!(!path.exists(), "Token file should be deleted after destroy");
     }
 
     #[test]

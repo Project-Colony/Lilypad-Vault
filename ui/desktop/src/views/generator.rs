@@ -114,27 +114,32 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
         .size(14)
         .color(palette.text_secondary);
 
-    let lowercase_check = checkbox(generator_lowercase).label("Lowercase (a-z)")
+    let lowercase_check = checkbox(generator_lowercase)
+        .label("Lowercase (a-z)")
         .on_toggle(Message::ToggleLowercase)
         .text_size(14)
         .spacing(10);
 
-    let uppercase_check = checkbox(generator_uppercase).label("Uppercase (A-Z)")
+    let uppercase_check = checkbox(generator_uppercase)
+        .label("Uppercase (A-Z)")
         .on_toggle(Message::ToggleUppercase)
         .text_size(14)
         .spacing(10);
 
-    let digits_check = checkbox(generator_digits).label("Digits (0-9)")
+    let digits_check = checkbox(generator_digits)
+        .label("Digits (0-9)")
         .on_toggle(Message::ToggleDigits)
         .text_size(14)
         .spacing(10);
 
-    let symbols_check = checkbox(generator_symbols).label("Symbols (!@#$%...)")
+    let symbols_check = checkbox(generator_symbols)
+        .label("Symbols (!@#$%...)")
         .on_toggle(Message::ToggleSymbols)
         .text_size(14)
         .spacing(10);
 
-    let ambiguous_check = checkbox(exclude_ambiguous).label("Exclude ambiguous (0O, 1lI)")
+    let ambiguous_check = checkbox(exclude_ambiguous)
+        .label("Exclude ambiguous (0O, 1lI)")
         .on_toggle(Message::ToggleExcludeAmbiguous)
         .text_size(14)
         .spacing(10);
@@ -176,16 +181,24 @@ pub fn view(params: GeneratorViewParams<'_>) -> Element<'static, Message> {
             .into()
     } else {
         row![
-            container(Space::new().width(Length::FillPortion(fill_portion)).height(Length::Fixed(8.0)))
-                .style(move |_| container::Style {
-                    background: Some(iced::Background::Color(strength_color)),
-                    ..Default::default()
-                }),
-            container(Space::new().width(Length::FillPortion(empty_portion)).height(Length::Fixed(8.0)))
-                .style(move |_| container::Style {
-                    background: Some(iced::Background::Color(palette.surface_variant)),
-                    ..Default::default()
-                }),
+            container(
+                Space::new()
+                    .width(Length::FillPortion(fill_portion))
+                    .height(Length::Fixed(8.0))
+            )
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(strength_color)),
+                ..Default::default()
+            }),
+            container(
+                Space::new()
+                    .width(Length::FillPortion(empty_portion))
+                    .height(Length::Fixed(8.0))
+            )
+            .style(move |_| container::Style {
+                background: Some(iced::Background::Color(palette.surface_variant)),
+                ..Default::default()
+            }),
         ]
         .into()
     };
@@ -280,10 +293,7 @@ fn calculate_strength(length: usize, options_count: usize) -> u8 {
 }
 
 /// Render a tip item
-fn tip_item<'a>(
-    palette: &crate::theme::LilypadPalette,
-    tip: &'static str,
-) -> Element<'a, Message> {
+fn tip_item<'a>(palette: &crate::theme::LilypadPalette, tip: &'static str) -> Element<'a, Message> {
     row![
         text("•").size(14).color(palette.primary),
         Space::new().width(8),

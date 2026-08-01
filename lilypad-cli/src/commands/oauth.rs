@@ -1,9 +1,7 @@
 //! OAuth-related CLI commands for GitHub authentication and vault sync.
 
 use anyhow::{anyhow, Result};
-use lilypad_oauth::{
-    GitHubSyncBackend, OAuthConfig, OAuthProvider, SyncStatus, TokenStoreManager,
-};
+use lilypad_oauth::{GitHubSyncBackend, OAuthConfig, OAuthProvider, SyncStatus, TokenStoreManager};
 
 use super::utils::{load_vault_key, OutputFormat};
 
@@ -59,7 +57,10 @@ pub fn login(output_format: OutputFormat) -> Result<()> {
         println!("Successfully authenticated as: {}", username);
         println!();
         println!("Your vault repository will be created at:");
-        println!("  https://github.com/{}/lilypad-vault-{}", username, username);
+        println!(
+            "  https://github.com/{}/lilypad-vault-{}",
+            username, username
+        );
         println!();
         println!("Use 'lilypad sync push <vault>' to sync your vault to GitHub.");
     }
@@ -183,9 +184,7 @@ pub fn sync_push(
 ) -> Result<()> {
     // Check authentication
     if !GitHubSyncBackend::has_valid_token()? {
-        return Err(anyhow!(
-            "Not authenticated. Use 'lilypad login' first."
-        ));
+        return Err(anyhow!("Not authenticated. Use 'lilypad login' first."));
     }
 
     // Load vault to get the encrypted payload
@@ -227,8 +226,11 @@ pub fn sync_push(
         println!();
         println!("Vault '{}' pushed to GitHub successfully!", vault_name);
         println!();
-        println!("View at: https://github.com/{}/lilypad-vault-{}",
-            backend.username(), backend.username());
+        println!(
+            "View at: https://github.com/{}/lilypad-vault-{}",
+            backend.username(),
+            backend.username()
+        );
     }
 
     Ok(())
@@ -249,9 +251,7 @@ pub fn sync_pull(
 ) -> Result<()> {
     // Check authentication
     if !GitHubSyncBackend::has_valid_token()? {
-        return Err(anyhow!(
-            "Not authenticated. Use 'lilypad login' first."
-        ));
+        return Err(anyhow!("Not authenticated. Use 'lilypad login' first."));
     }
 
     let mut backend = GitHubSyncBackend::from_stored_token()?;
@@ -339,7 +339,10 @@ pub fn sync_pull(
                 );
             } else {
                 println!("No vault data found on GitHub.");
-                println!("Use 'lilypad sync push {}' to upload your vault.", vault_name);
+                println!(
+                    "Use 'lilypad sync push {}' to upload your vault.",
+                    vault_name
+                );
             }
         }
     }
@@ -348,17 +351,16 @@ pub fn sync_pull(
 }
 
 /// Deletes a vault from GitHub (keeps local copy).
-pub fn sync_delete(
-    vault_name: &str,
-    output_format: OutputFormat,
-) -> anyhow::Result<()> {
+pub fn sync_delete(vault_name: &str, output_format: OutputFormat) -> anyhow::Result<()> {
     let mut backend = lilypad_oauth::GitHubSyncBackend::from_stored_token()?;
 
     // Check if the remote vault exists first
     let status = backend.get_status("")?;
     match status {
         lilypad_oauth::SyncStatus::NotAuthenticated => {
-            return Err(anyhow::anyhow!("Not authenticated. Run 'lilypad login' first."));
+            return Err(anyhow::anyhow!(
+                "Not authenticated. Run 'lilypad login' first."
+            ));
         }
         lilypad_oauth::SyncStatus::NoRemoteVault => {
             return Err(anyhow::anyhow!("No remote vault found on GitHub."));
@@ -379,7 +381,10 @@ pub fn sync_delete(
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
         OutputFormat::Text => {
-            println!("Vault '{}' deleted from GitHub. Local copy is preserved.", vault_name);
+            println!(
+                "Vault '{}' deleted from GitHub. Local copy is preserved.",
+                vault_name
+            );
         }
     }
     Ok(())
@@ -458,7 +463,10 @@ pub fn sync_status(
             }
             SyncStatus::RemoteAhead => {
                 println!("  Status: Remote changes available");
-                println!("  Action: Use 'lilypad sync pull {}' to download", vault_name);
+                println!(
+                    "  Action: Use 'lilypad sync pull {}' to download",
+                    vault_name
+                );
             }
             SyncStatus::Conflict => {
                 println!("  Status: Conflict detected!");

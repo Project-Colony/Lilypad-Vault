@@ -225,15 +225,26 @@ mod tests {
         let thirty_days_ago = now - 30 * 86400;
         let result = format_timestamp_relative(thirty_days_ago);
         // Should NOT be "X days ago" since it's beyond 7 days
-        assert!(!result.contains("days ago"), "30 days ago should use date format, got: {}", result);
+        assert!(
+            !result.contains("days ago"),
+            "30 days ago should use date format, got: {}",
+            result
+        );
         // Should be a formatted date (contains year)
-        assert!(result.contains("2026") || result.contains("2025"),
-            "should contain a year in formatted date, got: {}", result);
+        assert!(
+            result.contains("2026") || result.contains("2025"),
+            "should contain a year in formatted date, got: {}",
+            result
+        );
 
         // 90 days ago
         let ninety_days_ago = now - 90 * 86400;
         let result = format_timestamp_relative(ninety_days_ago);
-        assert!(!result.contains("days ago"), "90 days ago should use date format, got: {}", result);
+        assert!(
+            !result.contains("days ago"),
+            "90 days ago should use date format, got: {}",
+            result
+        );
 
         // Zero timestamp
         assert_eq!(format_timestamp_relative(0), "Never");

@@ -102,7 +102,10 @@ impl GitHubClient {
     }
 
     /// Creates a new GitHub API client with a custom API URL.
-    pub fn with_api_url(access_token: impl Into<String>, api_url: impl Into<String>) -> Result<Self> {
+    pub fn with_api_url(
+        access_token: impl Into<String>,
+        api_url: impl Into<String>,
+    ) -> Result<Self> {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(30))
             .user_agent("Lilypad-Vault/1.0")
@@ -153,7 +156,10 @@ impl GitHubClient {
 
     /// Gets file content from a repository.
     pub fn get_file(&self, owner: &str, repo: &str, path: &str) -> Result<GitHubFileContent> {
-        let url = format!("{}/repos/{}/{}/contents/{}", self.api_url, owner, repo, path);
+        let url = format!(
+            "{}/repos/{}/{}/contents/{}",
+            self.api_url, owner, repo, path
+        );
         self.get(&url)
     }
 
@@ -167,7 +173,10 @@ impl GitHubClient {
         message: &str,
         sha: Option<&str>,
     ) -> Result<GitHubFileContent> {
-        let url = format!("{}/repos/{}/{}/contents/{}", self.api_url, owner, repo, path);
+        let url = format!(
+            "{}/repos/{}/{}/contents/{}",
+            self.api_url, owner, repo, path
+        );
 
         // Base64 encode the content
         let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, content);
@@ -197,7 +206,10 @@ impl GitHubClient {
         sha: &str,
         message: &str,
     ) -> Result<()> {
-        let url = format!("{}/repos/{}/{}/contents/{}", self.api_url, owner, repo, path);
+        let url = format!(
+            "{}/repos/{}/{}/contents/{}",
+            self.api_url, owner, repo, path
+        );
 
         #[derive(Serialize)]
         struct DeleteFileRequest<'a> {
@@ -280,7 +292,10 @@ impl GitHubClient {
 
     /// Fetches raw blob content via the Git Blob API (supports files > 1MB).
     fn get_blob_content(&self, owner: &str, repo: &str, sha: &str) -> Result<Vec<u8>> {
-        let url = format!("{}/repos/{}/{}/git/blobs/{}", self.api_url, owner, repo, sha);
+        let url = format!(
+            "{}/repos/{}/{}/git/blobs/{}",
+            self.api_url, owner, repo, sha
+        );
 
         #[derive(Deserialize)]
         struct BlobResponse {
@@ -297,7 +312,11 @@ impl GitHubClient {
             )));
         }
 
-        let cleaned: String = blob.content.chars().filter(|c| !c.is_whitespace()).collect();
+        let cleaned: String = blob
+            .content
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
         base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &cleaned)
             .map_err(|e| OAuthError::ParseError(format!("invalid base64 in blob: {}", e)))
     }
@@ -320,7 +339,14 @@ impl GitHubClient {
             "Initial vault upload"
         };
 
-        let file = self.put_file(username, &repo_name, VAULT_DATA_FILENAME, data, message, sha)?;
+        let file = self.put_file(
+            username,
+            &repo_name,
+            VAULT_DATA_FILENAME,
+            data,
+            message,
+            sha,
+        )?;
         Ok(file.sha)
     }
 
@@ -330,13 +356,14 @@ impl GitHubClient {
 
         match self.get_file(username, &repo_name, SYNC_META_FILENAME) {
             Ok(file) => {
-                let content = file.content.ok_or_else(|| {
-                    OAuthError::ParseError("file content is empty".to_string())
-                })?;
+                let content = file
+                    .content
+                    .ok_or_else(|| OAuthError::ParseError("file content is empty".to_string()))?;
 
                 let cleaned: String = content.chars().filter(|c| !c.is_whitespace()).collect();
-                let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &cleaned)
-                    .map_err(|e| OAuthError::ParseError(format!("invalid base64: {}", e)))?;
+                let decoded =
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &cleaned)
+                        .map_err(|e| OAuthError::ParseError(format!("invalid base64: {}", e)))?;
 
                 let meta = String::from_utf8(decoded)
                     .map_err(|e| OAuthError::ParseError(format!("invalid UTF-8: {}", e)))?;
@@ -489,7 +516,9 @@ impl GitHubClient {
             });
         }
 
-        response.json().map_err(|e| OAuthError::ParseError(e.to_string()))
+        response
+            .json()
+            .map_err(|e| OAuthError::ParseError(e.to_string()))
     }
 
     /// Handles response status without parsing body.
@@ -556,10 +585,8 @@ mod tests {
         );
 
         // Also verify with_api_url works
-        let client_custom = GitHubClient::with_api_url(
-            "ghp_another_token",
-            "https://api.github.example.com",
-        );
+        let client_custom =
+            GitHubClient::with_api_url("ghp_another_token", "https://api.github.example.com");
         assert!(
             client_custom.is_ok(),
             "GitHubClient::with_api_url should succeed with valid arguments"

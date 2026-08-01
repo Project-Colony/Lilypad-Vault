@@ -21,9 +21,7 @@ pub fn view(
 ) -> Element<'static, Message> {
     let palette = theme.palette();
 
-    let title = text("Sync & Data")
-        .size(24)
-        .color(palette.text_primary);
+    let title = text("Sync & Data").size(24).color(palette.text_primary);
 
     let subtitle = text("Manage vault synchronization and data export/import")
         .size(14)
@@ -97,9 +95,7 @@ fn sync_actions_section(
 ) -> Element<'static, Message> {
     let palette = theme.palette();
 
-    let section_title = text("Vault Sync")
-        .size(16)
-        .color(palette.text_primary);
+    let section_title = text("Vault Sync").size(16).color(palette.text_primary);
 
     let hint = text("Push your vault to GitHub or pull the latest version from remote")
         .size(12)
@@ -154,11 +150,9 @@ fn sync_actions_section(
     };
 
     let status_btn = button(
-        container(
-            text("Check Status").size(13)
-        )
-        .width(Length::Fill)
-        .align_x(Horizontal::Center),
+        container(text("Check Status").size(13))
+            .width(Length::Fill)
+            .align_x(Horizontal::Center),
     )
     .width(Length::Fill)
     .padding([8, 12])
@@ -185,8 +179,7 @@ fn sync_actions_section(
             Space::new().height(8),
             hint,
             Space::new().height(16),
-            row![push_btn, Space::new().width(12), pull_btn,]
-                .spacing(0),
+            row![push_btn, Space::new().width(12), pull_btn,].spacing(0),
             Space::new().height(12),
             status_btn,
             Space::new().height(8),
@@ -203,9 +196,7 @@ fn sync_actions_section(
 fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'static, Message> {
     let palette = theme.palette();
 
-    let section_title = text("Data Management")
-        .size(16)
-        .color(palette.text_primary);
+    let section_title = text("Data Management").size(16).color(palette.text_primary);
 
     let hint = text("Export your vault for backup or import credentials from a file")
         .size(12)
@@ -331,9 +322,10 @@ fn data_management_section(theme: LilypadTheme, v: UiVariation) -> Element<'stat
     .style(theme::secondary_style(theme, v))
     .on_press(Message::ImportBrowserCsv);
 
-    let import_hint = text("Supports Chrome, Firefox, Bitwarden, LastPass, 1Password, KeePass CSV formats")
-        .size(11)
-        .color(palette.text_muted);
+    let import_hint =
+        text("Supports Chrome, Firefox, Bitwarden, LastPass, 1Password, KeePass CSV formats")
+            .size(11)
+            .color(palette.text_muted);
 
     container(
         column![

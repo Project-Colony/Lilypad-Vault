@@ -29,20 +29,26 @@ fn color_hue(c: iced::Color) -> f32 {
     } else {
         60.0 * (((r - g) / delta) + 4.0)
     };
-    if hue < 0.0 { hue + 360.0 } else { hue }
+    if hue < 0.0 {
+        hue + 360.0
+    } else {
+        hue
+    }
 }
 
 /// Render the settings modal
-pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bool) -> Element<'a, Message> {
+pub fn settings_modal<'a>(
+    theme: LilypadTheme,
+    v: UiVariation,
+    sort_by_color: bool,
+) -> Element<'a, Message> {
     let current_theme = theme;
     let palette = theme.palette();
 
     let header = modal_header(theme, v, "Settings", Message::HideSettings);
 
     // Theme label + sort toggle
-    let theme_label = text("Theme")
-        .size(14)
-        .color(palette.text_secondary);
+    let theme_label = text("Theme").size(14).color(palette.text_secondary);
 
     let sort_label = if sort_by_color { "Color" } else { "A-Z" };
     let sort_btn = button(
@@ -57,12 +63,8 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
     .style(theme::ghost_style(theme, v))
     .on_press(Message::ToggleThemeSort);
 
-    let theme_header = row![
-        theme_label,
-        Space::new().width(Length::Fill),
-        sort_btn,
-    ]
-    .align_y(Vertical::Center);
+    let theme_header =
+        row![theme_label, Space::new().width(Length::Fill), sort_btn,].align_y(Vertical::Center);
 
     // Sort themes
     let mut themes: Vec<LilypadTheme> = LilypadTheme::ALL.to_vec();
@@ -85,23 +87,25 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
             let t_palette = t.palette();
             let theme_btn = button(
                 row![
-                    container(Space::new().width(Length::Fixed(12.0)).height(Length::Fixed(12.0)))
-                        .style(move |_| container::Style {
-                            background: Some(iced::Background::Color(t_palette.primary)),
-                            border: iced::Border {
-                                radius: 6.0.into(),
-                                ..Default::default()
-                            },
+                    container(
+                        Space::new()
+                            .width(Length::Fixed(12.0))
+                            .height(Length::Fixed(12.0))
+                    )
+                    .style(move |_| container::Style {
+                        background: Some(iced::Background::Color(t_palette.primary)),
+                        border: iced::Border {
+                            radius: 6.0.into(),
                             ..Default::default()
-                        }),
+                        },
+                        ..Default::default()
+                    }),
                     Space::new().width(10),
-                    text(t.name())
-                        .size(13)
-                        .color(if is_active {
-                            palette.primary
-                        } else {
-                            palette.text_primary
-                        }),
+                    text(t.name()).size(13).color(if is_active {
+                        palette.primary
+                    } else {
+                        palette.text_primary
+                    }),
                 ]
                 .align_y(Vertical::Center),
             )
@@ -136,9 +140,7 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
     // ── UI Variation picker ───────────────────────────────────────────
     let variation_divider = padded_separator(theme, v);
 
-    let variation_label = text("UI Style")
-        .size(14)
-        .color(palette.text_secondary);
+    let variation_label = text("UI Style").size(14).color(palette.text_secondary);
 
     let current_variation = v;
     let mut variation_rows: Vec<Element<'a, Message>> = Vec::new();
@@ -151,16 +153,12 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
             let var_copy = *variation;
             let variation_btn = button(
                 column![
-                    text(var_name)
-                        .size(13)
-                        .color(if is_active {
-                            palette.primary
-                        } else {
-                            palette.text_primary
-                        }),
-                    text(var_desc)
-                        .size(10)
-                        .color(palette.text_muted),
+                    text(var_name).size(13).color(if is_active {
+                        palette.primary
+                    } else {
+                        palette.text_primary
+                    }),
+                    text(var_desc).size(10).color(palette.text_muted),
                 ]
                 .spacing(2),
             )
@@ -194,16 +192,14 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
     let variation_grid = column(variation_rows);
 
     // Single scrollable containing both themes and UI style
-    let combined_grid = scrollable(
-        column![
-            column(theme_rows),
-            variation_divider,
-            Space::new().height(8),
-            variation_label,
-            Space::new().height(8),
-            variation_grid,
-        ],
-    )
+    let combined_grid = scrollable(column![
+        column(theme_rows),
+        variation_divider,
+        Space::new().height(8),
+        variation_label,
+        Space::new().height(8),
+        variation_grid,
+    ])
     .height(Length::Fixed(320.0))
     .style(move |_theme, _status| theme::scrollable_style(theme, v));
 
@@ -231,14 +227,16 @@ pub fn settings_modal<'a>(theme: LilypadTheme, v: UiVariation, sort_by_color: bo
 }
 
 /// Render the new vault modal
-pub fn new_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &str) -> Element<'a, Message> {
+pub fn new_vault_modal<'a>(
+    theme: LilypadTheme,
+    v: UiVariation,
+    vault_name: &str,
+) -> Element<'a, Message> {
     let palette = theme.palette();
 
     let header = modal_header(theme, v, "Create New Vault", Message::HideNewVaultModal);
 
-    let name_label = text("Vault Name")
-        .size(14)
-        .color(palette.text_secondary);
+    let name_label = text("Vault Name").size(14).color(palette.text_secondary);
 
     let name_input = text_input("e.g., Personal, Work", vault_name)
         .padding(14)
@@ -261,8 +259,13 @@ pub fn new_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &str
             Some(Message::CreateVault)
         });
 
-    let actions = row![Space::new().width(Length::Fill), cancel_btn, Space::new().width(12), create_btn,]
-        .align_y(Vertical::Center);
+    let actions = row![
+        Space::new().width(Length::Fill),
+        cancel_btn,
+        Space::new().width(12),
+        create_btn,
+    ]
+    .align_y(Vertical::Center);
 
     let content = column![
         header,
@@ -280,14 +283,16 @@ pub fn new_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &str
 }
 
 /// Render the rename vault modal
-pub fn rename_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &str) -> Element<'a, Message> {
+pub fn rename_vault_modal<'a>(
+    theme: LilypadTheme,
+    v: UiVariation,
+    vault_name: &str,
+) -> Element<'a, Message> {
     let palette = theme.palette();
 
     let header = modal_header(theme, v, "Rename Vault", Message::CancelRenameVault);
 
-    let name_label = text("New Name")
-        .size(14)
-        .color(palette.text_secondary);
+    let name_label = text("New Name").size(14).color(palette.text_secondary);
 
     let name_input = text_input("Enter new vault name...", vault_name)
         .padding(14)
@@ -310,8 +315,13 @@ pub fn rename_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &
             Some(Message::ConfirmRenameVault)
         });
 
-    let actions = row![Space::new().width(Length::Fill), cancel_btn, Space::new().width(12), rename_btn,]
-        .align_y(Vertical::Center);
+    let actions = row![
+        Space::new().width(Length::Fill),
+        cancel_btn,
+        Space::new().width(12),
+        rename_btn,
+    ]
+    .align_y(Vertical::Center);
 
     let content = column![
         header,
@@ -329,14 +339,16 @@ pub fn rename_vault_modal<'a>(theme: LilypadTheme, v: UiVariation, vault_name: &
 }
 
 /// Render the delete confirmation modal
-pub fn delete_confirm_modal<'a>(theme: LilypadTheme, v: UiVariation, entry_title: &str) -> Element<'a, Message> {
+pub fn delete_confirm_modal<'a>(
+    theme: LilypadTheme,
+    v: UiVariation,
+    entry_title: &str,
+) -> Element<'a, Message> {
     let palette = theme.palette();
 
     let icon = fonts::centered_icon_colored(icons::TRIANGLE_EXCLAMATION, 48.0, palette.warning);
 
-    let title = text("Delete Entry?")
-        .size(20)
-        .color(palette.text_primary);
+    let title = text("Delete Entry?").size(20).color(palette.text_primary);
 
     let message = text(format!(
         "Are you sure you want to delete \"{}\"? This action cannot be undone.",
@@ -384,7 +396,11 @@ pub fn delete_confirm_modal<'a>(theme: LilypadTheme, v: UiVariation, entry_title
 }
 
 /// Render the re-authentication modal
-pub fn reauth_modal<'a>(theme: LilypadTheme, v: UiVariation, reauth_password: &str) -> Element<'a, Message> {
+pub fn reauth_modal<'a>(
+    theme: LilypadTheme,
+    v: UiVariation,
+    reauth_password: &str,
+) -> Element<'a, Message> {
     let palette = theme.palette();
 
     let title = text("Confirm Your Identity")
@@ -417,8 +433,13 @@ pub fn reauth_modal<'a>(theme: LilypadTheme, v: UiVariation, reauth_password: &s
             Some(Message::ConfirmReauth)
         });
 
-    let actions = row![Space::new().width(Length::Fill), cancel_btn, Space::new().width(12), confirm_btn,]
-        .align_y(Vertical::Center);
+    let actions = row![
+        Space::new().width(Length::Fill),
+        cancel_btn,
+        Space::new().width(12),
+        confirm_btn,
+    ]
+    .align_y(Vertical::Center);
 
     let content = column![
         fonts::centered_icon(icons::VAULT, 48.0),
@@ -452,9 +473,10 @@ pub fn change_password_modal<'a>(
         .size(20)
         .color(palette.text_primary);
 
-    let message = text("Enter a new master password. All entries will be re-encrypted with the new key.")
-        .size(14)
-        .color(palette.text_secondary);
+    let message =
+        text("Enter a new master password. All entries will be re-encrypted with the new key.")
+            .size(14)
+            .color(palette.text_secondary);
 
     let warning = row![
         fonts::centered_icon_colored(icons::TRIANGLE_EXCLAMATION, 13.0, palette.warning),
@@ -487,8 +509,13 @@ pub fn change_password_modal<'a>(
             Some(Message::ConfirmChangeMasterPassword)
         });
 
-    let actions = row![Space::new().width(Length::Fill), cancel_btn, Space::new().width(12), confirm_btn,]
-        .align_y(Vertical::Center);
+    let actions = row![
+        Space::new().width(Length::Fill),
+        cancel_btn,
+        Space::new().width(12),
+        confirm_btn,
+    ]
+    .align_y(Vertical::Center);
 
     let content = column![
         icon,
@@ -518,7 +545,14 @@ pub fn entry_history_modal<'a>(
 ) -> Element<'a, Message> {
     let palette = theme.palette();
 
-    let header = modal_header_with_icon(theme, v, icons::CLOCK, 32.0, "Entry History", Message::CloseEntryHistory);
+    let header = modal_header_with_icon(
+        theme,
+        v,
+        icons::CLOCK,
+        32.0,
+        "Entry History",
+        Message::CloseEntryHistory,
+    );
 
     let history_content: Element<'a, Message> = if history_entries.is_empty() {
         container(
@@ -542,31 +576,26 @@ pub fn entry_history_modal<'a>(
             .map(|(i, (timestamp, password_masked))| {
                 let ts = *timestamp;
                 let pwd = password_masked.clone();
-                let relative_time =
-                    lilypad_common::time::format_timestamp_relative(ts);
+                let relative_time = lilypad_common::time::format_timestamp_relative(ts);
                 let is_latest = i == 0;
 
                 container(
-                    row![
-                        column![
-                            row![
-                                text(if is_latest { "Current" } else { "Previous" })
-                                    .size(13)
-                                    .color(if is_latest {
-                                        palette.primary
-                                    } else {
-                                        palette.text_secondary
-                                    }),
-                                Space::new().width(Length::Fill),
-                                text(relative_time)
-                                    .size(12)
-                                    .color(palette.text_muted),
-                            ],
-                            Space::new().height(6),
-                            text(pwd).size(13).color(palette.text_muted),
-                        ]
-                        .width(Length::Fill),
+                    row![column![
+                        row![
+                            text(if is_latest { "Current" } else { "Previous" })
+                                .size(13)
+                                .color(if is_latest {
+                                    palette.primary
+                                } else {
+                                    palette.text_secondary
+                                }),
+                            Space::new().width(Length::Fill),
+                            text(relative_time).size(12).color(palette.text_muted),
+                        ],
+                        Space::new().height(6),
+                        text(pwd).size(13).color(palette.text_muted),
                     ]
+                    .width(Length::Fill),]
                     .padding(12),
                 )
                 .width(Length::Fill)
@@ -620,7 +649,14 @@ pub fn audit_log_modal<'a>(
 ) -> Element<'a, Message> {
     let palette = theme.palette();
 
-    let header = modal_header_with_icon(theme, v, icons::SHIELD, 32.0, "Audit Log", Message::CloseAuditLog);
+    let header = modal_header_with_icon(
+        theme,
+        v,
+        icons::SHIELD,
+        32.0,
+        "Audit Log",
+        Message::CloseAuditLog,
+    );
 
     let log_content: Element<'a, Message> = if audit_events.is_empty() {
         container(
@@ -645,24 +681,15 @@ pub fn audit_log_modal<'a>(
                 let action_display = format_audit_action(action);
                 let relative_time = lilypad_common::time::format_timestamp_relative(ts);
 
-                let mut info_col = column![
-                    row![
-                        text(action_display)
-                            .size(13)
-                            .color(palette.text_primary),
-                        Space::new().width(Length::Fill),
-                        text(relative_time)
-                            .size(11)
-                            .color(palette.text_muted),
-                    ],
-                ];
+                let mut info_col = column![row![
+                    text(action_display).size(13).color(palette.text_primary),
+                    Space::new().width(Length::Fill),
+                    text(relative_time).size(11).color(palette.text_muted),
+                ],];
 
                 if let Some(label) = entry_label {
-                    info_col = info_col.push(
-                        text(label.clone())
-                            .size(11)
-                            .color(palette.text_muted),
-                    );
+                    info_col =
+                        info_col.push(text(label.clone()).size(11).color(palette.text_muted));
                 }
 
                 container(info_col.spacing(2).padding(10))
@@ -736,9 +763,7 @@ pub fn audit_log_modal<'a>(
         None
     });
 
-    let export_label = text("Export:")
-        .size(12)
-        .color(palette.text_muted);
+    let export_label = text("Export:").size(12).color(palette.text_muted);
 
     let export_row = row![
         export_label,

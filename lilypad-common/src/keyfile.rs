@@ -108,7 +108,8 @@ pub fn decode_hex(hex: &str) -> Result<Vec<u8>> {
     let mut bytes = Vec::with_capacity(value.len() / 2);
     for chunk in value.as_bytes().chunks(2) {
         let chunk_str = std::str::from_utf8(chunk)?;
-        let byte = u8::from_str_radix(chunk_str, 16).map_err(|_| anyhow!("invalid hex character"))?;
+        let byte =
+            u8::from_str_radix(chunk_str, 16).map_err(|_| anyhow!("invalid hex character"))?;
         bytes.push(byte);
     }
     Ok(bytes)

@@ -6,8 +6,8 @@
 use std::fmt;
 
 use crate::constants::{
-    MAX_ENTRY_SIZE, MAX_NOTES_SIZE, MAX_PASSWORD_SIZE, MAX_VAULT_NAME_LENGTH,
-    MIN_PASSWORD_LENGTH, MIN_STRONG_PASSWORD_LENGTH, VERY_STRONG_PASSWORD_LENGTH,
+    MAX_ENTRY_SIZE, MAX_NOTES_SIZE, MAX_PASSWORD_SIZE, MAX_VAULT_NAME_LENGTH, MIN_PASSWORD_LENGTH,
+    MIN_STRONG_PASSWORD_LENGTH, VERY_STRONG_PASSWORD_LENGTH,
 };
 
 /// Validation error types.
@@ -16,7 +16,11 @@ pub enum ValidationError {
     /// Value is empty or whitespace only.
     Empty(String),
     /// Value exceeds maximum allowed size.
-    TooLarge { field: String, max: usize, actual: usize },
+    TooLarge {
+        field: String,
+        max: usize,
+        actual: usize,
+    },
     /// Value contains invalid characters.
     InvalidCharacters { field: String, details: String },
     /// Password is too weak.
@@ -233,10 +237,8 @@ impl PasswordStrength {
 
 /// Common keyboard patterns to detect.
 const KEYBOARD_PATTERNS: &[&str] = &[
-    "qwerty", "qwertz", "azerty", "asdfgh", "zxcvbn",
-    "123456", "654321", "111111", "000000", "123123",
-    "abcdef", "fedcba", "aaaaaa", "password", "letmein",
-    "qweasd", "1q2w3e", "1qaz2wsx",
+    "qwerty", "qwertz", "azerty", "asdfgh", "zxcvbn", "123456", "654321", "111111", "000000",
+    "123123", "abcdef", "fedcba", "aaaaaa", "password", "letmein", "qweasd", "1q2w3e", "1qaz2wsx",
 ];
 
 /// Sequential character patterns.
@@ -300,7 +302,9 @@ fn has_repeated_chars(password: &str, min_repeat: usize) -> bool {
 /// Checks if password contains keyboard patterns.
 fn contains_keyboard_pattern(password: &str) -> bool {
     let lower = password.to_lowercase();
-    KEYBOARD_PATTERNS.iter().any(|pattern| lower.contains(pattern))
+    KEYBOARD_PATTERNS
+        .iter()
+        .any(|pattern| lower.contains(pattern))
 }
 
 /// Validates password strength and returns the assessment.
@@ -541,13 +545,22 @@ mod tests {
 
     #[test]
     fn test_password_strength_very_weak() {
-        assert_eq!(validate_password_strength("short"), PasswordStrength::VeryWeak);
-        assert_eq!(validate_password_strength("1234567"), PasswordStrength::VeryWeak);
+        assert_eq!(
+            validate_password_strength("short"),
+            PasswordStrength::VeryWeak
+        );
+        assert_eq!(
+            validate_password_strength("1234567"),
+            PasswordStrength::VeryWeak
+        );
     }
 
     #[test]
     fn test_password_strength_weak() {
-        assert_eq!(validate_password_strength("password12"), PasswordStrength::Weak);
+        assert_eq!(
+            validate_password_strength("password12"),
+            PasswordStrength::Weak
+        );
     }
 
     #[test]

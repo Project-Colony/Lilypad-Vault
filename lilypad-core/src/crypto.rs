@@ -407,7 +407,10 @@ mod tests {
         }
 
         let result = decrypt(&key, &ciphertext);
-        assert!(result.is_err(), "decryption with corrupted ciphertext should fail");
+        assert!(
+            result.is_err(),
+            "decryption with corrupted ciphertext should fail"
+        );
     }
 
     #[test]
@@ -420,7 +423,10 @@ mod tests {
         ciphertext.nonce[0] ^= 0xFF;
 
         let result = decrypt(&key, &ciphertext);
-        assert!(result.is_err(), "decryption with corrupted nonce should fail");
+        assert!(
+            result.is_err(),
+            "decryption with corrupted nonce should fail"
+        );
     }
 
     #[test]
@@ -436,21 +442,30 @@ mod tests {
         };
 
         let result = decrypt(&key, &truncated);
-        assert!(result.is_err(), "decryption with truncated ciphertext should fail");
+        assert!(
+            result.is_err(),
+            "decryption with truncated ciphertext should fail"
+        );
     }
 
     #[test]
     fn derive_key_with_empty_password_fails() {
         let params = KeyDerivationParams::generate();
         let result = derive_key("", &params);
-        assert!(result.is_err(), "key derivation with empty password should fail");
+        assert!(
+            result.is_err(),
+            "key derivation with empty password should fail"
+        );
     }
 
     #[test]
     fn derive_key_with_whitespace_password_fails() {
         let params = KeyDerivationParams::generate();
         let result = derive_key("   ", &params);
-        assert!(result.is_err(), "key derivation with whitespace-only password should fail");
+        assert!(
+            result.is_err(),
+            "key derivation with whitespace-only password should fail"
+        );
     }
 
     #[test]
@@ -470,7 +485,11 @@ mod tests {
         let key1 = derive_key("password1", &params).expect("derive key1");
         let key2 = derive_key("password2", &params).expect("derive key2");
 
-        assert_ne!(key1.as_bytes(), key2.as_bytes(), "different passwords should derive different keys");
+        assert_ne!(
+            key1.as_bytes(),
+            key2.as_bytes(),
+            "different passwords should derive different keys"
+        );
     }
 
     #[test]
@@ -481,7 +500,11 @@ mod tests {
         let key1 = derive_key("same-password", &params1).expect("derive key1");
         let key2 = derive_key("same-password", &params2).expect("derive key2");
 
-        assert_ne!(key1.as_bytes(), key2.as_bytes(), "same password with different salts should derive different keys");
+        assert_ne!(
+            key1.as_bytes(),
+            key2.as_bytes(),
+            "same password with different salts should derive different keys"
+        );
     }
 
     #[test]

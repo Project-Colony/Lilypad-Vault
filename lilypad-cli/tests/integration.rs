@@ -16,7 +16,9 @@ fn test_help_displays() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Minimal CLI for managing Lilypad vaults"));
+        .stdout(predicate::str::contains(
+            "Minimal CLI for managing Lilypad vaults",
+        ));
 }
 
 #[test]
@@ -114,7 +116,14 @@ fn test_add_and_list_entry() {
     // Add entry
     lilypad()
         .args(["--data-dir", data_dir])
-        .args(["add", "test", "email", "secret123", "--username", "user@example.com"])
+        .args([
+            "add",
+            "test",
+            "email",
+            "secret123",
+            "--username",
+            "user@example.com",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("Entry 'email' added"));
@@ -143,10 +152,16 @@ fn test_get_entry() {
     lilypad()
         .args(["--data-dir", data_dir])
         .args([
-            "add", "test", "mysite", "hunter2",
-            "--username", "admin",
-            "--url", "https://example.com",
-            "--notes", "Test notes",
+            "add",
+            "test",
+            "mysite",
+            "hunter2",
+            "--username",
+            "admin",
+            "--url",
+            "https://example.com",
+            "--notes",
+            "Test notes",
         ])
         .assert()
         .success();
@@ -262,7 +277,14 @@ fn test_update_entry() {
     // Update
     lilypad()
         .args(["--data-dir", data_dir])
-        .args(["update", "test", "entry", "new_password", "--username", "newuser"])
+        .args([
+            "update",
+            "test",
+            "entry",
+            "new_password",
+            "--username",
+            "newuser",
+        ])
         .assert()
         .success();
 
@@ -294,7 +316,9 @@ fn test_rename_vault() {
         .args(["rename-vault", "original", "renamed"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Vault 'original' renamed to 'renamed'"));
+        .stdout(predicate::str::contains(
+            "Vault 'original' renamed to 'renamed'",
+        ));
 
     // List should show new name
     lilypad()
@@ -416,12 +440,18 @@ fn test_entry_with_tags_and_folder() {
     lilypad()
         .args(["--data-dir", data_dir])
         .args([
-            "add", "test", "organized",
+            "add",
+            "test",
+            "organized",
             "password123",
-            "--tag", "work",
-            "--tag", "important",
-            "--folder", "accounts",
-            "--entry-type", "login",
+            "--tag",
+            "work",
+            "--tag",
+            "important",
+            "--folder",
+            "accounts",
+            "--entry-type",
+            "login",
         ])
         .assert()
         .success();
@@ -460,9 +490,12 @@ fn test_export_encrypted() {
     lilypad()
         .args(["--data-dir", data_dir])
         .args([
-            "export", "test",
-            "--output", export_path.to_str().unwrap(),
-            "--format", "lily",
+            "export",
+            "test",
+            "--output",
+            export_path.to_str().unwrap(),
+            "--format",
+            "lily",
         ])
         .assert()
         .success();
@@ -489,9 +522,12 @@ fn test_export_plaintext_requires_flag() {
     lilypad()
         .args(["--data-dir", data_dir])
         .args([
-            "export", "test",
-            "--output", export_path.to_str().unwrap(),
-            "--format", "json",
+            "export",
+            "test",
+            "--output",
+            export_path.to_str().unwrap(),
+            "--format",
+            "json",
         ])
         .assert()
         .failure()
@@ -534,9 +570,12 @@ fn test_add_with_password_expiry() {
     lilypad()
         .args(["--data-dir", data_dir])
         .args([
-            "add", "test", "expiring",
+            "add",
+            "test",
+            "expiring",
             "MyStr0ng!Pass123",
-            "--expires-in", "90",
+            "--expires-in",
+            "90",
         ])
         .assert()
         .success()
@@ -663,11 +702,7 @@ fn test_require_strong_password() {
     // Add with weak password and --require-strong should fail
     lilypad()
         .args(["--data-dir", data_dir])
-        .args([
-            "add", "test", "weak",
-            "short",
-            "--require-strong",
-        ])
+        .args(["add", "test", "weak", "short", "--require-strong"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("too weak"));
@@ -719,9 +754,12 @@ fn test_get_entry_with_json_output() {
     lilypad()
         .args(["--data-dir", data_dir])
         .args([
-            "add", "test", "jsonentry",
+            "add",
+            "test",
+            "jsonentry",
             "secret123",
-            "--username", "user@example.com",
+            "--username",
+            "user@example.com",
         ])
         .assert()
         .success();
@@ -761,9 +799,12 @@ fn test_import_from_lily_format() {
     lilypad()
         .args(["--data-dir", data_dir])
         .args([
-            "export", "source",
-            "--output", export_path.to_str().unwrap(),
-            "--format", "lily",
+            "export",
+            "source",
+            "--output",
+            export_path.to_str().unwrap(),
+            "--format",
+            "lily",
         ])
         .assert()
         .success();
@@ -772,9 +813,12 @@ fn test_import_from_lily_format() {
     lilypad()
         .args(["--data-dir", data_dir])
         .args([
-            "import", "target",
-            "--input", export_path.to_str().unwrap(),
-            "--format", "lily",
+            "import",
+            "target",
+            "--input",
+            export_path.to_str().unwrap(),
+            "--format",
+            "lily",
         ])
         .assert()
         .success();
@@ -879,7 +923,14 @@ fn test_audit_log_filtering() {
     // Test filtering by action
     lilypad()
         .args(["--data-dir", data_dir])
-        .args(["audit-log", "auditfilter", "--action", "entry_added", "--format", "text"])
+        .args([
+            "audit-log",
+            "auditfilter",
+            "--action",
+            "entry_added",
+            "--format",
+            "text",
+        ])
         .assert()
         .success()
         .stdout(predicate::str::contains("entry_added"));
@@ -887,7 +938,14 @@ fn test_audit_log_filtering() {
     // Test limit
     lilypad()
         .args(["--data-dir", data_dir])
-        .args(["audit-log", "auditfilter", "--limit", "1", "--format", "text"])
+        .args([
+            "audit-log",
+            "auditfilter",
+            "--limit",
+            "1",
+            "--format",
+            "text",
+        ])
         .assert()
         .success();
 }
@@ -955,7 +1013,7 @@ fn test_prune_backups() {
         .args(["prune-backups", "prunetest", "--keep", "1"])
         .assert()
         .success();
-        // Don't check for "Deleted" since backups might have same timestamp
+    // Don't check for "Deleted" since backups might have same timestamp
 }
 
 #[test]
@@ -981,9 +1039,12 @@ fn test_csv_audit_log_export() {
     lilypad()
         .args(["--data-dir", data_dir])
         .args([
-            "audit-log", "csvaudit",
-            "--format", "csv",
-            "--output", export_path.to_str().unwrap(),
+            "audit-log",
+            "csvaudit",
+            "--format",
+            "csv",
+            "--output",
+            export_path.to_str().unwrap(),
         ])
         .assert()
         .success();

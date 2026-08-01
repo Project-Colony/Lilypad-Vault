@@ -128,11 +128,10 @@ impl OAuthFlow {
                         </body>
                         </html>
                     "#;
-                    let response = tiny_http::Response::from_string(html)
-                        .with_header(
-                            tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html"[..])
-                                .expect("valid static Content-Type header"),
-                        );
+                    let response = tiny_http::Response::from_string(html).with_header(
+                        tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"text/html"[..])
+                            .expect("valid static Content-Type header"),
+                    );
                     let _ = request.respond(response);
 
                     // Exchange code for token
@@ -236,13 +235,15 @@ impl OAuthFlow {
             return Err(OAuthError::AuthenticationFailed(msg));
         }
 
-        let access_token = token_response
-            .access_token
-            .ok_or_else(|| OAuthError::AuthenticationFailed("no access_token in response".to_string()))?;
+        let access_token = token_response.access_token.ok_or_else(|| {
+            OAuthError::AuthenticationFailed("no access_token in response".to_string())
+        })?;
 
         Ok(AuthorizationResult {
             access_token,
-            token_type: token_response.token_type.unwrap_or_else(|| "bearer".to_string()),
+            token_type: token_response
+                .token_type
+                .unwrap_or_else(|| "bearer".to_string()),
             scope: token_response.scope.unwrap_or_default(),
             refresh_token: token_response.refresh_token,
             expires_in: token_response.expires_in,
@@ -330,9 +331,9 @@ impl DeviceFlowAuth {
             device_code: resp.device_code.ok_or_else(|| {
                 OAuthError::AuthenticationFailed("missing device_code".to_string())
             })?,
-            user_code: resp.user_code.ok_or_else(|| {
-                OAuthError::AuthenticationFailed("missing user_code".to_string())
-            })?,
+            user_code: resp
+                .user_code
+                .ok_or_else(|| OAuthError::AuthenticationFailed("missing user_code".to_string()))?,
             verification_uri: resp.verification_uri.ok_or_else(|| {
                 OAuthError::AuthenticationFailed("missing verification_uri".to_string())
             })?,
@@ -438,7 +439,10 @@ impl DeviceFlowAuth {
         println!("1. Visit: {}", auth.verification_uri);
         println!("2. Enter code: {}", auth.user_code);
         println!();
-        println!("Waiting for authorization (expires in {} seconds)...", auth.expires_in);
+        println!(
+            "Waiting for authorization (expires in {} seconds)...",
+            auth.expires_in
+        );
         println!();
 
         // Optionally open browser
@@ -469,6 +473,8 @@ mod tests {
         assert_ne!(state1, state2);
 
         // States should be URL-safe base64
-        assert!(state1.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_'));
+        assert!(state1
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_'));
     }
 }

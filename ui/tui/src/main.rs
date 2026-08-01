@@ -23,7 +23,6 @@ use lilypad_core::{
 };
 use lilypad_storage::LocalStore;
 use rand::RngExt;
-use totp_rs::{Algorithm, Secret, TOTP};
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -36,6 +35,7 @@ use std::cmp::Reverse;
 use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
+use totp_rs::{Algorithm, Secret, TOTP};
 use zeroize::Zeroize;
 
 /// Decrypted vault entry for display
@@ -307,11 +307,12 @@ impl App {
         self.update_filtered_indices();
         self.collect_folders();
         self.refresh_health();
-        self.entry_list_state.select(if self.filtered_indices.is_empty() {
-            None
-        } else {
-            Some(0)
-        });
+        self.entry_list_state
+            .select(if self.filtered_indices.is_empty() {
+                None
+            } else {
+                Some(0)
+            });
 
         // Refresh vault list
         self.available_vaults = self.store.list_vaults().unwrap_or_default();
@@ -459,7 +460,9 @@ impl App {
 
     fn export_vault_csv(&self, path: &str) -> Result<()> {
         let mut wtr = csv::Writer::from_path(path)?;
-        wtr.write_record(["label", "username", "password", "url", "notes", "email", "tags", "folder"])?;
+        wtr.write_record([
+            "label", "username", "password", "url", "notes", "email", "tags", "folder",
+        ])?;
 
         for entry in &self.entries {
             wtr.write_record([
@@ -959,7 +962,10 @@ impl App {
     }
 
     fn handle_help_input(&mut self, key: event::KeyEvent) {
-        if matches!(key.code, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')) {
+        if matches!(
+            key.code,
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?')
+        ) {
             self.state = AppState::Unlocked;
         }
     }
@@ -971,20 +977,22 @@ impl App {
                 self.update_filtered_indices();
                 self.search_active = false;
                 self.state = AppState::Unlocked;
-                self.entry_list_state.select(if self.filtered_indices.is_empty() {
-                    None
-                } else {
-                    Some(0)
-                });
+                self.entry_list_state
+                    .select(if self.filtered_indices.is_empty() {
+                        None
+                    } else {
+                        Some(0)
+                    });
             }
             KeyCode::Enter => {
                 self.search_active = false;
                 self.state = AppState::Unlocked;
-                self.entry_list_state.select(if self.filtered_indices.is_empty() {
-                    None
-                } else {
-                    Some(0)
-                });
+                self.entry_list_state
+                    .select(if self.filtered_indices.is_empty() {
+                        None
+                    } else {
+                        Some(0)
+                    });
             }
             KeyCode::Char(c) => {
                 self.search_query.push(c);
@@ -1109,11 +1117,12 @@ impl App {
                         self.set_status(format!("Filtering by folder: {}", folder));
                     }
                     self.update_filtered_indices();
-                    self.entry_list_state.select(if self.filtered_indices.is_empty() {
-                        None
-                    } else {
-                        Some(0)
-                    });
+                    self.entry_list_state
+                        .select(if self.filtered_indices.is_empty() {
+                            None
+                        } else {
+                            Some(0)
+                        });
                 }
                 self.state = AppState::Unlocked;
             }
@@ -1132,14 +1141,26 @@ impl App {
                     self.set_status("Export path cannot be empty");
                 } else if path.ends_with(".csv") {
                     match self.export_vault_csv(&path) {
-                        Ok(()) => self.set_status(format!("Exported {} entries to {}", self.entries.len(), path)),
+                        Ok(()) => self.set_status(format!(
+                            "Exported {} entries to {}",
+                            self.entries.len(),
+                            path
+                        )),
                         Err(e) => self.set_status(format!("Export failed: {}", e)),
                     }
                     self.state = AppState::Unlocked;
                 } else {
-                    let path = if path.ends_with(".json") { path } else { format!("{}.json", path) };
+                    let path = if path.ends_with(".json") {
+                        path
+                    } else {
+                        format!("{}.json", path)
+                    };
                     match self.export_vault_json(&path) {
-                        Ok(()) => self.set_status(format!("Exported {} entries to {}", self.entries.len(), path)),
+                        Ok(()) => self.set_status(format!(
+                            "Exported {} entries to {}",
+                            self.entries.len(),
+                            path
+                        )),
                         Err(e) => self.set_status(format!("Export failed: {}", e)),
                     }
                     self.state = AppState::Unlocked;
@@ -1296,9 +1317,16 @@ impl App {
             ])
             .split(area);
 
-        let title = Paragraph::new(format!("Lilypad Password Manager - Vault: {}", self.active_vault))
-            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-            .block(Block::default());
+        let title = Paragraph::new(format!(
+            "Lilypad Password Manager - Vault: {}",
+            self.active_vault
+        ))
+        .style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        )
+        .block(Block::default());
         frame.render_widget(title, chunks[0]);
 
         let password_display = "*".repeat(self.master_password.len());
@@ -1311,8 +1339,8 @@ impl App {
             .style(Style::default().fg(Color::Yellow));
         frame.render_widget(password_input, chunks[1]);
 
-        let help = Paragraph::new("Enter: Unlock | Esc: Quit")
-            .style(Style::default().fg(Color::DarkGray));
+        let help =
+            Paragraph::new("Enter: Unlock | Esc: Quit").style(Style::default().fg(Color::DarkGray));
         frame.render_widget(help, chunks[2]);
 
         if let Some(ref msg) = self.status_message {
@@ -1356,7 +1384,11 @@ impl App {
             )
         };
         let title = Paragraph::new(header_text)
-            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))
+            .style(
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )
             .block(Block::default().borders(Borders::BOTTOM));
         frame.render_widget(title, chunks[0]);
 
@@ -1379,10 +1411,7 @@ impl App {
                     } else {
                         Span::raw("  ")
                     },
-                    Span::styled(
-                        &entry.label,
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
+                    Span::styled(&entry.label, Style::default().add_modifier(Modifier::BOLD)),
                     Span::raw(" - "),
                     Span::styled(username, Style::default().fg(Color::Gray)),
                 ];
@@ -1453,8 +1482,11 @@ impl App {
             ])
             .split(area);
 
-        let header = Paragraph::new(title)
-            .style(Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD));
+        let header = Paragraph::new(title).style(
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD),
+        );
         frame.render_widget(header, chunks[0]);
 
         let fields: Vec<(&str, &str, InputField)> = vec![
@@ -1573,17 +1605,34 @@ impl App {
 
         // TOTP with live code
         if let Some(ref secret) = entry.totp_secret {
-            let code_display = Self::generate_totp_code(secret)
-                .unwrap_or_else(|| "Error".to_string());
+            let code_display =
+                Self::generate_totp_code(secret).unwrap_or_else(|| "Error".to_string());
             lines.push(Line::from(vec![
-                Span::styled("TOTP: ".to_string(), Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(code_display, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                Span::styled(" (t to copy)".to_string(), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "TOTP: ".to_string(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    code_display,
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    " (t to copy)".to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]));
         } else {
             lines.push(Line::from(vec![
-                Span::styled("TOTP: ".to_string(), Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled("Not configured".to_string(), Style::default().fg(Color::DarkGray)),
+                Span::styled(
+                    "TOTP: ".to_string(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "Not configured".to_string(),
+                    Style::default().fg(Color::DarkGray),
+                ),
             ]));
         }
 
@@ -1592,11 +1641,16 @@ impl App {
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
                 "Custom Fields:",
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Yellow),
             )));
             for cf in &entry.custom_fields {
                 lines.push(Line::from(vec![
-                    Span::styled(format!("  {}: ", cf.name), Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        format!("  {}: ", cf.name),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
                     Span::raw(&cf.value),
                 ]));
             }
@@ -1720,7 +1774,9 @@ impl App {
         let lines = vec![
             Line::from(Span::styled(
                 "Vault (Unlocked)",
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Yellow),
             )),
             Line::from("  a       Add new entry"),
             Line::from("  e       Edit selected entry"),
@@ -1742,7 +1798,9 @@ impl App {
             Line::from(""),
             Line::from(Span::styled(
                 "Entry View",
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Yellow),
             )),
             Line::from("  p       Toggle password visibility"),
             Line::from("  c       Copy password"),
@@ -1753,7 +1811,9 @@ impl App {
             Line::from(""),
             Line::from(Span::styled(
                 "Add/Edit Form",
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Yellow),
             )),
             Line::from("  Tab         Next field"),
             Line::from("  Shift+Tab   Previous field"),
@@ -1762,7 +1822,9 @@ impl App {
             Line::from(""),
             Line::from(Span::styled(
                 "Password Generator",
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Yellow),
             )),
             Line::from("  r/Enter  Regenerate"),
             Line::from("  c        Copy to clipboard"),
@@ -1814,10 +1876,7 @@ impl App {
                     &entry.username
                 };
                 ListItem::new(Line::from(vec![
-                    Span::styled(
-                        &entry.label,
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
+                    Span::styled(&entry.label, Style::default().add_modifier(Modifier::BOLD)),
                     Span::raw(" - "),
                     Span::styled(username, Style::default().fg(Color::Gray)),
                 ]))
@@ -1873,12 +1932,17 @@ impl App {
                 Span::styled("Generated: ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(
                     &self.gen_result,
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]),
             Line::from(vec![
                 Span::styled("Strength:  ", Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(format!("{:?}", strength), Style::default().fg(strength_color)),
+                Span::styled(
+                    format!("{:?}", strength),
+                    Style::default().fg(strength_color),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -1888,14 +1952,20 @@ impl App {
             Line::from(vec![
                 Span::styled("[l] ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(
-                    format!("Lowercase: {}", if self.gen_lowercase { "ON" } else { "OFF" }),
+                    format!(
+                        "Lowercase: {}",
+                        if self.gen_lowercase { "ON" } else { "OFF" }
+                    ),
                     if self.gen_lowercase { on } else { off },
                 ),
             ]),
             Line::from(vec![
                 Span::styled("[U] ", Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(
-                    format!("Uppercase: {}", if self.gen_uppercase { "ON" } else { "OFF" }),
+                    format!(
+                        "Uppercase: {}",
+                        if self.gen_uppercase { "ON" } else { "OFF" }
+                    ),
                     if self.gen_uppercase { on } else { off },
                 ),
             ]),
@@ -1962,19 +2032,21 @@ impl App {
                         "{}/100 (Grade: {:?})",
                         report.score.score, report.score.grade
                     ),
-                    Style::default().fg(grade_color).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(grade_color)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]),
-            Line::from(vec![
-                Span::styled(
-                    report.score.grade.description(),
-                    Style::default().fg(grade_color),
-                ),
-            ]),
+            Line::from(vec![Span::styled(
+                report.score.grade.description(),
+                Style::default().fg(grade_color),
+            )]),
             Line::from(""),
             Line::from(Span::styled(
                 "Statistics",
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Yellow),
             )),
             Line::from(format!(
                 "  Total entries:      {}",
@@ -1992,10 +2064,7 @@ impl App {
                 "  Reused passwords:   {}",
                 report.stats.reused_passwords
             )),
-            Line::from(format!(
-                "  With 2FA:           {}",
-                report.stats.with_2fa
-            )),
+            Line::from(format!("  With 2FA:           {}", report.stats.with_2fa)),
             Line::from(format!(
                 "  Unique passwords:   {}",
                 report.stats.unique_passwords
@@ -2003,7 +2072,9 @@ impl App {
             Line::from(""),
             Line::from(Span::styled(
                 "Score Breakdown",
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Yellow),
             )),
             Line::from(format!(
                 "  Password strength:  {}/25",
@@ -2027,7 +2098,9 @@ impl App {
             lines.push(Line::from(""));
             lines.push(Line::from(Span::styled(
                 format!("Issues ({})", report.issues.len()),
-                Style::default().add_modifier(Modifier::BOLD).fg(Color::Yellow),
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Yellow),
             )));
 
             for issue in report.issues.iter().take(10) {

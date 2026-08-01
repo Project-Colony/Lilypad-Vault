@@ -1,14 +1,14 @@
 //! Export commands for vaults and audit logs.
 
+use super::import::{CsvEntry, EntryExport, VaultExport};
+use super::utils::{
+    atomic_write, decrypt_entry_secret, entry_type_label, load_vault_key, parse_date_to_timestamp,
+};
 use anyhow::{anyhow, Context, Result};
 use csv::WriterBuilder;
 use lilypad_common::time::format_timestamp_relative;
 use lilypad_storage::LocalStore;
 use std::cmp::Reverse;
-use super::import::{CsvEntry, EntryExport, VaultExport};
-use super::utils::{
-    atomic_write, decrypt_entry_secret, entry_type_label, load_vault_key, parse_date_to_timestamp,
-};
 
 /// Export a vault to a file.
 pub fn export_vault(
@@ -197,7 +197,11 @@ pub fn export_audit_log(
             }
             output
         }
-        _ => return Err(anyhow!("unsupported format: {format} (use json, csv, or text)")),
+        _ => {
+            return Err(anyhow!(
+                "unsupported format: {format} (use json, csv, or text)"
+            ))
+        }
     };
 
     if let Some(path) = output {
