@@ -33,7 +33,10 @@ fn read_back(app: &App, name: &str) -> Value {
         .iter()
         .map(|entry| {
             let secret = reveal_secret(&session, &entry.label).expect("reveal secret");
-            (entry.label.clone(), serde_json::to_value(secret.get()).unwrap())
+            (
+                entry.label.clone(),
+                serde_json::to_value(secret.get()).unwrap(),
+            )
         })
         .collect();
     json!({
