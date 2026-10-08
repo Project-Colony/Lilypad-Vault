@@ -1089,7 +1089,7 @@ pub fn badge_container(theme: LilypadTheme, _v: UiVariation) -> container::Style
     }
 }
 
-/// Icon badge container (type icon circle — larger radius).
+/// Icon badge container (type icon circle, larger radius).
 pub fn icon_badge_container(theme: LilypadTheme, _v: UiVariation) -> container::Style {
     let palette = theme.palette();
     container::Style {

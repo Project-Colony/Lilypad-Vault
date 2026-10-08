@@ -43,7 +43,7 @@ pub const FONT_LIGHT: Font = Font {
 // Reference: https://www.nerdfonts.com/cheat-sheet
 
 // Icon library for the Lilypad UI. All icons reference Nerd Font codepoints.
-// Not all icons are used yet — this is a curated palette for the UI.
+// Not all icons are used yet; this is a curated palette for the UI.
 #[allow(dead_code)]
 pub mod icons {
     // Navigation & UI

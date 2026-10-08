@@ -245,7 +245,7 @@ impl TokenStoreManager {
                 OAuthError::TokenStoreError(format!("failed to parse token store: {}", e))
             })
         } else {
-            // Legacy plaintext JSON — parse and auto-migrate to encrypted format
+            // Legacy plaintext JSON: parse and auto-migrate to encrypted format
             let json = String::from_utf8(raw).map_err(|e| {
                 OAuthError::TokenStoreError(format!("token file is not UTF-8: {}", e))
             })?;
