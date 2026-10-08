@@ -22,6 +22,14 @@ license = "GPL-3.0-or-later"
 # The floor CI checks (job "MSRV"); clippy.toml carries the same value.
 rust-version = "1.89"
 
+# Shared by every Project Colony program (Project-Colony-Resources,
+# design/releases.md section 6): thin LTO and one codegen unit for speed and
+# size, symbols stripped because users download these binaries.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
 [workspace.dependencies]
 anyhow = "1.0.104"
 argon2 = "0.6.0"
