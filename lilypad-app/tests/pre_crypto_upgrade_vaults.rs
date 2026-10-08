@@ -9,13 +9,17 @@
 //! point is that they come from the old one.
 
 use lilypad_app::{reveal_secret, App, OpenOptions};
+use lilypad_common::KeyFile;
 use lilypad_storage::{verify_vault_integrity, LocalStore};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use unicode_normalization::UnicodeNormalization;
 
-/// Non-ASCII on purpose, so NFC normalization is part of what is checked.
+/// Composed (NFC) accents, as the vaults were written. The test also unlocks
+/// with the decomposed (NFD) spelling, which only works through NFC
+/// normalization.
 const PASSWORD: &str = "Lilypad fixture p\u{e4}ssw\u{f6}rd";
 
 fn fixtures() -> PathBuf {
@@ -69,6 +73,12 @@ fn vaults_from_before_the_crypto_upgrade_still_open() {
         verify_vault_integrity(&file).expect("stored checksum");
         // Same key id (SHA-256 of the Argon2id key), same vault, same secrets.
         assert_eq!(read_back(&app, name), expected[name], "{name}");
+
+        // Decomposed accents, as macOS input produces them, derive the same key.
+        let nfd: String = PASSWORD.nfd().collect();
+        assert_ne!(nfd, PASSWORD);
+        let key = app.derive_unlock_key(name, &nfd).expect("NFD unlock");
+        assert_eq!(json!(key.key_id()), expected[name]["key_id"], "{name} NFD");
     }
 
     let current = fs::read(dir.path().join("vaults/current.lily")).unwrap();
@@ -83,5 +93,15 @@ fn vaults_from_before_the_crypto_upgrade_still_open() {
             kdf.parallelism
         ),
         ("argon2id", 16 * 1024, 3, 4)
+    );
+
+    let key_file: KeyFile =
+        serde_json::from_slice(&fs::read(dir.path().join("key.json")).unwrap()).unwrap();
+    let KeyFile::Kdf { params } = key_file else {
+        panic!("the legacy vault's keyfile derives its key from the password");
+    };
+    assert_eq!(
+        (params.memory_kib, params.iterations, params.parallelism),
+        (8 * 1024, 2, 1)
     );
 }
