@@ -1267,7 +1267,11 @@ fn main() -> Result<()> {
     result
 }
 
-fn run<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
+fn run<B>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()>
+where
+    B: ratatui::backend::Backend,
+    B::Error: Send + Sync + 'static,
+{
     loop {
         app.tick();
         terminal.draw(|f| app.draw(f))?;
