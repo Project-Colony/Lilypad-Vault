@@ -8,10 +8,9 @@
 
 use crate::config::OAuthProvider;
 use crate::error::{OAuthError, Result};
-use chacha20poly1305::aead::{Aead, AeadCore, KeyInit};
+use chacha20poly1305::aead::{Aead, Generate, KeyInit};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
 use rand::RngExt;
-use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -366,7 +365,9 @@ fn derive_machine_key() -> [u8; 32] {
     let hostname = hostname::get()
         .map(|h| h.to_string_lossy().to_string())
         .unwrap_or_default();
-    let username = whoami::username();
+    // whoami 1.x returned "unknown" when the lookup failed; keep that fallback
+    // so the machine key, and with it existing token files, stay the same.
+    let username = whoami::username().unwrap_or_else(|_| "unknown".to_string());
 
     let mut hasher = Sha256::new();
     hasher.update(MACHINE_KEY_SALT);
@@ -380,10 +381,8 @@ fn derive_machine_key() -> [u8; 32] {
 ///
 /// Output format: ENCRYPTED_HEADER (8 bytes) || nonce (24 bytes) || ciphertext
 fn encrypt_token_data(plaintext: &[u8]) -> Result<Vec<u8>> {
-    let key_bytes = derive_machine_key();
-    let key = Key::from_slice(&key_bytes);
-    let cipher = XChaCha20Poly1305::new(key);
-    let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let cipher = XChaCha20Poly1305::new(&Key::from(derive_machine_key()));
+    let nonce = XNonce::generate();
 
     let ciphertext = cipher
         .encrypt(&nonce, plaintext)
@@ -407,11 +406,10 @@ fn decrypt_token_data(data: &[u8]) -> Result<Vec<u8>> {
     let nonce_start = ENCRYPTED_HEADER.len();
     let ct_start = nonce_start + NONCE_LEN;
 
-    let nonce = XNonce::from_slice(&data[nonce_start..ct_start]);
+    // In bounds and exactly NONCE_LEN long: the length was checked above.
+    let nonce = <&XNonce>::try_from(&data[nonce_start..ct_start]).expect("nonce length");
 
-    let key_bytes = derive_machine_key();
-    let key = Key::from_slice(&key_bytes);
-    let cipher = XChaCha20Poly1305::new(key);
+    let cipher = XChaCha20Poly1305::new(&Key::from(derive_machine_key()));
 
     cipher.decrypt(nonce, &data[ct_start..]).map_err(|_| {
         OAuthError::TokenStoreError(

@@ -41,7 +41,7 @@ fn hash_split(password: &str) -> (String, String) {
     let mut hasher = Sha1::new();
     hasher.update(password.as_bytes());
     let digest = hasher.finalize();
-    let mut hex = format!("{digest:X}");
+    let mut hex: String = digest.iter().map(|byte| format!("{byte:02X}")).collect();
     let mut padded = format!("{:0>40}", hex);
     hex.zeroize();
     let suffix = padded.split_off(5);

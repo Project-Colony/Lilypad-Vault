@@ -1,7 +1,6 @@
 use argon2::{Algorithm, Argon2, Params, Version};
-use chacha20poly1305::aead::{Aead, AeadCore, KeyInit};
+use chacha20poly1305::aead::{Aead, Generate, KeyInit};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
-use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -78,8 +77,9 @@ impl KeyMaterial {
     /// assert_ne!(key.as_bytes(), key2.as_bytes());
     /// ```
     pub fn generate() -> Self {
-        let key = XChaCha20Poly1305::generate_key(&mut OsRng);
-        Self { key: key.into() }
+        Self {
+            key: Key::generate().into(),
+        }
     }
 
     /// Creates a [`KeyMaterial`] from an existing 32-byte slice.
@@ -148,10 +148,8 @@ impl KeyDerivationParams {
     /// assert_eq!(params.salt.len(), 16);
     /// ```
     pub fn generate() -> Self {
-        let mut salt = [0u8; SALT_LEN];
-        OsRng.fill_bytes(&mut salt);
         Self {
-            salt,
+            salt: Generate::generate(),
             memory_kib: 64 * 1024, // 64 MiB
             iterations: 3,
             parallelism: 1,
@@ -164,8 +162,7 @@ impl KeyDerivationParams {
     /// based on CPU core count. This ensures the KDF is as strong as possible
     /// while remaining usable on the target system.
     pub fn generate_adaptive() -> Self {
-        let mut salt = [0u8; SALT_LEN];
-        OsRng.fill_bytes(&mut salt);
+        let salt = Generate::generate();
 
         // Detect system capabilities
         let (memory_kib, iterations, parallelism) = Self::detect_optimal_params();
@@ -317,8 +314,8 @@ pub fn derive_key(password: &str, params: &KeyDerivationParams) -> Result<KeyMat
 /// assert_eq!(decrypted, b"secret data");
 /// ```
 pub fn encrypt(key: &KeyMaterial, plaintext: &[u8]) -> Result<Ciphertext> {
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(key.as_bytes()));
-    let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let cipher = XChaCha20Poly1305::new(key.as_bytes().into());
+    let nonce = XNonce::generate();
     let data = cipher
         .encrypt(&nonce, plaintext)
         .map_err(|err| CoreError::Crypto(format!("{err}")))?;
@@ -346,10 +343,9 @@ pub fn encrypt(key: &KeyMaterial, plaintext: &[u8]) -> Result<Ciphertext> {
 /// assert!(decrypt(&other, &ct).is_err());
 /// ```
 pub fn decrypt(key: &KeyMaterial, ciphertext: &Ciphertext) -> Result<Vec<u8>> {
-    let cipher = XChaCha20Poly1305::new(Key::from_slice(key.as_bytes()));
-    let nonce = XNonce::from_slice(&ciphertext.nonce);
+    let cipher = XChaCha20Poly1305::new(key.as_bytes().into());
     cipher
-        .decrypt(nonce, ciphertext.data.as_ref())
+        .decrypt((&ciphertext.nonce).into(), ciphertext.data.as_ref())
         .map_err(|err| CoreError::Crypto(format!("{err}")))
 }
 
