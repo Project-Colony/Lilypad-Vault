@@ -283,8 +283,8 @@ impl GitHubSyncBackend {
                 }
 
                 // No local metadata: if local vault has content, we cannot
-                // determine whether local or remote is newer — treat as conflict
-                // so the user explicitly chooses with --force.
+                // determine whether local or remote is newer. Treat it as a
+                // conflict so the user explicitly chooses with --force.
                 if local_checksum.is_empty() {
                     Ok(SyncStatus::RemoteAhead)
                 } else {
@@ -425,7 +425,7 @@ impl GitHubSyncBackend {
                 )?;
             }
             Err(OAuthError::FileNotFound { .. }) => {
-                // Already gone — not an error
+                // Already gone: not an error
             }
             Err(e) => return Err(e),
         }

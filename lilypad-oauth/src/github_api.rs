@@ -275,7 +275,7 @@ impl GitHubClient {
                     base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &cleaned)
                         .map_err(|e| OAuthError::ParseError(format!("invalid base64: {}", e)))?
                 } else {
-                    // Large file or no inline content — fetch via Git Blob API
+                    // Large file or no inline content: fetch via Git Blob API
                     self.get_blob_content(username, &repo_name, &file.sha)?
                 };
 

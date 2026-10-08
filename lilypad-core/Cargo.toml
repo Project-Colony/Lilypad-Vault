@@ -8,16 +8,15 @@ rust-version.workspace = true
 
 [dependencies]
 serde.workspace = true
-chacha20poly1305 = "0.10.1"
-rand_core = "0.6.4"
-sha2 = "0.10.9"
-argon2 = "0.5.3"
-subtle = "2.5"
+chacha20poly1305.workspace = true
+sha2.workspace = true
+argon2.workspace = true
+subtle.workspace = true
 zeroize.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion.workspace = true
 
 [[bench]]
 name = "crypto"

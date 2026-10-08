@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::crypto::{Ciphertext, CryptoAlgorithm, KeyMaterial};
 use crate::errors::{CoreError, Result};
-use rand_core::{OsRng, RngCore};
+use chacha20poly1305::aead::Generate;
 use std::cmp::Reverse;
 use std::collections::BTreeSet;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1641,8 +1641,7 @@ impl TotpBackupCode {
         // Use alphanumeric characters (excluding confusing ones like 0/O, 1/l/I)
         const CHARSET: &[u8] = b"23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
         let mut code = String::with_capacity(TOTP_BACKUP_CODE_LENGTH);
-        let mut bytes = [0u8; TOTP_BACKUP_CODE_LENGTH];
-        OsRng.fill_bytes(&mut bytes);
+        let bytes: [u8; TOTP_BACKUP_CODE_LENGTH] = Generate::generate();
         for byte in bytes {
             let idx = (byte as usize) % CHARSET.len();
             code.push(CHARSET[idx] as char);
@@ -2049,8 +2048,7 @@ fn current_timestamp() -> u64 {
 }
 
 fn generate_id() -> String {
-    let mut bytes = [0u8; 16];
-    OsRng.fill_bytes(&mut bytes);
+    let bytes: [u8; 16] = Generate::generate();
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 

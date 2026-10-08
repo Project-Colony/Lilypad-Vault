@@ -4,7 +4,7 @@
 //! Uses a generation counter to mitigate race conditions when clearing.
 //!
 //! On Linux, includes a shell-based fallback (`wl-copy`, `xclip`, `xsel`) when
-//! `arboard` fails — this is common on Wayland compositors and some X11 setups.
+//! `arboard` fails, which is common on Wayland compositors and some X11 setups.
 
 use anyhow::{anyhow, Result};
 use arboard::Clipboard;
@@ -119,7 +119,7 @@ fn shell_get() -> Option<String> {
 /// the system clipboard. Shell tools (`wl-copy`, `xclip`) are more reliable.
 #[cfg(target_os = "linux")]
 pub fn copy_to_clipboard(value: &str) -> Result<()> {
-    // On Linux, try shell tools first — they are more reliable,
+    // On Linux, try shell tools first: they are more reliable,
     // especially on Wayland where arboard silently fails.
     match shell_copy(value) {
         Ok(()) => {
@@ -132,7 +132,7 @@ pub fn copy_to_clipboard(value: &str) -> Result<()> {
             Clipboard::new()
                 .and_then(|mut cb| cb.set_text(value.to_string()))
                 .map_err(|arboard_err| {
-                    anyhow!("clipboard failed — shell: {shell_err}, arboard: {arboard_err}")
+                    anyhow!("clipboard failed: shell: {shell_err}, arboard: {arboard_err}")
                 })?;
             CLIPBOARD_GENERATION.fetch_add(1, Ordering::SeqCst);
             Ok(())
