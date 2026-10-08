@@ -52,6 +52,12 @@ pub const MAX_CUSTOM_FIELD_NAME_LENGTH: usize = 128;
 /// Maximum size for custom field values (in bytes).
 pub const MAX_CUSTOM_FIELD_VALUE_SIZE: usize = 10 * 1024; // 10 KB
 
+/// How far into the future a timestamp may claim to be before a merge clamps
+/// it (see [`Vault::merge_from`]). Generous enough for ordinary clock drift,
+/// small enough that a replica with a broken clock cannot poison a label
+/// forever.
+pub const MAX_CLOCK_SKEW_SECS: u64 = 300;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Vault {
     pub name: String,
@@ -67,6 +73,36 @@ pub struct Vault {
     pub last_accessed_at: Option<u64>,
     #[serde(default)]
     pub audit_log: Vec<AuditEvent>,
+    /// Deletion markers for entries that were permanently removed (or renamed
+    /// away). Without these, a sync merge would resurrect a purged entry from
+    /// any replica that still holds a live copy. Labels only - no secret data.
+    #[serde(default)]
+    pub tombstones: Vec<Tombstone>,
+}
+
+/// A deletion marker: entry `label` was removed at `deleted_at`. During a merge
+/// the tombstone wins over any copy of the entry not updated after it.
+///
+/// `id` pins the marker to the specific entry that was deleted, so a DIFFERENT
+/// entry that later comes to live under the same label (e.g. renamed onto it)
+/// is not mistaken for the deleted one and destroyed by the marker. An empty
+/// `id` (older data) conservatively matches any entry with the label.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Tombstone {
+    pub label: String,
+    #[serde(default)]
+    pub id: String,
+    pub deleted_at: u64,
+}
+
+impl Tombstone {
+    /// Whether this marker refers to the given entry: same label, and the
+    /// entry identity matches (an empty id on either side - pre-id data -
+    /// falls back to label-only matching).
+    fn refers_to(&self, entry: &Entry) -> bool {
+        self.label == entry.label
+            && (self.id.is_empty() || entry.id.is_empty() || self.id == entry.id)
+    }
 }
 
 impl Vault {
@@ -81,6 +117,25 @@ impl Vault {
             updated_at: now,
             last_accessed_at: None,
             audit_log: Vec::new(),
+            tombstones: Vec::new(),
+        }
+    }
+
+    /// Upserts a deletion marker for the entry `id` that lived under `label`,
+    /// stamped at the current time.
+    fn record_tombstone(&mut self, label: &str, id: &str) {
+        let now = current_timestamp();
+        match self
+            .tombstones
+            .iter_mut()
+            .find(|t| t.label == label && t.id == id)
+        {
+            Some(t) => t.deleted_at = t.deleted_at.max(now),
+            None => self.tombstones.push(Tombstone {
+                label: label.to_string(),
+                id: id.to_string(),
+                deleted_at: now,
+            }),
         }
     }
 
@@ -120,6 +175,9 @@ impl Vault {
         }
         // Validate entry metadata
         entry.metadata.validate()?;
+        // Re-creating a previously removed label lifts its deletion marker,
+        // otherwise a later merge could treat the new entry as already deleted.
+        self.tombstones.retain(|t| t.label != entry.label);
         self.entries.push(entry);
         self.touch();
         self.record_event(AuditEvent::new("entry_added", None));
@@ -146,6 +204,7 @@ impl Vault {
             .position(|entry| entry.label == label)
             .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
         let removed = self.entries.remove(index);
+        self.record_tombstone(label, &removed.id);
         self.touch();
         self.record_event(AuditEvent::new("entry_removed", Some(label)));
         Ok(removed)
@@ -178,7 +237,7 @@ impl Vault {
                 new_label
             )));
         }
-        let event_label = {
+        let (event_label, entry_id) = {
             let entry = self
                 .entries
                 .iter_mut()
@@ -186,8 +245,18 @@ impl Vault {
                 .ok_or_else(|| CoreError::NotFound(format!("entry '{label}'")))?;
             entry.label = new_label;
             entry.updated_at = current_timestamp();
-            entry.label.clone()
+            (entry.label.clone(), entry.id.clone())
         };
+        // The old label no longer names a live entry: without a tombstone, a
+        // merge with a replica that still holds the pre-rename copy would
+        // duplicate the entry under both labels. The marker carries the
+        // entry's id, so it only ever kills copies of THIS entry - never an
+        // unrelated future entry that happens to reuse the label. (For the
+        // same reason, a pre-existing tombstone on the destination label is
+        // deliberately left in place: it refers to a different id and is
+        // still needed to kill stale copies of the previously deleted entry
+        // on other replicas.)
+        self.record_tombstone(label, &entry_id);
         self.touch();
         self.record_event(AuditEvent::new("entry_renamed", Some(&event_label)));
         Ok(())
@@ -681,16 +750,75 @@ impl Vault {
     /// Merges entries from a remote vault into this (local) vault.
     ///
     /// Conflict resolution strategy (per-entry, last-modified-wins):
-    /// - Entries only in local → kept
-    /// - Entries only in remote → added
+    /// - Entries only in local → kept, unless a remote tombstone is newer
+    /// - Entries only in remote → added, unless a local tombstone is newer
     /// - Entries in both with same `updated_at` → kept as-is (in sync)
     /// - Entries in both with different `updated_at` → newer version wins
     ///
-    /// Entries are matched by label. Returns a summary of the merge.
+    /// Tombstones (recorded by [`Self::remove_entry`] and [`Self::rename_entry`])
+    /// are merged too (per-label, newest wins), so a permanent deletion or a
+    /// rename on one replica propagates instead of the dead copy resurrecting
+    /// from the other. A tombstone only beats an entry that was NOT updated
+    /// after it: an edit or re-creation newer than the deletion survives, so a
+    /// timestamp tie always favors keeping data.
+    ///
+    /// Entries are matched by label. The remote entries' ciphertexts are copied
+    /// as-is: the caller must ensure they are sealed under THIS vault's key
+    /// (re-encrypting them first if the replicas use different KDF salts).
+    /// Returns a summary of the merge.
     pub fn merge_from(&mut self, remote: &Vault) -> MergeResult {
         use std::collections::HashMap;
 
         let mut result = MergeResult::default();
+
+        // Clock-skew guard: a replica with a wildly wrong clock must not be
+        // able to poison the merge forever (a far-future tombstone would kill
+        // every re-creation of its label; a far-future entry could never be
+        // edited over). Timestamps are clamped to "now + allowance" on BOTH
+        // sides before any comparison, bounding the damage to the allowance
+        // window instead of eternity.
+        let cap = current_timestamp() + MAX_CLOCK_SKEW_SECS;
+        for e in &mut self.entries {
+            if e.updated_at > cap {
+                e.updated_at = cap;
+                result.timestamps_sanitized = true;
+            }
+        }
+        for t in &mut self.tombstones {
+            if t.deleted_at > cap {
+                t.deleted_at = cap;
+                result.timestamps_sanitized = true;
+            }
+        }
+        let clamp_entry = |e: &Entry| {
+            let mut e = e.clone();
+            e.updated_at = e.updated_at.min(cap);
+            e
+        };
+        let clamp_tombstone = |t: &Tombstone| {
+            let mut t = t.clone();
+            t.deleted_at = t.deleted_at.min(cap);
+            t
+        };
+
+        // Merged deletion markers: per (label, id) pair, the newest deletion
+        // wins. Distinct ids under the same label stay distinct markers - a
+        // marker must only ever kill copies of the entry it refers to.
+        let mut dead: Vec<Tombstone> = self.tombstones.clone();
+        for t in remote.tombstones.iter().map(&clamp_tombstone) {
+            match dead.iter_mut().find(|d| d.label == t.label && d.id == t.id) {
+                Some(d) => d.deleted_at = d.deleted_at.max(t.deleted_at),
+                None => dead.push(t),
+            }
+        }
+        // The newest merged marker referring to a given entry (label + id).
+        let dead_at = |tombs: &[Tombstone], entry: &Entry| -> Option<u64> {
+            tombs
+                .iter()
+                .filter(|t| t.refers_to(entry))
+                .map(|t| t.deleted_at)
+                .max()
+        };
 
         // Build a lookup of local entries by label → (index, updated_at)
         let local_map: HashMap<String, (usize, u64)> = self
@@ -704,21 +832,31 @@ impl Vault {
         let mut updates: Vec<(usize, Entry)> = Vec::new();
         let mut additions: Vec<Entry> = Vec::new();
 
-        for remote_entry in &remote.entries {
+        for remote_entry in remote.entries.iter().map(&clamp_entry) {
             match local_map.get(&remote_entry.label) {
                 Some(&(idx, local_updated_at)) => {
                     if local_updated_at == remote_entry.updated_at {
                         result.unchanged.push(remote_entry.label.clone());
                     } else if remote_entry.updated_at > local_updated_at {
-                        updates.push((idx, remote_entry.clone()));
                         result.updated_from_remote.push(remote_entry.label.clone());
+                        updates.push((idx, remote_entry));
                     } else {
                         result.kept_local.push(remote_entry.label.clone());
                     }
                 }
                 None => {
-                    additions.push(remote_entry.clone());
-                    result.added_from_remote.push(remote_entry.label.clone());
+                    // A remote-only entry that our own tombstone post-dates was
+                    // deleted here: suppress the resurrection instead of adding.
+                    let deleted_here = dead_at(&dead, &remote_entry)
+                        .is_some_and(|at| at > remote_entry.updated_at);
+                    if deleted_here {
+                        result
+                            .suppressed_by_tombstone
+                            .push(remote_entry.label.clone());
+                    } else {
+                        result.added_from_remote.push(remote_entry.label.clone());
+                        additions.push(remote_entry);
+                    }
                 }
             }
         }
@@ -731,6 +869,24 @@ impl Vault {
         // Apply additions
         self.entries.extend(additions);
 
+        // A remote tombstone for this entry, newer than our copy, means it was
+        // permanently removed (or renamed away) on the other replica after our
+        // last change to it: drop it here too. A local edit newer than the
+        // deletion wins and keeps the entry, and a marker for a DIFFERENT id
+        // that merely shares the label never fires.
+        let remote_tombstones: Vec<Tombstone> =
+            remote.tombstones.iter().map(&clamp_tombstone).collect();
+        let mut removed = Vec::new();
+        self.entries.retain(|e| {
+            let purged_remotely =
+                dead_at(&remote_tombstones, e).is_some_and(|at| at > e.updated_at);
+            if purged_remotely {
+                removed.push(e.label.clone());
+            }
+            !purged_remotely
+        });
+        result.removed_by_tombstone = removed;
+
         // Entries only in local are implicitly kept (no action needed).
         let remote_labels: std::collections::HashSet<&str> =
             remote.entries.iter().map(|e| e.label.as_str()).collect();
@@ -742,8 +898,38 @@ impl Vault {
             }
         }
 
-        self.touch();
-        self.record_event(AuditEvent::new("vault_merged", None));
+        // Persist the merged tombstones, minus any beaten by a surviving entry
+        // (re-created or edited after the deletion): keeping those would make a
+        // later merge second-guess an entry the data has already reclaimed.
+        let sort_key = |t: &Tombstone| (t.label.clone(), t.id.clone());
+        let mut merged_tombstones: Vec<Tombstone> = dead
+            .into_iter()
+            .filter(|t| {
+                !self
+                    .entries
+                    .iter()
+                    .any(|e| t.refers_to(e) && e.updated_at >= t.deleted_at)
+            })
+            .collect();
+        merged_tombstones.sort_by_key(&sort_key);
+        let mut previous = self.tombstones.clone();
+        previous.sort_by_key(&sort_key);
+        result.tombstones_changed = merged_tombstones != previous;
+
+        // The push-back decision needs to know whether the REMOTE side is
+        // missing deletion markers: without this, a purge whose entry the
+        // remote never held would silently stay local and a third replica
+        // could resurrect it later.
+        let mut remote_sorted = remote_tombstones;
+        remote_sorted.sort_by_key(&sort_key);
+        result.remote_tombstones_stale = merged_tombstones != remote_sorted;
+
+        self.tombstones = merged_tombstones;
+
+        if result.has_changes() {
+            self.touch();
+            self.record_event(AuditEvent::new("vault_merged", None));
+        }
 
         result
     }
@@ -753,6 +939,14 @@ impl Vault {
             event.timestamp = current_timestamp();
         }
         self.audit_log.push(event);
+    }
+
+    /// Records an externally-performed mutation in the audit log and bumps the
+    /// vault's `updated_at`. For callers (like the service layer) that mutate
+    /// entry fields directly and would otherwise leave no audit trail.
+    pub fn record_mutation(&mut self, action: &str, entry_label: Option<&str>) {
+        self.touch();
+        self.record_event(AuditEvent::new(action, entry_label));
     }
 
     fn touch(&mut self) {
@@ -773,12 +967,59 @@ pub struct MergeResult {
     pub added_from_remote: Vec<String>,
     /// Entries that existed only locally.
     pub local_only: Vec<String>,
+    /// Local entries removed because a newer remote tombstone marked them
+    /// permanently deleted (or renamed away) on the other replica.
+    #[serde(default)]
+    pub removed_by_tombstone: Vec<String>,
+    /// Remote entries NOT added because a newer local tombstone marks them
+    /// deleted here; the remote replica still holds a live copy.
+    #[serde(default)]
+    pub suppressed_by_tombstone: Vec<String>,
+    /// Whether the merged tombstone list differs from the local one (the vault
+    /// needs saving even if no entry changed).
+    #[serde(default)]
+    pub tombstones_changed: bool,
+    /// Whether the merged tombstone list differs from the REMOTE one (the
+    /// remote is missing deletion markers and must be pushed, or a third
+    /// replica could resurrect a purged entry later).
+    #[serde(default)]
+    pub remote_tombstones_stale: bool,
+    /// Whether any timestamp had to be clamped for claiming to be further in
+    /// the future than the clock-skew allowance.
+    #[serde(default)]
+    pub timestamps_sanitized: bool,
+    /// Entries where both replicas were edited within the same second with
+    /// DIFFERENT content, resolved deterministically in favor of the LOCAL
+    /// version (detected by the service layer, which can decrypt; the losing
+    /// version survives in the pre-merge safety backup).
+    #[serde(default)]
+    pub tie_conflicts_local_won: Vec<String>,
+    /// Same-second conflicting edits resolved in favor of the REMOTE version.
+    #[serde(default)]
+    pub tie_conflicts_remote_won: Vec<String>,
 }
 
 impl MergeResult {
     /// Returns true if the merge made any changes to the local vault.
     pub fn has_changes(&self) -> bool {
-        !self.updated_from_remote.is_empty() || !self.added_from_remote.is_empty()
+        !self.updated_from_remote.is_empty()
+            || !self.added_from_remote.is_empty()
+            || !self.removed_by_tombstone.is_empty()
+            || self.tombstones_changed
+            || self.timestamps_sanitized
+            || !self.tie_conflicts_remote_won.is_empty()
+    }
+
+    /// Returns true if the REMOTE replica is missing data the merged local
+    /// vault holds (local-only entries, local-newer versions, deletions or
+    /// deletion markers the remote has not applied, or a tie conflict the
+    /// local version won): the merged vault should be pushed back.
+    pub fn remote_is_stale(&self) -> bool {
+        !self.local_only.is_empty()
+            || !self.kept_local.is_empty()
+            || !self.suppressed_by_tombstone.is_empty()
+            || self.remote_tombstones_stale
+            || !self.tie_conflicts_local_won.is_empty()
     }
 
     /// Returns a human-readable summary of the merge.
@@ -804,6 +1045,24 @@ impl MergeResult {
         }
         if !self.local_only.is_empty() {
             parts.push(format!("{} local only", self.local_only.len()));
+        }
+        if !self.removed_by_tombstone.is_empty() {
+            parts.push(format!(
+                "{} removed (deleted remotely)",
+                self.removed_by_tombstone.len()
+            ));
+        }
+        if !self.suppressed_by_tombstone.is_empty() {
+            parts.push(format!(
+                "{} deletions kept (deleted locally)",
+                self.suppressed_by_tombstone.len()
+            ));
+        }
+        let ties = self.tie_conflicts_local_won.len() + self.tie_conflicts_remote_won.len();
+        if ties > 0 {
+            parts.push(format!(
+                "{ties} conflicting simultaneous edit(s) resolved (other version kept in the safety backup)"
+            ));
         }
         if parts.is_empty() {
             "No changes".to_string()
@@ -915,6 +1174,11 @@ pub struct Entry {
     /// Color label for visual categorization.
     #[serde(default)]
     pub color: Option<EntryColor>,
+    /// Unix timestamp when this entry was soft-deleted (moved to Trash);
+    /// 0 means the entry is live. Kept in cleartext metadata so Trash can be
+    /// listed and filtered without decrypting.
+    #[serde(default)]
+    pub deleted_at: u64,
 }
 
 /// Color labels for visual categorization of entries.
@@ -986,6 +1250,7 @@ impl Entry {
             access_count: 0,
             icon: None,
             color: None,
+            deleted_at: 0,
         };
         entry
             .history
@@ -1793,7 +2058,7 @@ fn generate_id() -> String {
 mod tests {
     use crate::crypto::{encrypt, CryptoAlgorithm, KeyMaterial};
 
-    use super::{Entry, EntryMetadata, EntrySecret, EntryType, KeyMetadata, Vault};
+    use super::{Entry, EntryMetadata, EntrySecret, EntryType, KeyMetadata, Tombstone, Vault};
 
     #[test]
     fn vault_starts_empty() {
@@ -1845,6 +2110,262 @@ mod tests {
         let removed = vault.remove_entry("primary").expect("remove");
         assert_eq!(removed.label, "primary");
         assert!(vault.find_entry("primary").is_none());
+    }
+
+    // ==================== merge + tombstone tests ====================
+
+    fn merge_fixture() -> (KeyMaterial, Vault, Vault) {
+        let key = KeyMaterial::generate();
+        let metadata = KeyMetadata::new(&key, CryptoAlgorithm::XChaCha20Poly1305);
+        let local = Vault::new("v", metadata.clone());
+        let remote = Vault::new("v", metadata);
+        (key, local, remote)
+    }
+
+    fn entry_at(key: &KeyMaterial, label: &str, updated_at: u64) -> Entry {
+        let ciphertext = encrypt(key, b"secret").expect("encrypt");
+        let mut entry = Entry::new(label, ciphertext);
+        entry.updated_at = updated_at;
+        entry
+    }
+
+    #[test]
+    fn merge_does_not_resurrect_locally_purged_entry() {
+        let (key, mut local, mut remote) = merge_fixture();
+        remote.entries.push(entry_at(&key, "dead", 100));
+        local.tombstones.push(Tombstone {
+            label: "dead".to_string(),
+            id: String::new(),
+            deleted_at: 200,
+        });
+
+        let result = local.merge_from(&remote);
+
+        assert!(local.find_entry("dead").is_none());
+        assert_eq!(result.suppressed_by_tombstone, vec!["dead".to_string()]);
+        assert!(result.added_from_remote.is_empty());
+        // The remote still holds the live copy: the merged vault (carrying the
+        // tombstone) must be pushed back so the deletion propagates.
+        assert!(result.remote_is_stale());
+        assert!(local.tombstones.iter().any(|t| t.label == "dead"));
+    }
+
+    #[test]
+    fn merge_applies_remote_deletion_to_local_copy() {
+        let (key, mut local, mut remote) = merge_fixture();
+        local.entries.push(entry_at(&key, "gone", 100));
+        remote.tombstones.push(Tombstone {
+            label: "gone".to_string(),
+            id: String::new(),
+            deleted_at: 200,
+        });
+
+        let result = local.merge_from(&remote);
+
+        assert!(local.find_entry("gone").is_none());
+        assert_eq!(result.removed_by_tombstone, vec!["gone".to_string()]);
+        assert!(result.has_changes());
+        // The tombstone is persisted so a three-way future merge stays correct.
+        assert!(local
+            .tombstones
+            .iter()
+            .any(|t| t.label == "gone" && t.deleted_at == 200));
+    }
+
+    #[test]
+    fn merge_keeps_entry_edited_after_remote_deletion() {
+        let (key, mut local, mut remote) = merge_fixture();
+        local.entries.push(entry_at(&key, "kept", 300));
+        remote.tombstones.push(Tombstone {
+            label: "kept".to_string(),
+            id: String::new(),
+            deleted_at: 200,
+        });
+
+        let result = local.merge_from(&remote);
+
+        assert!(local.find_entry("kept").is_some());
+        assert!(result.removed_by_tombstone.is_empty());
+        // The beaten tombstone is pruned: the label has been reclaimed by data.
+        assert!(local.tombstones.iter().all(|t| t.label != "kept"));
+    }
+
+    #[test]
+    fn merge_after_rename_does_not_duplicate_entry() {
+        let (key, mut local, mut remote) = merge_fixture();
+        // Replicas share the entry (same id): remote still holds the
+        // pre-rename copy while local has renamed it.
+        let shared = entry_at(&key, "old", 100);
+        remote.entries.push(shared.clone());
+        local.add_entry(shared).expect("add");
+        local.rename_entry("old", "new").expect("rename");
+
+        let result = local.merge_from(&remote);
+
+        assert!(
+            local.find_entry("old").is_none(),
+            "pre-rename copy came back"
+        );
+        assert!(local.find_entry("new").is_some());
+        assert_eq!(local.entries.len(), 1);
+        assert_eq!(result.suppressed_by_tombstone, vec!["old".to_string()]);
+    }
+
+    #[test]
+    fn merge_rename_onto_deleted_label_survives_concurrent_deletion() {
+        // The red-team scenario: replicas hold P and Q. Local deletes Q, then
+        // renames P -> Q (the entry now living under label Q is P). Remote
+        // INDEPENDENTLY deletes its own Q. Label-only tombstones would let
+        // remote's newer "Q" marker destroy the renamed P; id-pinned markers
+        // must not.
+        let (key, mut local, mut remote) = merge_fixture();
+        let p = entry_at(&key, "P", 100);
+        let q = entry_at(&key, "Q", 100);
+        remote.entries.push(p.clone());
+        remote.entries.push(q.clone());
+        local.add_entry(p).expect("add P");
+        local.add_entry(q).expect("add Q");
+
+        // Local: delete Q, rename P -> Q. Pin explicit times so the remote
+        // deletion below is strictly newest.
+        local.remove_entry("Q").expect("remove Q");
+        local.rename_entry("P", "Q").expect("rename P->Q");
+        for t in &mut local.tombstones {
+            t.deleted_at = 110;
+        }
+        local.entries[0].updated_at = 110;
+
+        // Remote: delete its own Q later than everything local.
+        let removed = remote.remove_entry("Q").expect("remote remove Q");
+        remote
+            .tombstones
+            .iter_mut()
+            .find(|t| t.id == removed.id)
+            .unwrap()
+            .deleted_at = 120;
+
+        let result = local.merge_from(&remote);
+
+        // The renamed entry (P living under label Q) must survive: remote's
+        // marker refers to the ORIGINAL Q's id, not P's.
+        let survivor = local.find_entry("Q").expect("renamed entry destroyed");
+        assert_eq!(survivor.updated_at, 110);
+        assert!(result.removed_by_tombstone.is_empty());
+        // Remote's stale P copy is suppressed by the rename tombstone, and
+        // the deletion markers for the original Q are merged (newest wins).
+        assert_eq!(result.suppressed_by_tombstone, vec!["P".to_string()]);
+        assert!(local
+            .tombstones
+            .iter()
+            .any(|t| t.label == "Q" && t.deleted_at == 120));
+    }
+
+    #[test]
+    fn merge_tombstone_only_change_still_needs_saving() {
+        let (_key, mut local, mut remote) = merge_fixture();
+        remote.tombstones.push(Tombstone {
+            label: "elsewhere".to_string(),
+            id: String::new(),
+            deleted_at: 100,
+        });
+
+        let result = local.merge_from(&remote);
+
+        assert!(result.tombstones_changed);
+        assert!(result.has_changes());
+        assert!(local.tombstones.iter().any(|t| t.label == "elsewhere"));
+    }
+
+    #[test]
+    fn merge_recreated_entry_wins_over_stale_remote_copy() {
+        let (key, mut local, mut remote) = merge_fixture();
+        // Purged then re-created locally: add_entry lifts the tombstone.
+        local.tombstones.push(Tombstone {
+            label: "reborn".to_string(),
+            id: String::new(),
+            deleted_at: 200,
+        });
+        local.add_entry(entry_at(&key, "reborn", 300)).expect("add");
+        remote.entries.push(entry_at(&key, "reborn", 100));
+
+        let result = local.merge_from(&remote);
+
+        assert!(local.find_entry("reborn").is_some());
+        assert_eq!(result.kept_local, vec!["reborn".to_string()]);
+        assert!(local.tombstones.is_empty());
+    }
+
+    #[test]
+    fn merge_clamps_far_future_timestamps() {
+        let (key, mut local, mut remote) = merge_fixture();
+        let far_future = super::current_timestamp() + 1_000_000;
+        // A broken-clock replica pushes a far-future tombstone and a
+        // far-future entry.
+        remote.tombstones.push(Tombstone {
+            label: "poisoned".to_string(),
+            id: String::new(),
+            deleted_at: far_future,
+        });
+        remote.entries.push(entry_at(&key, "eternal", far_future));
+
+        let result = local.merge_from(&remote);
+
+        let cap = super::current_timestamp() + super::MAX_CLOCK_SKEW_SECS + 1;
+        assert!(result.timestamps_sanitized || result.has_changes());
+        assert!(local.tombstones.iter().all(|t| t.deleted_at <= cap));
+        assert!(local.entries.iter().all(|e| e.updated_at <= cap));
+    }
+
+    #[test]
+    fn merge_reports_remote_missing_tombstones() {
+        // Local purged an entry the remote never held: nothing is suppressed
+        // or removed, but the marker itself must still reach the remote or a
+        // third replica could resurrect the entry later.
+        let (key, mut local, _remote) = merge_fixture();
+        let (_key2, _l2, remote) = merge_fixture();
+        local.add_entry(entry_at(&key, "ghost", 100)).expect("add");
+        local.remove_entry("ghost").expect("remove");
+
+        let result = local.merge_from(&remote);
+
+        assert!(result.remote_tombstones_stale);
+        assert!(result.remote_is_stale());
+    }
+
+    #[test]
+    fn merge_timestamp_tie_favors_keeping_data_over_tombstone() {
+        let (key, mut local, mut remote) = merge_fixture();
+        local.entries.push(entry_at(&key, "tie", 200));
+        remote.tombstones.push(Tombstone {
+            label: "tie".to_string(),
+            id: String::new(),
+            deleted_at: 200,
+        });
+
+        let result = local.merge_from(&remote);
+
+        // deleted_at == updated_at: the tombstone must NOT win (a deletion only
+        // beats an entry strictly older than it).
+        assert!(local.find_entry("tie").is_some());
+        assert!(result.removed_by_tombstone.is_empty());
+    }
+
+    #[test]
+    fn remove_and_rename_record_tombstones() {
+        let (key, mut vault, _remote) = merge_fixture();
+        vault.add_entry(entry_at(&key, "a", 100)).expect("add");
+        vault.add_entry(entry_at(&key, "b", 100)).expect("add");
+
+        vault.remove_entry("a").expect("remove");
+        vault.rename_entry("b", "c").expect("rename");
+
+        assert!(vault.tombstones.iter().any(|t| t.label == "a"));
+        assert!(vault.tombstones.iter().any(|t| t.label == "b"));
+        assert!(vault.tombstones.iter().all(|t| t.label != "c"));
+
+        // Re-creating a purged label lifts its marker.
+        vault.add_entry(entry_at(&key, "a", 200)).expect("re-add");
+        assert!(vault.tombstones.iter().all(|t| t.label != "a"));
     }
 
     // ==================== EntrySecret tests ====================

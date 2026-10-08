@@ -21,6 +21,7 @@ pub use models::{
     EntryType,
     KeyMetadata,
     MergeResult,
+    Tombstone,
     TotpBackupCode,
     Vault,
     MAX_ATTACHMENTS_PER_ENTRY,

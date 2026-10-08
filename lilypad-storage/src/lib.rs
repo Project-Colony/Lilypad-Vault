@@ -166,7 +166,16 @@ impl LocalStore {
     pub fn load_vault(&self, name: &str, key: &KeyMaterial) -> Result<Vault> {
         let path = self.vault_path(name)?;
         let bytes = self.read_vault_file_locked(&path)?;
-        let stored_bytes = strip_header(&bytes)?;
+        self.load_vault_from_bytes(&bytes, key)
+    }
+
+    /// Parses, integrity-checks, verifies the password against, and decrypts a
+    /// vault from raw file bytes already held in memory, without touching any
+    /// file on disk. This lets a caller prove that a candidate payload (e.g. a
+    /// freshly pulled remote vault) decrypts with a given key *before* it is
+    /// allowed to overwrite the live vault file.
+    pub fn load_vault_from_bytes(&self, bytes: &[u8], key: &KeyMaterial) -> Result<Vault> {
+        let stored_bytes = strip_header(bytes)?;
         let stored: StoredVault = serde_json::from_slice(stored_bytes)?;
 
         // Validate vault version
@@ -235,7 +244,14 @@ impl LocalStore {
             return Ok(None);
         }
         let bytes = self.read_vault_file_locked(&path)?;
-        let stored_bytes = strip_header(&bytes)?;
+        Self::kdf_params_from_bytes(&bytes)
+    }
+
+    /// Reads the embedded KDF params from raw vault bytes in memory, without
+    /// touching disk. Lets a caller (e.g. validated sync) derive the exact key a
+    /// future `load_vault` will need for a candidate payload before committing it.
+    pub fn kdf_params_from_bytes(bytes: &[u8]) -> Result<Option<EmbeddedKdfParams>> {
+        let stored_bytes = strip_header(bytes)?;
         let stored: StoredVault = serde_json::from_slice(stored_bytes)?;
         Ok(stored.key_metadata.kdf_params.clone())
     }
@@ -339,21 +355,19 @@ impl LocalStore {
         let backup_dir = self.backup_dir();
         fs::create_dir_all(&backup_dir)?;
 
-        // Generate backup filename with timestamp
-        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S");
+        // Generate backup filename with a sub-second timestamp so two backups of
+        // the same vault within one wall-clock second do not collide (fs::copy
+        // would otherwise overwrite the earlier one, e.g. the pre-restore safety
+        // backup). Format: <vault>_<YYYYMMDD>_<HHMMSS>_<microseconds>.backup
+        let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S_%6f");
         let backup_name = format!("{vault_name}_{timestamp}.backup");
         let backup_path = backup_dir.join(&backup_name);
 
-        // Copy the vault file to the backup location
-        fs::copy(&vault_path, &backup_path)
-            .with_context(|| format!("failed to create backup: {}", backup_path.display()))?;
-
-        // Set secure permissions on backup
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&backup_path, fs::Permissions::from_mode(0o600))?;
-        }
+        // Write the backup atomically (temp + rename + fsync, 0600), matching
+        // restore_backup: a crash mid-backup must not leave a truncated .backup
+        // that only fails when someone tries to restore from it.
+        let bytes = self.read_vault_file_locked(&vault_path)?;
+        self.write_vault_file_atomic(&backup_path, &bytes)?;
 
         Ok(backup_name)
     }
@@ -372,7 +386,12 @@ impl LocalStore {
             let entry = entry?;
             let filename = entry.file_name().to_string_lossy().to_string();
 
-            if filename.starts_with(&prefix) && filename.ends_with(".backup") {
+            // Match by parsing the fixed `<vault>_<YYYYMMDD>_<HHMMSS>.backup`
+            // suffix, NOT a `starts_with(prefix)` test: vault names may contain
+            // underscores, so a prefix test would let "work" match backups of
+            // "work_stuff" and vice versa (wrong-vault restore / prune).
+            let _ = &prefix;
+            if backup_vault_name(&filename).as_deref() == Some(vault_name) {
                 let metadata = entry.metadata()?;
                 let created = metadata
                     .created()
@@ -403,11 +422,12 @@ impl LocalStore {
             return Err(anyhow!("backup '{backup_name}' not found"));
         }
 
-        // Extract vault name from backup filename
-        let vault_name = backup_name
-            .split('_')
-            .next()
-            .ok_or_else(|| anyhow!("invalid backup filename"))?;
+        // Extract vault name by stripping the fixed timestamp suffix from the
+        // right, so vault names containing underscores restore to themselves
+        // rather than to a truncated prefix.
+        let vault_name = backup_vault_name(backup_name)
+            .ok_or_else(|| anyhow!("invalid backup filename: {backup_name}"))?;
+        let vault_name = vault_name.as_str();
 
         validate_vault_name(vault_name)?;
 
@@ -424,9 +444,12 @@ impl LocalStore {
             fs::create_dir_all(parent)?;
         }
 
-        // Copy backup to vault location
-        fs::copy(&backup_path, &vault_path)
-            .with_context(|| format!("failed to restore backup to: {}", vault_path.display()))?;
+        // Restore atomically (temp file + rename + fsync) rather than a plain
+        // copy: a crash mid-restore leaves the previous vault intact instead of
+        // a half-written, unopenable file.
+        let bytes = fs::read(&backup_path)
+            .with_context(|| format!("failed to read backup: {}", backup_path.display()))?;
+        self.write_vault_file_atomic(&vault_path, &bytes)?;
 
         Ok(old_backup)
     }
@@ -519,11 +542,57 @@ impl LocalStore {
             .persist(path)
             .with_context(|| format!("failed to persist vault file: {}", path.display()))?;
 
+        // fsync the parent directory so the rename itself is durable: without
+        // this, a crash right after a write returns can, on some filesystems,
+        // leave the directory entry pointing at the old file (a just-completed
+        // password change or save could silently revert).
+        #[cfg(unix)]
+        {
+            if let Ok(dir) = File::open(parent) {
+                let _ = dir.sync_all();
+            }
+        }
+
         Ok(())
     }
 }
 
 /// Strips the vault file header, returning only the JSON payload.
+/// Parses a backup filename of the form `<vault>_<YYYYMMDD>_<HHMMSS>.backup`
+/// and returns the vault name. The timestamp suffix is a fixed shape (8 digits,
+/// underscore, 6 digits), so it is stripped from the RIGHT, which keeps vault
+/// names that themselves contain underscores intact. Returns `None` if the name
+/// does not match the expected shape. Public so callers (e.g. the service
+/// layer) can resolve which vault a restore will touch and lock it first.
+pub fn backup_vault_name(filename: &str) -> Option<String> {
+    fn all_digits(s: &str) -> bool {
+        !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+    }
+    let stem = filename.strip_suffix(".backup")?;
+    // Two accepted timestamp shapes, stripped from the right:
+    //   new: <vault>_<YYYYMMDD>_<HHMMSS>_<microseconds>
+    //   old: <vault>_<YYYYMMDD>_<HHMMSS>
+    // Disambiguated by whether the group before the final one is the 8-digit
+    // date (old) or the 6-digit time (new).
+    let (rest, last) = stem.rsplit_once('_')?;
+    if !all_digits(last) {
+        return None;
+    }
+    let (rest2, prev) = rest.rsplit_once('_')?;
+    if prev.len() == 8 && all_digits(prev) {
+        // old 2-group: prev = date, last = time. vault = rest2.
+        return (!rest2.is_empty()).then(|| rest2.to_string());
+    }
+    if prev.len() == 6 && all_digits(prev) {
+        // new 3-group: prev = time, last = microseconds. One more group = date.
+        let (vault, ymd) = rest2.rsplit_once('_')?;
+        if ymd.len() == 8 && all_digits(ymd) && !vault.is_empty() {
+            return Some(vault.to_string());
+        }
+    }
+    None
+}
+
 fn strip_header(bytes: &[u8]) -> Result<&[u8]> {
     if bytes.starts_with(VAULT_HEADER_V2) {
         Ok(&bytes[VAULT_HEADER_V2.len()..])
@@ -693,7 +762,7 @@ pub fn secure_delete_dir(path: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{secure_delete, LocalStore};
+    use super::{backup_vault_name, secure_delete, LocalStore};
     use lilypad_core::AppConfig;
     use std::fs;
     use std::io::Write;
@@ -952,6 +1021,62 @@ mod tests {
             assert_eq!(info.vault_name, "list-bk");
             assert!(info.size_bytes > 0, "backup should have non-zero size");
         }
+    }
+
+    #[test]
+    fn backup_vault_name_parses_underscored_names() {
+        // A vault whose name contains underscores must round-trip: the fixed
+        // `_<8 digits>_<6 digits>` timestamp is stripped from the right.
+        // Old 2-group format.
+        assert_eq!(
+            backup_vault_name("work_stuff_20260714_120000.backup").as_deref(),
+            Some("work_stuff")
+        );
+        assert_eq!(
+            backup_vault_name("work_20260714_120000.backup").as_deref(),
+            Some("work")
+        );
+        // New 3-group (sub-second) format.
+        assert_eq!(
+            backup_vault_name("work_stuff_20260714_120000_123456.backup").as_deref(),
+            Some("work_stuff")
+        );
+        assert_eq!(
+            backup_vault_name("work_20260714_120000_000001.backup").as_deref(),
+            Some("work")
+        );
+        // Malformed / non-backup names are rejected.
+        assert_eq!(backup_vault_name("work.backup"), None);
+        assert_eq!(backup_vault_name("work_2026_120000.backup"), None);
+        assert_eq!(backup_vault_name("_20260714_120000.backup"), None);
+    }
+
+    #[test]
+    fn backups_do_not_cross_contaminate_underscored_vaults() {
+        // Regression guard for the audited data-loss bug: with the old
+        // `starts_with("work_")` matching, "work" would have matched
+        // "work_stuff"'s backups (wrong-vault restore / prune).
+        let dir = tempdir().expect("create temp dir");
+        let store = make_test_store(dir.path());
+        let key = lilypad_core::KeyMaterial::generate();
+
+        store
+            .save_vault(&make_test_vault("work", &key), &key)
+            .expect("save work");
+        store
+            .save_vault(&make_test_vault("work_stuff", &key), &key)
+            .expect("save work_stuff");
+        store.create_backup("work").expect("backup work");
+        store
+            .create_backup("work_stuff")
+            .expect("backup work_stuff");
+
+        let work = store.list_backups("work").expect("list work");
+        let work_stuff = store.list_backups("work_stuff").expect("list work_stuff");
+        assert_eq!(work.len(), 1, "'work' must see only its own backup");
+        assert_eq!(work_stuff.len(), 1, "'work_stuff' must see only its own");
+        assert!(work.iter().all(|b| b.vault_name == "work"));
+        assert!(work_stuff.iter().all(|b| b.vault_name == "work_stuff"));
     }
 
     #[test]

@@ -16,11 +16,11 @@ Lilypad is a Rust-based password manager focused on security, reliability, and a
 The project language is **English** for now. All code comments, documentation, commit messages, and user-facing text must be written in English to avoid confusion while the foundations are being built. Additional languages will be added later as Lilypad matures.
 
 ## Getting Started
-The Rust workspace is fully functional with seven crates: `lilypad-core` (cryptography and models), `lilypad-storage` (encrypted local persistence), `lilypad-common` (validation, health checks, utilities), `lilypad-oauth` (GitHub OAuth and sync), `lilypad-cli` (command-line interface), `ui/tui` (terminal UI), and `ui/desktop` (desktop GUI). See [`doc/doc.md`](doc/doc.md) for architecture details and development workflows.
+The Rust workspace is fully functional with eight crates: `lilypad-core` (cryptography and models), `lilypad-storage` (encrypted local persistence), `lilypad-common` (validation, health checks, utilities), `lilypad-oauth` (GitHub OAuth and sync), `lilypad-app` (the shared application/service layer - it owns unlocking, entry mutation, settings, and validated sync, so the three frontends stay thin clients), `lilypad-cli` (command-line interface), `ui/tui` (terminal UI), and `ui/desktop` (desktop GUI). See [`doc/doc.md`](doc/doc.md) for architecture details and development workflows.
 
 ```bash
 cargo build --workspace          # Build all crates
-cargo test --workspace           # Run all 120+ tests
+cargo test --workspace           # Run all 240+ tests
 cargo run --bin lilypad-cli -- help    # CLI
 cargo run -p lilypad-desktop     # Desktop GUI
 cargo run -p lilypad-tui         # Terminal UI

@@ -3,4 +3,4 @@
 #   git config blame.ignoreRevsFile .git-blame-ignore-revs
 #
 # style: apply rustfmt to the whole tree
-1832a9e416aadd0360fc541bbc9fdd5b9adbf601
+cc03a9cf4be5ca78a6d14f984742a970aa710d54

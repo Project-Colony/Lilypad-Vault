@@ -664,20 +664,6 @@ pub fn strength_color(strength: u8, palette: &LilypadPalette) -> Color {
     }
 }
 
-/// Map an EntryColor to an Iced Color
-pub fn entry_color_to_iced(color: &lilypad_core::EntryColor) -> Color {
-    match color {
-        lilypad_core::EntryColor::Red => Color::from_rgb8(239, 68, 68),
-        lilypad_core::EntryColor::Orange => Color::from_rgb8(249, 115, 22),
-        lilypad_core::EntryColor::Yellow => Color::from_rgb8(234, 179, 8),
-        lilypad_core::EntryColor::Green => Color::from_rgb8(34, 197, 94),
-        lilypad_core::EntryColor::Blue => Color::from_rgb8(59, 130, 246),
-        lilypad_core::EntryColor::Purple => Color::from_rgb8(139, 92, 246),
-        lilypad_core::EntryColor::Pink => Color::from_rgb8(236, 72, 153),
-        lilypad_core::EntryColor::Gray => Color::from_rgb8(107, 114, 128),
-    }
-}
-
 // ============================================================================
 // Custom Container Styles
 // ============================================================================

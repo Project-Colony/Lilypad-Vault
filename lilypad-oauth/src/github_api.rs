@@ -290,6 +290,55 @@ impl GitHubClient {
         }
     }
 
+    /// Like [`Self::get_vault_data`] but for an explicit path inside the vault
+    /// repo, so each named vault can live at its own remote path
+    /// (`vaults/<name>.lily`) instead of a single shared `vault.lily`.
+    pub fn get_vault_file(&self, username: &str, path: &str) -> Result<Option<(Vec<u8>, String)>> {
+        let repo_name = format!("{}-{}", VAULT_REPO_PREFIX, username);
+        match self.get_file(username, &repo_name, path) {
+            Ok(file) => {
+                let has_inline_content = file.content.as_ref().is_some_and(|c| !c.is_empty())
+                    && file.encoding.as_deref() == Some("base64");
+                let decoded = if has_inline_content {
+                    let content = file.content.as_ref().ok_or_else(|| {
+                        OAuthError::ParseError("expected inline content but found None".to_string())
+                    })?;
+                    let cleaned: String = content.chars().filter(|c| !c.is_whitespace()).collect();
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &cleaned)
+                        .map_err(|e| OAuthError::ParseError(format!("invalid base64: {}", e)))?
+                } else {
+                    self.get_blob_content(username, &repo_name, &file.sha)?
+                };
+                if decoded.is_empty() {
+                    return Err(OAuthError::ParseError("vault data is empty".to_string()));
+                }
+                Ok(Some((decoded, file.sha)))
+            }
+            Err(OAuthError::FileNotFound { .. }) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Like [`Self::save_vault_data`] but writes to an explicit path inside the
+    /// vault repo.
+    pub fn save_vault_file(
+        &self,
+        username: &str,
+        path: &str,
+        data: &[u8],
+        sha: Option<&str>,
+    ) -> Result<String> {
+        let repo_name = format!("{}-{}", VAULT_REPO_PREFIX, username);
+        self.get_or_create_vault_repo(username)?;
+        let message = if sha.is_some() {
+            "Update encrypted vault"
+        } else {
+            "Initial vault upload"
+        };
+        let file = self.put_file(username, &repo_name, path, data, message, sha)?;
+        Ok(file.sha)
+    }
+
     /// Fetches raw blob content via the Git Blob API (supports files > 1MB).
     fn get_blob_content(&self, owner: &str, repo: &str, sha: &str) -> Result<Vec<u8>> {
         let url = format!(

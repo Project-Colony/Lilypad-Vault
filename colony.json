@@ -1,11 +1,12 @@
 {
+  "$schema": "https://raw.githubusercontent.com/Project-Colony/Project-Colony-Resources/main/generated/colony.schema.json",
   "name": "Lilypad",
-  "category": "Security",
-  "platforms": ["windows", "linux", "macos"],
+  "category": "security",
+  "platforms": ["windows", "linux", "macos", "macos-x86"],
   "releaseFiles": {
-    "windows": { "asset": "lilypad-desktop-windows.exe" },
-    "linux": { "asset": "lilypad-desktop-linux" },
-    "macos-x86_64": { "asset": "lilypad-desktop-macos-x86_64" },
-    "macos-aarch64": { "asset": "lilypad-desktop-macos-aarch64" }
+    "windows": { "tag": "latest", "filePattern": "desktop-x86_64-pc-windows-msvc" },
+    "linux": { "tag": "latest", "filePattern": "desktop-x86_64-unknown-linux-gnu" },
+    "macos": { "tag": "latest", "filePattern": "desktop-aarch64-apple-darwin" },
+    "macos-x86": { "tag": "latest", "filePattern": "desktop-x86_64-apple-darwin" }
   }
 }

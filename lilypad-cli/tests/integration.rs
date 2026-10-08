@@ -1,1057 +1,384 @@
-//! Integration tests for the Lilypad CLI.
+//! End-to-end tests for the CLI, driving the real binary against a temp data
+//! dir. The master password is passed via the flag so the tests are scripted
+//! (interactive prompts are covered by the io module's stdin fallback).
 
-use assert_cmd::cargo::cargo_bin_cmd;
+#![allow(deprecated)] // Command::cargo_bin is fine for our fixed build dir.
+
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::fs;
-use tempfile::tempdir;
+use predicates::str::contains;
+use tempfile::TempDir;
 
-fn lilypad() -> Command {
-    cargo_bin_cmd!("lilypad-cli")
+fn lily(dir: &TempDir, password: &str) -> Command {
+    let mut cmd = Command::cargo_bin("lilypad-cli").unwrap();
+    cmd.arg("--data-dir")
+        .arg(dir.path())
+        .arg("--master-password")
+        .arg(password);
+    cmd
 }
 
 #[test]
-fn test_help_displays() {
-    lilypad()
-        .arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains(
-            "Minimal CLI for managing Lilypad vaults",
-        ));
-}
-
-#[test]
-fn test_vaults_empty() {
-    let dir = tempdir().unwrap();
-    lilypad()
-        .args(["--data-dir", dir.path().to_str().unwrap()])
-        .arg("vaults")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("No vaults found"));
-}
-
-#[test]
-fn test_init_creates_vault() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize vault without master password (random key)
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test-vault"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Vault 'test-vault' initialized"));
-
-    // Check key file was created
-    let key_path = dir.path().join("key.json");
-    assert!(key_path.exists());
-
-    // Check vault file was created
-    let vault_path = dir.path().join("vaults").join("test-vault.lily");
-    assert!(vault_path.exists());
-
-    // List vaults should show it
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .arg("vaults")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("test-vault"));
-}
-
-#[test]
-fn test_init_with_master_password() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["--master-password", "MyStr0ng!Password123"])
-        .args(["init", "secure-vault", "--use-master-password"])
+fn init_add_list_get_roundtrip() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    lily(&dir, "pw")
+        .args(["add", "v", "gh", "--username", "alice"])
+        .write_stdin("s3cret")
         .assert()
         .success();
-
-    // Check key file uses KDF (pretty-printed JSON has spaces)
-    let key_path = dir.path().join("key.json");
-    let key_content = fs::read_to_string(&key_path).unwrap();
-    assert!(key_content.contains("\"type\": \"Kdf\"") || key_content.contains("\"type\":\"Kdf\""));
+    lily(&dir, "pw")
+        .args(["list", "v"])
+        .assert()
+        .success()
+        .stdout(contains("gh").and(contains("alice")));
+    lily(&dir, "pw")
+        .args(["get", "v", "gh", "--show-password"])
+        .assert()
+        .success()
+        .stdout(contains("s3cret"));
 }
 
 #[test]
-fn test_init_rejects_existing_key() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // First init succeeds
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "vault1"])
+fn get_hides_password_by_default() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    lily(&dir, "pw")
+        .args(["add", "v", "gh"])
+        .write_stdin("s3cret")
         .assert()
         .success();
+    lily(&dir, "pw")
+        .args(["get", "v", "gh"])
+        .assert()
+        .success()
+        .stdout(contains("s3cret").not());
+}
 
-    // Second init fails
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "vault2"])
+#[test]
+fn wrong_password_is_rejected_and_vault_is_preserved() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "right").args(["init", "v"]).assert().success();
+    lily(&dir, "right")
+        .args(["add", "v", "gh"])
+        .write_stdin("s")
+        .assert()
+        .success();
+    // Wrong password must fail...
+    lily(&dir, "wrong")
+        .args(["get", "v", "gh", "--show-password"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("key already initialized"));
+        .stderr(contains("incorrect master password"));
+    // ...and must NOT have destroyed the vault.
+    lily(&dir, "right")
+        .args(["list", "v"])
+        .assert()
+        .success()
+        .stdout(contains("gh"));
 }
 
 #[test]
-fn test_add_and_list_entry() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
+fn change_master_password_rekeys() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "old").args(["init", "v"]).assert().success();
+    lily(&dir, "old")
+        .args(["add", "v", "gh"])
+        .write_stdin("s")
         .assert()
         .success();
-
-    // Add entry
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "add",
-            "test",
-            "email",
-            "secret123",
-            "--username",
-            "user@example.com",
-        ])
+    lily(&dir, "old")
+        .args(["change-master-password", "v"])
+        .write_stdin("new")
+        .assert()
+        .success();
+    // Old password no longer works.
+    lily(&dir, "old").args(["list", "v"]).assert().failure();
+    // New password works and the entry survived.
+    lily(&dir, "new")
+        .args(["list", "v"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Entry 'email' added"));
-
-    // List entries
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["list", "test"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("email"));
+        .stdout(contains("gh"));
 }
 
 #[test]
-fn test_get_entry() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize and add
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
+fn remove_and_rename_entry() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    lily(&dir, "pw")
+        .args(["add", "v", "one"])
+        .write_stdin("s")
         .assert()
         .success();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "add",
-            "test",
-            "mysite",
-            "hunter2",
-            "--username",
-            "admin",
-            "--url",
-            "https://example.com",
-            "--notes",
-            "Test notes",
-        ])
+    lily(&dir, "pw")
+        .args(["rename-entry", "v", "one", "two"])
         .assert()
         .success();
-
-    // Get entry (with --show-password to see the actual password)
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["get", "test", "mysite", "--show-password"])
+    lily(&dir, "pw")
+        .args(["list", "v"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Label: mysite"))
-        .stdout(predicate::str::contains("Username: admin"))
-        .stdout(predicate::str::contains("URL: https://example.com"))
-        .stdout(predicate::str::contains("Password: hunter2"))
-        .stdout(predicate::str::contains("Notes: Test notes"));
+        .stdout(contains("two").and(contains("one").not()));
+    lily(&dir, "pw")
+        .args(["remove", "v", "two"])
+        .assert()
+        .success();
+    lily(&dir, "pw")
+        .args(["list", "v"])
+        .assert()
+        .success()
+        .stdout(contains("no entries"));
 }
 
 #[test]
-fn test_search_entries() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
+fn remove_soft_deletes_and_restore_brings_it_back() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    lily(&dir, "pw")
+        .args(["add", "v", "gh"])
+        .write_stdin("s")
         .assert()
         .success();
-
-    // Add multiple entries
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "github", "pass1", "--username", "user1"])
+    // Remove moves to Trash by default...
+    lily(&dir, "pw")
+        .args(["remove", "v", "gh"])
         .assert()
         .success();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "gitlab", "pass2", "--username", "user2"])
-        .assert()
-        .success();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "email", "pass3", "--username", "user3"])
-        .assert()
-        .success();
-
-    // Search for "git"
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["search", "git", "test"])
+    lily(&dir, "pw")
+        .args(["list", "v"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("github"))
-        .stdout(predicate::str::contains("gitlab"))
-        .stdout(predicate::str::contains("email").not());
+        .stdout(contains("no entries"));
+    lily(&dir, "pw")
+        .args(["trash", "v"])
+        .assert()
+        .success()
+        .stdout(contains("gh"));
+    // ...and restore brings it back to the live list.
+    lily(&dir, "pw")
+        .args(["restore", "v", "gh"])
+        .assert()
+        .success();
+    lily(&dir, "pw")
+        .args(["list", "v"])
+        .assert()
+        .success()
+        .stdout(contains("gh"));
 }
 
 #[test]
-fn test_remove_entry() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize and add
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
+fn remove_purge_permanently_deletes() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    lily(&dir, "pw")
+        .args(["add", "v", "gh"])
+        .write_stdin("s")
         .assert()
         .success();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "todelete", "password"])
+    lily(&dir, "pw")
+        .args(["remove", "v", "gh", "--purge"])
         .assert()
         .success();
-
-    // Remove
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["remove", "test", "todelete"])
+    lily(&dir, "pw")
+        .args(["trash", "v"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Entry 'todelete' removed"));
+        .stdout(contains("empty"));
+}
 
-    // Should be gone
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["get", "test", "todelete"])
+#[test]
+fn audit_reports_a_health_grade() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    lily(&dir, "pw")
+        .args(["add", "v", "gh"])
+        .write_stdin("weak")
+        .assert()
+        .success();
+    lily(&dir, "pw")
+        .args(["audit", "v"])
+        .assert()
+        .success()
+        .stdout(contains("Vault health"));
+}
+
+#[test]
+fn update_records_password_history_and_preserves_tags() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    lily(&dir, "pw")
+        .args(["add", "v", "gh", "--tag", "work"])
+        .write_stdin("old-pw")
+        .assert()
+        .success();
+    lily(&dir, "pw")
+        .args(["update", "v", "gh", "new-pw"])
+        .assert()
+        .success();
+    // The password change entered the entry's history...
+    lily(&dir, "pw")
+        .args(["history", "v", "gh"])
+        .assert()
+        .success()
+        .stdout(contains("password-changed"));
+    // ...and the untouched tag survived the edit.
+    lily(&dir, "pw")
+        .args(["list", "v", "--output-format", "json"])
+        .assert()
+        .success()
+        .stdout(contains("work"));
+}
+
+#[test]
+fn update_refuses_a_trashed_entry() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    lily(&dir, "pw")
+        .args(["add", "v", "gh"])
+        .write_stdin("s")
+        .assert()
+        .success();
+    lily(&dir, "pw")
+        .args(["remove", "v", "gh"])
+        .assert()
+        .success();
+    lily(&dir, "pw")
+        .args(["update", "v", "gh", "new"])
         .assert()
         .failure()
-        .stderr(predicate::str::contains("not found"));
+        .stderr(contains("in Trash"));
 }
 
 #[test]
-fn test_update_entry() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
+fn import_lastpass_csv_and_export_roundtrip() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
 
-    // Initialize and add
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
+    // A realistic LastPass export: a login with folder+favorite and a secure note.
+    let src = dir.path().join("lastpass.csv");
+    std::fs::write(
+        &src,
+        "url,username,password,totp,extra,name,grouping,fav\n\
+         https://github.com,alice,gh-pw,,personal token in notes,GitHub,Dev\\Git,1\n\
+         http://sn,,,,\"NoteType:Credit Card\nLanguage:en-US\nNumber:4111\nNotes:backup card\",Visa,,0\n",
+    )
+    .unwrap();
 
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "entry", "old_password"])
-        .assert()
-        .success();
-
-    // Update
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "update",
-            "test",
-            "entry",
-            "new_password",
-            "--username",
-            "newuser",
-        ])
-        .assert()
-        .success();
-
-    // Verify update (with --show-password to see the actual password)
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["get", "test", "entry", "--show-password"])
+    lily(&dir, "pw")
+        .args(["import", "v", src.to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Password: new_password"))
-        .stdout(predicate::str::contains("Username: newuser"));
-}
-
-#[test]
-fn test_rename_vault() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "original"])
-        .assert()
-        .success();
-
-    // Rename
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["rename-vault", "original", "renamed"])
+        .stdout(contains("LastPass").and(contains("Imported 2")));
+    lily(&dir, "pw")
+        .args(["list", "v"])
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Vault 'original' renamed to 'renamed'",
-        ));
-
-    // List should show new name
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .arg("vaults")
+        .stdout(contains("GitHub").and(contains("Visa")));
+    lily(&dir, "pw")
+        .args(["get", "v", "GitHub", "--show-password"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("renamed"))
-        .stdout(predicate::str::contains("original").not());
-}
+        .stdout(contains("gh-pw"));
 
-#[test]
-fn test_delete_vault_requires_confirmation() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
+    // Export round-trips through detection into a second vault.
+    let out = dir.path().join("export.csv");
+    lily(&dir, "pw")
+        .args(["export", "v", out.to_str().unwrap(), "--force"])
         .assert()
         .success();
-
-    // Delete without --force requires confirmation (will fail without input)
-    // We can't easily simulate interactive input, so we test with --force
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["delete-vault", "test", "--force"])
+    lily(&dir, "pw").args(["init", "v2"]).assert().success();
+    lily(&dir, "pw")
+        .args(["import", "v2", out.to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Vault 'test' deleted"));
+        .stdout(contains("Lilypad CSV").and(contains("Imported 2")));
+}
 
-    // Should be gone
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .arg("vaults")
+#[test]
+fn import_dry_run_writes_nothing() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    let src = dir.path().join("chrome.csv");
+    std::fs::write(
+        &src,
+        "name,url,username,password,note\nSite,https://s.com,u,p,\n",
+    )
+    .unwrap();
+    lily(&dir, "pw")
+        .args(["import", "v", src.to_str().unwrap(), "--dry-run"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("No vaults found"));
-}
-
-#[test]
-fn test_audit_vault() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
-
-    // Add weak password
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "weak", "short"])
-        .assert()
-        .success();
-
-    // Add strong password
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "strong", "MyStr0ng!Password123"])
-        .assert()
-        .success();
-
-    // Add duplicate password
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "duplicate", "short"])
-        .assert()
-        .success();
-
-    // Audit
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["audit", "test"])
+        .stdout(contains("Dry run: 1"));
+    lily(&dir, "pw")
+        .args(["list", "v"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("weak"))
-        .stdout(predicate::str::contains("reuse"));
+        .stdout(contains("no entries"));
 }
 
 #[test]
-fn test_vault_name_validation() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize first
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "valid"])
+fn audit_log_records_mutations() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    lily(&dir, "pw")
+        .args(["add", "v", "gh"])
+        .write_stdin("s")
         .assert()
         .success();
-
-    // Try to add with path traversal in vault name (should be caught by storage)
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "../../../etc", "entry", "password"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("invalid"));
-}
-
-#[test]
-fn test_entry_with_tags_and_folder() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
-
-    // Add with tags and folder
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "add",
-            "test",
-            "organized",
-            "password123",
-            "--tag",
-            "work",
-            "--tag",
-            "important",
-            "--folder",
-            "accounts",
-            "--entry-type",
-            "login",
-        ])
-        .assert()
-        .success();
-
-    // List should show metadata
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["list", "test"])
+    lily(&dir, "pw")
+        .args(["audit-log", "v"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("folder: accounts"))
-        .stdout(predicate::str::contains("work"))
-        .stdout(predicate::str::contains("important"));
+        .stdout(contains("entry_added"));
 }
 
 #[test]
-fn test_export_encrypted() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-    let export_path = dir.path().join("export.lily");
-
-    // Initialize and add
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "entry", "password"])
-        .assert()
-        .success();
-
-    // Export encrypted
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "export",
-            "test",
-            "--output",
-            export_path.to_str().unwrap(),
-            "--format",
-            "lily",
-        ])
-        .assert()
-        .success();
-
-    assert!(export_path.exists());
-    let content = fs::read_to_string(&export_path).unwrap();
-    assert!(content.contains("LILYPAD_VAULT_V1"));
-}
-
-#[test]
-fn test_export_plaintext_requires_flag() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-    let export_path = dir.path().join("export.json");
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
-
-    // Export JSON without --allow-plaintext should fail
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "export",
-            "test",
-            "--output",
-            export_path.to_str().unwrap(),
-            "--format",
-            "json",
-        ])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("--allow-plaintext"));
-}
-
-#[test]
-fn test_generate_password() {
-    // Test basic password generation
-    lilypad()
-        .args(["generate", "--length", "20"])
+fn generate_outputs_a_password_of_the_right_length() {
+    let dir = TempDir::new().unwrap();
+    let output = lily(&dir, "pw")
+        .args(["generate", "--length", "24", "--symbols", "false"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Generated password:"));
+        .get_output()
+        .stdout
+        .clone();
+    let text = String::from_utf8(output).unwrap();
+    let password = text.lines().next().unwrap();
+    assert_eq!(password.len(), 24);
+    assert!(password.chars().all(|c| c.is_ascii_alphanumeric()));
 }
 
 #[test]
-fn test_generate_password_default() {
-    // Test password generation output includes strength indicator
-    lilypad()
-        .args(["generate"])
+fn backup_creates_and_lists() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    lily(&dir, "pw").args(["backup", "v"]).assert().success();
+    lily(&dir, "pw")
+        .args(["list-backups", "v"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Strength:"));
+        .stdout(contains(".backup"));
 }
 
 #[test]
-fn test_add_with_password_expiry() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
-
-    // Add entry with expiry
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "add",
-            "test",
-            "expiring",
-            "MyStr0ng!Pass123",
-            "--expires-in",
-            "90",
-        ])
+fn vaults_lists_created_vaults() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "alpha"]).assert().success();
+    lily(&dir, "pw").args(["init", "beta"]).assert().success();
+    lily(&dir, "pw")
+        .args(["vaults"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Password will expire in 90 days"));
+        .stdout(contains("alpha").and(contains("beta")));
 }
 
 #[test]
-fn test_entry_history() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
-
-    // Add entry
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "tracked", "password1"])
-        .assert()
-        .success();
-
-    // Update entry (creates history)
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["update", "test", "tracked", "password2"])
-        .assert()
-        .success();
-
-    // Check history
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["history", "test", "tracked"])
+fn auth_status_reports_not_authenticated() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw")
+        .args(["auth-status"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Created"))
-        .stdout(predicate::str::contains("Password changed"));
-}
-
-#[test]
-fn test_json_output_format() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
-
-    // Add entry
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "jsontest", "pass123"])
-        .assert()
-        .success();
-
-    // List with JSON output
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["--output-format", "json"])
-        .args(["list", "test"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("\"entries\""))
-        .stdout(predicate::str::contains("\"label\""))
-        .stdout(predicate::str::contains("jsontest"));
-}
-
-#[test]
-fn test_completions_generation() {
-    // Test that completions generate without error for bash
-    lilypad()
-        .args(["completions", "bash"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("complete"));
-}
-
-#[test]
-fn test_audit_with_password_expiry() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
-
-    // Add entry with no expiry
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "noexpiry", "MyStr0ng!Pass123"])
-        .assert()
-        .success();
-
-    // Audit should work
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["audit", "test"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Audit results"));
-}
-
-#[test]
-fn test_require_strong_password() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
-
-    // Add with weak password and --require-strong should fail
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "weak", "short", "--require-strong"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("too weak"));
-}
-
-#[test]
-fn test_search_with_json_output() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
-
-    // Add entry
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "test", "searchable", "pass123"])
-        .assert()
-        .success();
-
-    // Search with JSON output
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["--output-format", "json"])
-        .args(["search", "search", "test"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("\"results\""))
-        .stdout(predicate::str::contains("searchable"));
-}
-
-#[test]
-fn test_get_entry_with_json_output() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "test"])
-        .assert()
-        .success();
-
-    // Add entry
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "add",
-            "test",
-            "jsonentry",
-            "secret123",
-            "--username",
-            "user@example.com",
-        ])
-        .assert()
-        .success();
-
-    // Get with JSON output
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["--output-format", "json"])
-        .args(["get", "test", "jsonentry"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("\"label\""))
-        .stdout(predicate::str::contains("jsonentry"))
-        .stdout(predicate::str::contains("user@example.com"));
-}
-
-#[test]
-fn test_import_from_lily_format() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-    let export_path = dir.path().join("export.lily");
-
-    // Initialize and add
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "source"])
-        .assert()
-        .success();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "source", "entry1", "password1"])
-        .assert()
-        .success();
-
-    // Export
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "export",
-            "source",
-            "--output",
-            export_path.to_str().unwrap(),
-            "--format",
-            "lily",
-        ])
-        .assert()
-        .success();
-
-    // Import to new vault
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "import",
-            "target",
-            "--input",
-            export_path.to_str().unwrap(),
-            "--format",
-            "lily",
-        ])
-        .assert()
-        .success();
-
-    // Verify import
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["list", "target"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("entry1"));
-}
-
-#[test]
-fn test_backup_and_restore() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize and add
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "backuptest"])
-        .assert()
-        .success();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "backuptest", "entry1", "secret123"])
-        .assert()
-        .success();
-
-    // Create backup
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["backup", "backuptest"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Backup created"));
-
-    // List backups
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["list-backups", "backuptest"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("backuptest"));
-}
-
-#[test]
-fn test_verify_vault() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "verifytest"])
-        .assert()
-        .success();
-
-    // Verify vault integrity
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["verify-vault", "verifytest"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("integrity verified"));
-}
-
-#[test]
-fn test_audit_log_filtering() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize and perform some actions
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "auditfilter"])
-        .assert()
-        .success();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "auditfilter", "entry1", "pass1"])
-        .assert()
-        .success();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "auditfilter", "entry2", "pass2"])
-        .assert()
-        .success();
-
-    // Test text format
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["audit-log", "auditfilter", "--format", "text"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("entry_added"));
-
-    // Test filtering by action
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "audit-log",
-            "auditfilter",
-            "--action",
-            "entry_added",
-            "--format",
-            "text",
-        ])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("entry_added"));
-
-    // Test limit
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "audit-log",
-            "auditfilter",
-            "--limit",
-            "1",
-            "--format",
-            "text",
-        ])
-        .assert()
-        .success();
-}
-
-#[test]
-fn test_backup_codes_without_totp() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize and add entry without TOTP
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "backupcodetest"])
-        .assert()
-        .success();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "backupcodetest", "nototp", "pass123"])
-        .assert()
-        .success();
-
-    // Trying to get backup codes without TOTP should fail
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["backup-codes", "backupcodetest", "nototp"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("TOTP"));
-}
-
-#[test]
-fn test_prune_backups() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-
-    // Initialize
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "prunetest"])
-        .assert()
-        .success();
-
-    // Create multiple backups with longer delays to ensure unique timestamps
-    for _ in 0..3 {
-        lilypad()
-            .args(["--data-dir", data_dir])
-            .args(["backup", "prunetest"])
-            .assert()
-            .success();
-        // Longer delay to ensure unique timestamps (backup name includes seconds)
-        std::thread::sleep(std::time::Duration::from_secs(1));
-    }
-
-    // Verify we have 3 backups
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["list-backups", "prunetest"])
-        .assert()
-        .success();
-
-    // Prune keeping only 1 - should delete 2
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["prune-backups", "prunetest", "--keep", "1"])
-        .assert()
-        .success();
-    // Don't check for "Deleted" since backups might have same timestamp
-}
-
-#[test]
-fn test_csv_audit_log_export() {
-    let dir = tempdir().unwrap();
-    let data_dir = dir.path().to_str().unwrap();
-    let export_path = dir.path().join("audit.csv");
-
-    // Initialize and add
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["init", "csvaudit"])
-        .assert()
-        .success();
-
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args(["add", "csvaudit", "testentry", "pass"])
-        .assert()
-        .success();
-
-    // Export audit log as CSV
-    lilypad()
-        .args(["--data-dir", data_dir])
-        .args([
-            "audit-log",
-            "csvaudit",
-            "--format",
-            "csv",
-            "--output",
-            export_path.to_str().unwrap(),
-        ])
-        .assert()
-        .success();
-
-    // Verify CSV file was created
-    assert!(export_path.exists());
-    let content = fs::read_to_string(&export_path).unwrap();
-    assert!(content.contains("timestamp"));
-    assert!(content.contains("action"));
+        .stdout(contains("Not authenticated"));
 }

@@ -1,40 +1,37 @@
-//! Lilypad CLI - A secure password manager.
+//! Lilypad CLI - a secure password manager.
 //!
-//! This is the command-line interface for Lilypad, providing commands for
-//! managing vaults, entries, imports/exports, security features, and backups.
+//! A thin command-line frontend over `lilypad-app`: it parses arguments,
+//! prompts for secrets, and prints results. All vault logic (crypto, storage,
+//! validated sync, locking) lives in the service layer.
 
-mod commands;
+mod cmd;
+mod io;
 
 use anyhow::Result;
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{generate, Shell};
-use std::io;
+use lilypad_app::{App, OpenOptions};
+use std::io as stdio;
 use std::path::PathBuf;
 
-use commands::{
-    backup, entries, export, import, oauth, security,
-    utils::{non_empty_value, OutputFormat, SecureString},
-    vault,
-};
-use lilypad_core::default_config;
-use lilypad_storage::LocalStore;
+/// Output format for commands that support structured output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    Text,
+    Json,
+}
 
 #[derive(Debug, Parser)]
-#[command(
-    name = "lilypad",
-    about = "Minimal CLI for managing Lilypad vaults.",
-    long_about = None
-)]
+#[command(name = "lilypad", about = "Secure password manager.", long_about = None)]
 struct Cli {
-    /// Storage directory (default: .lilypad)
-    #[arg(long, value_name = "DIR")]
+    /// Data directory (default: platform data dir, or $LILYPAD_DATA_DIR)
+    #[arg(long, value_name = "DIR", global = true)]
     data_dir: Option<String>,
-    /// Master password (or LILYPAD_MASTER_PASSWORD environment variable)
-    /// WARNING: Passing passwords via command line or environment variables
-    /// may expose them in shell history or process listings.
+    /// Master password (prefer interactive entry; this is visible in `ps` and
+    /// shell history). Falls back to the LILYPAD_MASTER_PASSWORD env var.
     #[arg(long, value_name = "PASSWORD", global = true)]
     master_password: Option<String>,
-    /// Output format for display (text or json)
+    /// Output format for commands that support it.
     #[arg(long = "output-format", value_enum, default_value_t = OutputFormat::Text, global = true)]
     output_format: OutputFormat,
     #[command(subcommand)]
@@ -43,478 +40,225 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Initialize a vault and generate a local key.
-    Init {
-        /// Vault name to create
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-        /// Use a master password instead of a random key
-        #[arg(long)]
-        use_master_password: bool,
-    },
+    /// Create a new vault (prompts for a master password).
+    Init { vault: String },
     /// List available vaults.
     Vaults,
     /// Rename a vault.
-    RenameVault {
-        /// Existing vault name
-        #[arg(value_parser = non_empty_value)]
-        from: String,
-        /// New vault name
-        #[arg(value_parser = non_empty_value)]
-        to: String,
-    },
-    /// Delete a vault.
+    RenameVault { from: String, to: String },
+    /// Delete a vault (keeps a safety backup).
     DeleteVault {
-        /// Vault name to delete
-        #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Skip confirmation prompt
         #[arg(long, short)]
         force: bool,
     },
-    /// Add an encrypted entry to a vault.
+    /// Add an entry to a vault.
     Add {
-        /// Vault name to update
-        #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Entry label
-        #[arg(value_parser = non_empty_value)]
         label: String,
-        /// Value to encrypt
-        #[arg(value_parser = non_empty_value)]
-        value: String,
-        /// Username metadata
+        /// Secret value (omit to enter it interactively or pipe it via stdin).
+        value: Option<String>,
         #[arg(long)]
         username: Option<String>,
-        /// URL metadata
         #[arg(long)]
         url: Option<String>,
-        /// Notes stored inside the encrypted payload
         #[arg(long)]
         notes: Option<String>,
-        /// Tags (repeatable)
-        #[arg(long = "tag", value_parser = non_empty_value)]
+        #[arg(long = "tag")]
         tags: Vec<String>,
-        /// Folder metadata
         #[arg(long)]
         folder: Option<String>,
-        /// Entry type (login, card, identity, secure-note, software-license, wifi, server, custom)
-        #[arg(long, value_parser = non_empty_value)]
-        entry_type: Option<String>,
-        /// TOTP secret (base32) stored inside the encrypted payload
-        #[arg(long, value_parser = non_empty_value)]
-        totp_secret: Option<String>,
-        /// Attachment file paths (repeatable)
-        #[arg(long, value_name = "FILE")]
-        attachment: Vec<PathBuf>,
-        /// Require strong password (fail if password is weak)
+        /// login, card, identity, secure-note, software-license, wifi, server, custom
         #[arg(long)]
-        require_strong: bool,
-        /// Password expires in N days (0 = no expiry)
-        #[arg(long, value_name = "DAYS", default_value_t = 0)]
-        expires_in: u32,
+        entry_type: Option<String>,
+        #[arg(long)]
+        totp_secret: Option<String>,
+        #[arg(long = "attachment", value_name = "FILE")]
+        attachments: Vec<PathBuf>,
     },
     /// List entries in a vault.
-    List {
-        /// Vault name to inspect
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-    },
-    /// Fetch an entry from a vault.
+    List { vault: String },
+    /// Show an entry.
     Get {
-        /// Vault name to read
-        #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Entry label
-        #[arg(value_parser = non_empty_value)]
         label: String,
-        /// Copy the password to the clipboard
         #[arg(long)]
         copy: bool,
-        /// Clipboard timeout in seconds
         #[arg(long, value_name = "SECONDS", default_value_t = 15)]
         clipboard_timeout: u64,
-        /// Show the password in plain text (hidden by default)
         #[arg(long)]
         show_password: bool,
     },
-    /// Update the value of an existing entry.
+    /// Update an entry (only the fields you pass change).
     Update {
-        /// Vault name to update
-        #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Entry label
-        #[arg(value_parser = non_empty_value)]
         label: String,
-        /// New value
-        #[arg(value_parser = non_empty_value)]
-        value: String,
-        /// Username metadata
+        /// New secret value (omit to keep the current one).
+        value: Option<String>,
         #[arg(long)]
         username: Option<String>,
-        /// URL metadata
         #[arg(long)]
         url: Option<String>,
-        /// Notes stored inside the encrypted payload
         #[arg(long)]
         notes: Option<String>,
-        /// Tags to add (repeatable)
-        #[arg(long = "tag", value_parser = non_empty_value)]
+        #[arg(long = "tag")]
         tags: Vec<String>,
-        /// Tags to remove (repeatable)
-        #[arg(long = "remove-tag", value_parser = non_empty_value)]
+        #[arg(long = "remove-tag")]
         remove_tags: Vec<String>,
-        /// Remove all existing tags
         #[arg(long)]
         clear_tags: bool,
-        /// Folder metadata
         #[arg(long)]
         folder: Option<String>,
-        /// Entry type (login, card, identity, secure-note, software-license, wifi, server, custom)
-        #[arg(long, value_parser = non_empty_value)]
-        entry_type: Option<String>,
-        /// TOTP secret (base32) stored inside the encrypted payload
-        #[arg(long, value_parser = non_empty_value)]
-        totp_secret: Option<String>,
-        /// Attachment file paths (repeatable)
-        #[arg(long, value_name = "FILE")]
-        attachment: Vec<PathBuf>,
-        /// Require strong password (fail if password is weak)
         #[arg(long)]
-        require_strong: bool,
-        /// Password expires in N days (0 = no expiry)
-        #[arg(long, value_name = "DAYS", default_value_t = 0)]
-        expires_in: u32,
+        entry_type: Option<String>,
+        #[arg(long)]
+        totp_secret: Option<String>,
     },
-    /// Remove an entry from a vault.
+    /// Remove an entry (moves it to Trash unless --purge).
     Remove {
-        /// Vault name to update
-        #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Entry label
-        #[arg(value_parser = non_empty_value)]
         label: String,
+        /// Permanently erase instead of moving to Trash (not recoverable).
+        #[arg(long)]
+        purge: bool,
     },
-    /// Rename an entry's label.
-    RenameEntry {
-        /// Vault name
-        #[arg(value_parser = non_empty_value)]
+    /// List a vault's Trash (soft-deleted entries).
+    Trash { vault: String },
+    /// Restore a soft-deleted entry from Trash.
+    Restore { vault: String, label: String },
+    /// Report a vault's password health (Watchtower).
+    Audit { vault: String },
+    /// Check passwords against Have-I-Been-Pwned (k-anonymity: only the first
+    /// 5 characters of each SHA-1 hash are sent; passwords never leave this
+    /// machine). Explicit network operation.
+    BreachCheck { vault: String },
+    /// Show a vault's audit log (record of mutations).
+    AuditLog { vault: String },
+    /// Show an entry's change history (kinds and dates; secrets stay sealed).
+    History { vault: String, label: String },
+    /// Import entries from another password manager (format auto-detected:
+    /// Lilypad, LastPass, Bitwarden CSV/JSON, KeePassXC, 1Password, Safari,
+    /// Chrome/Edge, Firefox, Proton Pass, Dashlane).
+    Import {
         vault: String,
-        /// Current entry label
-        #[arg(value_parser = non_empty_value)]
+        /// Path to the exported file.
+        file: PathBuf,
+        /// Parse and report what would be imported without writing anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// Export a vault as PLAINTEXT CSV (Lilypad format; every secret revealed).
+    Export {
+        vault: String,
+        /// Destination path for the CSV file.
+        file: PathBuf,
+        /// Skip the plaintext warning prompt.
+        #[arg(long, short)]
+        force: bool,
+    },
+    /// Rename an entry.
+    RenameEntry {
+        vault: String,
         label: String,
-        /// New entry label
-        #[arg(value_parser = non_empty_value)]
         new_label: String,
     },
-    /// Search entries by label.
-    Search {
-        /// Keyword
-        #[arg(value_parser = non_empty_value)]
-        query: String,
-        /// Vault name to inspect (omit with --all-vaults)
-        vault: Option<String>,
-        /// Search across all vaults
-        #[arg(long)]
-        all_vaults: bool,
-    },
-    /// Export a vault to a file.
-    Export {
-        /// Vault name to export
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-        /// Output file path
-        #[arg(long, value_parser = non_empty_value)]
-        output: String,
-        /// Export format: lily, json, csv
-        #[arg(long, value_parser = non_empty_value)]
-        format: String,
-        /// Allow plaintext exports (json/csv)
-        #[arg(long)]
-        allow_plaintext: bool,
-    },
-    /// Import entries into a vault.
-    Import {
-        /// Vault name to import into
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-        /// Input file path
-        #[arg(long, value_parser = non_empty_value)]
-        input: String,
-        /// Import format: lily, json, csv
-        #[arg(long, value_parser = non_empty_value)]
-        format: String,
-        /// Source password manager: lilypad, lastpass, bitwarden, 1password, chrome, firefox, dashlane, keepass
-        #[arg(long, default_value = "lilypad")]
-        source: String,
-    },
-    /// Rotate the vault encryption key.
-    RotateKey {
-        /// Vault name to rotate
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-        /// Use a master password for the new key
-        #[arg(long)]
-        use_master_password: bool,
-        /// New master password (if using a master password)
-        #[arg(long, value_name = "PASSWORD")]
-        new_master_password: Option<String>,
-        /// Skip creating a backup before rotation
-        #[arg(long)]
-        skip_backup: bool,
-    },
-    /// Generate a TOTP code for an entry.
-    Totp {
-        /// Vault name
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-        /// Entry label
-        #[arg(value_parser = non_empty_value)]
-        label: String,
-    },
-    /// Manage TOTP backup codes.
-    BackupCodes {
-        /// Vault name
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-        /// Entry label
-        #[arg(value_parser = non_empty_value)]
-        label: String,
-        /// Generate new backup codes
-        #[arg(long)]
-        generate: bool,
-        /// Verify a backup code
-        #[arg(long, value_name = "CODE")]
-        verify: Option<String>,
-    },
-    /// Audit the vault for security issues.
-    Audit {
-        /// Vault name to audit
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-    },
+    /// Search entries by their (unencrypted) metadata.
+    Search { vault: String, query: String },
     /// Generate a random password.
     Generate {
-        /// Password length
-        #[arg(long, default_value_t = 16)]
+        #[arg(long, default_value_t = 20)]
         length: usize,
-        /// Include uppercase letters
-        #[arg(long, default_value_t = true)]
+        #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
         uppercase: bool,
-        /// Include lowercase letters
-        #[arg(long, default_value_t = true)]
+        #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
         lowercase: bool,
-        /// Include digits
-        #[arg(long, default_value_t = true)]
+        #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
         digits: bool,
-        /// Include symbols
-        #[arg(long, default_value_t = true)]
+        #[arg(long, action = clap::ArgAction::Set, default_value_t = true)]
         symbols: bool,
-        /// Copy to clipboard
         #[arg(long)]
         copy: bool,
-        /// Clipboard timeout in seconds
         #[arg(long, value_name = "SECONDS", default_value_t = 15)]
         clipboard_timeout: u64,
     },
-    /// Export audit log.
-    AuditLog {
-        /// Vault name
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-        /// Output file (stdout if not specified)
-        #[arg(long)]
-        output: Option<String>,
-        /// Output format: json, csv, text
-        #[arg(long, default_value = "text")]
-        format: String,
-        /// Filter by action
-        #[arg(long)]
-        action: Option<String>,
-        /// Filter by entry label
-        #[arg(long)]
-        entry: Option<String>,
-        /// Filter events after this date (YYYY-MM-DD or Unix timestamp)
-        #[arg(long)]
-        after: Option<String>,
-        /// Filter events before this date (YYYY-MM-DD or Unix timestamp)
-        #[arg(long)]
-        before: Option<String>,
-        /// Limit number of events
-        #[arg(long)]
-        limit: Option<usize>,
-    },
-    /// Generate shell completions.
-    Completions {
-        /// Shell to generate completions for
-        #[arg(value_enum)]
-        shell: Shell,
-    },
-    /// Change the master password for a vault.
-    ChangeMasterPassword {
-        /// Vault name
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-    },
-    /// Check passwords against the HaveIBeenPwned database.
-    BreachCheck {
-        /// Vault name
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-        /// Check only a specific entry
-        #[arg(long)]
-        entry: Option<String>,
-    },
-    /// View entry change history.
-    History {
-        /// Vault name
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-        /// Entry label
-        #[arg(value_parser = non_empty_value)]
-        label: String,
-        /// Maximum number of history records to show
-        #[arg(long, default_value_t = 10)]
-        limit: usize,
-    },
+    /// Show a TOTP code for an entry.
+    Totp { vault: String, label: String },
+    /// Change a vault's master password.
+    ChangeMasterPassword { vault: String },
     /// Create a backup of a vault.
-    Backup {
-        /// Vault name to backup
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-    },
-    /// List backups.
-    ListBackups {
-        /// Filter by vault name
-        vault: Option<String>,
-    },
-    /// Restore a vault from backup.
+    Backup { vault: String },
+    /// List a vault's backups.
+    ListBackups { vault: String },
+    /// Restore a vault from a backup file.
     RestoreBackup {
-        /// Backup filename to restore
-        #[arg(value_parser = non_empty_value)]
         backup: String,
-        /// Skip confirmation prompt
         #[arg(long)]
         force: bool,
     },
-    /// Delete old backups, keeping the most recent.
+    /// Delete old backups, keeping the most recent N.
     PruneBackups {
-        /// Vault name
-        #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Number of backups to keep
         #[arg(long, default_value_t = 5)]
         keep: usize,
     },
-    /// Verify vault integrity.
-    VerifyVault {
-        /// Vault name to verify
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
+    /// Generate shell completions.
+    Completions {
+        #[arg(value_enum)]
+        shell: Shell,
     },
-
-    // ============== GitHub OAuth & Sync Commands ==============
-    /// Log in to GitHub for vault synchronization.
+    /// Log in to GitHub for sync.
     Login,
-
-    /// Log out from GitHub.
+    /// Log out of GitHub.
     Logout,
-
     /// Show GitHub authentication status.
     AuthStatus,
-
-    /// Sync commands for GitHub vault storage.
+    /// Vault synchronization with GitHub.
     #[command(subcommand)]
     Sync(SyncCommands),
 }
 
-/// Subcommands for vault synchronization.
 #[derive(Debug, Subcommand)]
 enum SyncCommands {
     /// Push a vault to GitHub.
     Push {
-        /// Vault name to push
-        #[arg(value_parser = non_empty_value)]
         vault: String,
-        /// Force push, overwriting remote changes (resolves conflicts)
         #[arg(long)]
         force: bool,
     },
-    /// Pull a vault from GitHub.
-    Pull {
-        /// Vault name to pull
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-        /// Force pull, overwriting local changes (resolves conflicts)
-        #[arg(long)]
-        force: bool,
-    },
-    /// Delete a vault from GitHub (local copy is kept).
-    Delete {
-        /// Vault name to delete from remote
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-    },
+    /// Pull a vault from GitHub (validated; a safety backup is taken).
+    Pull { vault: String },
+    /// Bidirectional sync: merge the remote vault entry-by-entry (deletions
+    /// propagate, newest version of each entry wins), pushing back if needed.
+    Merge { vault: String },
     /// Show sync status for a vault.
-    Status {
-        /// Vault name to check
-        #[arg(value_parser = non_empty_value)]
-        vault: String,
-    },
+    Status { vault: String },
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // Security warnings for password exposure via CLI args or env vars
     if cli.master_password.is_some() {
-        eprintln!("WARNING: Master password passed via --master-password flag.");
-        eprintln!("         This is visible in process listings (ps) and shell history.");
-        eprintln!("         Prefer interactive entry or LILYPAD_MASTER_PASSWORD with caution.");
-    }
-    if std::env::var("LILYPAD_MASTER_PASSWORD").is_ok() {
-        eprintln!(
-            "WARNING: Using master password from LILYPAD_MASTER_PASSWORD environment variable."
-        );
-        eprintln!("         This may be visible in process listings and shell history.");
-        eprintln!("         Consider unsetting it after use: unset LILYPAD_MASTER_PASSWORD");
+        eprintln!("WARNING: --master-password is visible in `ps` and shell history; prefer interactive entry.");
     }
 
-    // Wrap master password in SecureString for automatic zeroization on drop
     let master_password = cli
         .master_password
-        .or_else(|| std::env::var("LILYPAD_MASTER_PASSWORD").ok())
-        .map(SecureString::new);
+        .clone()
+        .or_else(|| std::env::var("LILYPAD_MASTER_PASSWORD").ok());
+    let mp = master_password.as_deref();
+    let fmt = cli.output_format;
 
-    let output_format = cli.output_format;
-    let mut config = default_config();
-    if let Some(data_dir) = cli.data_dir {
-        if data_dir.trim().is_empty() {
-            return Err(anyhow::anyhow!("data_dir cannot be empty"));
-        }
-        config.data_dir = data_dir;
-    }
-
-    let store = LocalStore::new(&config)?;
+    let app = App::open(OpenOptions {
+        data_dir: cli.data_dir.clone().map(PathBuf::from),
+        auto_lock_after: None,
+    })?;
 
     match cli.command {
-        // Vault commands
-        Commands::Init {
-            vault,
-            use_master_password,
-        } => vault::init_vault(
-            &store,
-            &config,
-            &vault,
-            use_master_password,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
-        Commands::Vaults => vault::list_vaults(&store, output_format),
-        Commands::RenameVault { from, to } => vault::rename_vault(&store, &from, &to),
-        Commands::DeleteVault { vault, force } => vault::delete_vault(&store, &vault, force),
-        Commands::VerifyVault { vault } => vault::verify_vault(&store, &vault),
+        Commands::Init { vault } => cmd::init(&app, &vault, mp),
+        Commands::Vaults => cmd::vaults(&app, fmt),
+        Commands::RenameVault { from, to } => cmd::rename_vault(&app, &from, &to),
+        Commands::DeleteVault { vault, force } => cmd::delete_vault(&app, &vault, force),
 
-        // Entry commands
         Commands::Add {
             vault,
             label,
@@ -526,15 +270,12 @@ fn main() -> Result<()> {
             folder,
             entry_type,
             totp_secret,
-            attachment,
-            require_strong,
-            expires_in,
-        } => entries::add_entry(
-            &store,
-            &config,
+            attachments,
+        } => cmd::add(
+            &app,
             &vault,
             &label,
-            &value,
+            value,
             username,
             url,
             notes,
@@ -542,34 +283,24 @@ fn main() -> Result<()> {
             folder,
             entry_type,
             totp_secret,
-            attachment,
-            require_strong,
-            expires_in,
-            master_password.as_ref().map(|s| s.as_str()),
+            attachments,
+            mp,
         ),
-        Commands::List { vault } => entries::list_entries(
-            &store,
-            &config,
-            &vault,
-            output_format,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
+        Commands::List { vault } => cmd::list(&app, &vault, fmt, mp),
         Commands::Get {
             vault,
             label,
             copy,
             clipboard_timeout,
             show_password,
-        } => entries::get_entry(
-            &store,
-            &config,
+        } => cmd::get(
+            &app,
             &vault,
             &label,
             copy,
             clipboard_timeout,
             show_password,
-            output_format,
-            master_password.as_ref().map(|s| s.as_str()),
+            mp,
         ),
         Commands::Update {
             vault,
@@ -584,15 +315,11 @@ fn main() -> Result<()> {
             folder,
             entry_type,
             totp_secret,
-            attachment,
-            require_strong,
-            expires_in,
-        } => entries::update_entry(
-            &store,
-            &config,
+        } => cmd::update(
+            &app,
             &vault,
             &label,
-            &value,
+            value,
             username,
             url,
             notes,
@@ -602,57 +329,31 @@ fn main() -> Result<()> {
             folder,
             entry_type,
             totp_secret,
-            attachment,
-            require_strong,
-            expires_in,
-            master_password.as_ref().map(|s| s.as_str()),
+            mp,
         ),
-        Commands::Remove { vault, label } => entries::remove_entry(
-            &store,
-            &config,
-            &vault,
-            &label,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
+        Commands::Remove {
+            vault,
+            label,
+            purge,
+        } => cmd::remove(&app, &vault, &label, purge, mp),
+        Commands::Trash { vault } => cmd::trash(&app, &vault, fmt, mp),
+        Commands::Restore { vault, label } => cmd::restore(&app, &vault, &label, mp),
+        Commands::Audit { vault } => cmd::audit(&app, &vault, fmt, mp),
+        Commands::BreachCheck { vault } => cmd::breach_check(&app, &vault, fmt, mp),
+        Commands::AuditLog { vault } => cmd::audit_log(&app, &vault, fmt, mp),
+        Commands::History { vault, label } => cmd::history(&app, &vault, &label, fmt, mp),
+        Commands::Import {
+            vault,
+            file,
+            dry_run,
+        } => cmd::import(&app, &vault, &file, dry_run, mp),
+        Commands::Export { vault, file, force } => cmd::export(&app, &vault, &file, force, mp),
         Commands::RenameEntry {
             vault,
             label,
             new_label,
-        } => entries::rename_entry(
-            &store,
-            &config,
-            &vault,
-            &label,
-            &new_label,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
-        Commands::Search {
-            vault,
-            query,
-            all_vaults,
-        } => {
-            if all_vaults {
-                entries::search_all_vaults(
-                    &store,
-                    &config,
-                    &query,
-                    output_format,
-                    master_password.as_ref().map(|s| s.as_str()),
-                )
-            } else {
-                let vault_name = vault.ok_or_else(|| {
-                    anyhow::anyhow!("vault name is required (or use --all-vaults)")
-                })?;
-                entries::search_entries(
-                    &store,
-                    &config,
-                    &vault_name,
-                    &query,
-                    output_format,
-                    master_password.as_ref().map(|s| s.as_str()),
-                )
-            }
-        }
+        } => cmd::rename_entry(&app, &vault, &label, &new_label, mp),
+        Commands::Search { vault, query } => cmd::search(&app, &vault, &query, fmt, mp),
         Commands::Generate {
             length,
             uppercase,
@@ -661,7 +362,7 @@ fn main() -> Result<()> {
             symbols,
             copy,
             clipboard_timeout,
-        } => entries::generate_password(
+        } => cmd::generate(
             length,
             uppercase,
             lowercase,
@@ -670,171 +371,29 @@ fn main() -> Result<()> {
             copy,
             clipboard_timeout,
         ),
+        Commands::Totp { vault, label } => cmd::totp(&app, &vault, &label, mp),
+        Commands::ChangeMasterPassword { vault } => cmd::change_master_password(&app, &vault, mp),
 
-        // Import/Export commands
-        Commands::Export {
-            vault,
-            output,
-            format,
-            allow_plaintext,
-        } => export::export_vault(
-            &store,
-            &config,
-            &vault,
-            &output,
-            &format,
-            allow_plaintext,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
-        Commands::Import {
-            vault,
-            input,
-            format,
-            source,
-        } => import::import_vault(
-            &store,
-            &config,
-            &vault,
-            &input,
-            &format,
-            &source,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
-        Commands::AuditLog {
-            vault,
-            output,
-            format,
-            action,
-            entry,
-            after,
-            before,
-            limit,
-        } => export::export_audit_log(
-            &store,
-            &config,
-            &vault,
-            output.as_deref(),
-            &format,
-            action.as_deref(),
-            entry.as_deref(),
-            after.as_deref(),
-            before.as_deref(),
-            limit,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
+        Commands::Backup { vault } => cmd::backup(&app, &vault),
+        Commands::ListBackups { vault } => cmd::list_backups(&app, &vault),
+        Commands::RestoreBackup { backup, force } => cmd::restore_backup(&app, &backup, force),
+        Commands::PruneBackups { vault, keep } => cmd::prune_backups(&app, &vault, keep),
 
-        // Security commands
-        Commands::RotateKey {
-            vault,
-            use_master_password,
-            new_master_password,
-            skip_backup,
-        } => security::rotate_key(
-            &store,
-            &config,
-            &vault,
-            use_master_password,
-            new_master_password.as_deref(),
-            skip_backup,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
-        Commands::ChangeMasterPassword { vault } => security::change_master_password(
-            &store,
-            &config,
-            &vault,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
-        Commands::BreachCheck { vault, entry } => security::breach_check(
-            &store,
-            &config,
-            &vault,
-            entry.as_deref(),
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
-        Commands::Totp { vault, label } => security::show_totp(
-            &store,
-            &config,
-            &vault,
-            &label,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
-        Commands::BackupCodes {
-            vault,
-            label,
-            generate,
-            verify,
-        } => security::backup_codes(
-            &store,
-            &config,
-            &vault,
-            &label,
-            generate,
-            verify.as_deref(),
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
-        Commands::Audit { vault } => security::audit_vault(
-            &store,
-            &config,
-            &vault,
-            output_format,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
-        Commands::History {
-            vault,
-            label,
-            limit,
-        } => security::show_entry_history(
-            &store,
-            &config,
-            &vault,
-            &label,
-            limit,
-            master_password.as_ref().map(|s| s.as_str()),
-        ),
-
-        // Backup commands
-        Commands::Backup { vault } => backup::create_backup(&store, &vault),
-        Commands::ListBackups { vault } => backup::list_backups(&store, vault.as_deref()),
-        Commands::RestoreBackup { backup, force } => backup::restore_backup(&store, &backup, force),
-        Commands::PruneBackups { vault, keep } => backup::prune_backups(&store, &vault, keep),
-
-        // Shell completions
         Commands::Completions { shell } => {
-            let mut cmd = Cli::command();
-            let name = cmd.get_name().to_string();
-            generate(shell, &mut cmd, name, &mut io::stdout());
+            let mut command = Cli::command();
+            let name = command.get_name().to_string();
+            generate(shell, &mut command, name, &mut stdio::stdout());
             Ok(())
         }
 
-        // OAuth and Sync commands
-        Commands::Login => oauth::login(output_format),
-        Commands::Logout => oauth::logout(output_format),
-        Commands::AuthStatus => oauth::status(output_format),
-        Commands::Sync(sync_cmd) => match sync_cmd {
-            SyncCommands::Push { vault, force } => oauth::sync_push(
-                &store,
-                &config,
-                &vault,
-                force,
-                master_password.as_ref().map(|s| s.as_str()),
-                output_format,
-            ),
-            SyncCommands::Pull { vault, force } => oauth::sync_pull(
-                &store,
-                &config,
-                &vault,
-                force,
-                master_password.as_ref().map(|s| s.as_str()),
-                output_format,
-            ),
-            SyncCommands::Delete { vault } => oauth::sync_delete(&vault, output_format),
-            SyncCommands::Status { vault } => oauth::sync_status(
-                &store,
-                &config,
-                &vault,
-                master_password.as_ref().map(|s| s.as_str()),
-                output_format,
-            ),
+        Commands::Login => cmd::login(),
+        Commands::Logout => cmd::logout(),
+        Commands::AuthStatus => cmd::auth_status(),
+        Commands::Sync(sync) => match sync {
+            SyncCommands::Push { vault, force } => cmd::sync_push(&app, &vault, force),
+            SyncCommands::Pull { vault } => cmd::sync_pull(&app, &vault, mp),
+            SyncCommands::Merge { vault } => cmd::sync_merge(&app, &vault, mp),
+            SyncCommands::Status { vault } => cmd::sync_status(&app, &vault),
         },
     }
 }

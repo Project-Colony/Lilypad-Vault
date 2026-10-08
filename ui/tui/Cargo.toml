@@ -12,16 +12,11 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
-arboard.workspace = true
-chrono.workspace = true
 crossterm.workspace = true
-csv.workspace = true
+lilypad-app = { path = "../../lilypad-app" }
 lilypad-common = { path = "../../lilypad-common" }
-lilypad-core = { path = "../../lilypad-core" }
-lilypad-storage = { path = "../../lilypad-storage" }
-rand.workspace = true
 ratatui.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-totp-rs.workspace = true
 zeroize.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

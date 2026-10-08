@@ -346,6 +346,49 @@ impl GitHubSyncBackend {
         }
     }
 
+    /// Remote path for a named vault, so multiple vaults do not collide on a
+    /// single `vault.lily`. The name is caller-validated (alphanumeric, `_`,
+    /// `-`) so it is safe as a single path segment.
+    fn remote_path_for(vault_name: &str) -> String {
+        format!("vaults/{vault_name}.lily")
+    }
+
+    /// Pulls a specific named vault's bytes and remote SHA (per-vault path).
+    pub fn pull_named(&mut self, vault_name: &str) -> Result<Option<(Vec<u8>, String)>> {
+        let path = Self::remote_path_for(vault_name);
+        let result = self.client.get_vault_file(&self.username, &path)?;
+        if let Some((_, ref sha)) = result {
+            self.cached_sha = Some(sha.clone());
+        }
+        Ok(result)
+    }
+
+    /// Returns the current remote SHA for a named vault, if it exists.
+    pub fn remote_sha_named(&mut self, vault_name: &str) -> Result<Option<String>> {
+        let path = Self::remote_path_for(vault_name);
+        Ok(self
+            .client
+            .get_vault_file(&self.username, &path)?
+            .map(|(_, sha)| sha))
+    }
+
+    /// Pushes a named vault's payload to its per-vault remote path. Returns the
+    /// new remote SHA. Pass the previously observed SHA to avoid clobbering a
+    /// concurrent remote update (GitHub rejects a stale SHA).
+    pub fn push_named(
+        &mut self,
+        vault_name: &str,
+        payload: &[u8],
+        prev_sha: Option<&str>,
+    ) -> Result<String> {
+        let path = Self::remote_path_for(vault_name);
+        let new_sha = self
+            .client
+            .save_vault_file(&self.username, &path, payload, prev_sha)?;
+        self.cached_sha = Some(new_sha.clone());
+        Ok(new_sha)
+    }
+
     /// Ensures the vault repository exists, creating it if needed.
     pub fn ensure_repo(&self) -> Result<()> {
         self.client.get_or_create_vault_repo(&self.username)?;

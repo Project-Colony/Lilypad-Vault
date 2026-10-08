@@ -4,12 +4,14 @@
 //!
 //! This is the main entry point for the Lilypad desktop application.
 
+// The theme and font modules deliberately carry a full palette of styles,
+// colors and icons; not every one is wired into the current lean UI.
+#![allow(dead_code)]
+
 mod app;
 mod fonts;
 mod message;
-mod state;
 mod theme;
-mod views;
 
 use iced::{Size, Task};
 

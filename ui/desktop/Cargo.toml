@@ -7,52 +7,27 @@ license = "GPL-3.0-or-later"
 description = "Lilypad desktop GUI built with Iced"
 
 [dependencies]
-# GUI Framework - Iced
+# GUI framework
 # NOTE: no "image" feature. It is unused (the GUI draws no bitmaps, only Nerd
-# Font glyphs) and it turns on image/default, whose "avif" codec drags in
-# ravif -> rav1e, a full AV1 video encoder, plus ~50 crates of asm/SIMD code.
-iced = { version = "0.14", features = ["advanced", "tokio"] }
-
-# Async runtime
+# Font glyphs and canvas vectors) and it turns on image/default, whose "avif"
+# codec drags in ravif -> rav1e, a full AV1 video encoder, plus ~50 crates of
+# asm/SIMD code.
+iced = { version = "0.14", features = ["advanced", "tokio", "canvas"] }
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "time"] }
 
-# System integration
-directories = "6.0.0"
-webbrowser = "1.1"
-rfd = "0.17.2"
-arboard.workspace = true
-
-# Data handling
-rand.workspace = true
-anyhow.workspace = true
-serde.workspace = true
-serde_json.workspace = true
+# Lilypad service layer (owns all vault logic)
+lilypad-app = { path = "../../lilypad-app" }
+lilypad-common = { path = "../../lilypad-common" }
 
 # Security
 zeroize.workspace = true
-subtle = "2.5"
 
-# Lilypad crates
-lilypad-common = { path = "../../lilypad-common" }
-lilypad-core = { path = "../../lilypad-core" }
-lilypad-storage = { path = "../../lilypad-storage" }
-lilypad-oauth = { path = "../../lilypad-oauth" }
-
-# Cryptographic hashing
-sha2.workspace = true
-sha1.workspace = true
-csv.workspace = true
-reqwest = { workspace = true, features = ["blocking"] }
-
-# TOTP
-totp-rs.workspace = true
-
-# Encoding
-base64.workspace = true
-
-# Time handling
-chrono.workspace = true
+# System integration
+webbrowser = "1.1"
 
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile.workspace = true

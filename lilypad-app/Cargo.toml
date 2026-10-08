@@ -1,0 +1,34 @@
+[package]
+name = "lilypad-app"
+version = "0.1.0"
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Shared application/service layer for Lilypad: owns all vault operations so the CLI, TUI and desktop frontends stay thin and consistent."
+
+[dependencies]
+lilypad-core = { path = "../lilypad-core" }
+lilypad-storage = { path = "../lilypad-storage" }
+lilypad-common = { path = "../lilypad-common" }
+lilypad-oauth = { path = "../lilypad-oauth" }
+anyhow.workspace = true
+thiserror.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+directories.workspace = true
+fs2.workspace = true
+zeroize.workspace = true
+rand.workspace = true
+totp-rs.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+# Pure-Rust Unicode NFC for the master-password choke point, so composed vs
+# decomposed accents (NFC on Linux, NFD on macOS) derive the same key.
+unicode-normalization = "0.1"
+# CSV parsing/writing for the importer (LastPass, Bitwarden, KeePassXC, ...)
+# and the native export.
+csv.workspace = true
+# HIBP k-anonymity breach check: SHA-1 range queries (the password never
+# leaves the machine; only the first 5 hex chars of its hash are sent).
+sha1.workspace = true
+reqwest = { workspace = true, features = ["blocking"] }
