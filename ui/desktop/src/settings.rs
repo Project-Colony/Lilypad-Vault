@@ -338,7 +338,7 @@ impl LilypadApp {
             .data_dir
             .as_ref()
             .map(|d| d.display().to_string())
-            .unwrap_or_else(|| "Default XDG data directory".to_string());
+            .unwrap_or_else(|| "Default Colony/Lilypad directory".to_string());
         col = col.push(self.s_section(
             "location",
             "Storage",

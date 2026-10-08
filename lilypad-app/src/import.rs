@@ -1119,7 +1119,7 @@ mod tests {
         // \r\r\n row terminators (real-world LastPass corruption) + a secure
         // note + an empty-folder placeholder row + a favorite.
         let csv = "url,username,password,totp,extra,name,grouping,fav\r\r\n\
-                   https://ex.com,alice,pw1,Y64VEVMBTSXCYIWRSHRNDZW62MPGVU2G,\"line1\nline2\",Example,Work\\Email,1\r\r\n\
+                   https://ex.com,alice,pw1,GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ,\"line1\nline2\",Example,Work\\Email,1\r\r\n\
                    http://group,,,,,placeholder,Empty\\Folder,0\r\r\n\
                    http://sn,,,,\"NoteType:Credit Card\nLanguage:en-US\nNumber:4111\nNotes:my card\",Visa,,0\r\r\n";
         let parsed = parse_import(csv.as_bytes(), ImportFormat::LastPassCsv).unwrap();
@@ -1133,7 +1133,7 @@ mod tests {
         assert_eq!(login.notes.as_deref(), Some("line1\nline2"));
         assert_eq!(
             login.totp.as_deref(),
-            Some("Y64VEVMBTSXCYIWRSHRNDZW62MPGVU2G")
+            Some("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
         );
 
         let note = &parsed.entries[1];

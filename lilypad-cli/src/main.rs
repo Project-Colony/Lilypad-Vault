@@ -183,6 +183,18 @@ enum Commands {
     },
     /// Show a TOTP code for an entry.
     Totp { vault: String, label: String },
+    /// Show how many TOTP backup codes an entry has left, generate a new set,
+    /// or check a code and mark it used.
+    BackupCodes {
+        vault: String,
+        label: String,
+        /// Replace the codes with a fresh set and print them once.
+        #[arg(long, conflicts_with = "verify")]
+        generate: bool,
+        /// Check a backup code and mark it used.
+        #[arg(long, value_name = "CODE")]
+        verify: Option<String>,
+    },
     /// Change a vault's master password.
     ChangeMasterPassword { vault: String },
     /// Create a backup of a vault.
@@ -252,6 +264,18 @@ fn main() -> Result<()> {
         data_dir: cli.data_dir.clone().map(PathBuf::from),
         auto_lock_after: None,
     })?;
+
+    // CLI builds before lilypad-app defaulted to `./.lilypad`; point at those
+    // vaults instead of silently showing an empty store.
+    if cli.data_dir.is_none()
+        && std::env::var_os("LILYPAD_DATA_DIR").is_none()
+        && app.list_vaults().is_ok_and(|v| v.is_empty())
+        && std::fs::read_dir(".lilypad/vaults").is_ok_and(|mut d| {
+            d.any(|e| e.is_ok_and(|e| e.path().extension().is_some_and(|x| x == "lily")))
+        })
+    {
+        eprintln!("hint: ./.lilypad holds vaults from an older Lilypad CLI; pass --data-dir .lilypad (or set LILYPAD_DATA_DIR) to use them.");
+    }
 
     match cli.command {
         Commands::Init { vault } => cmd::init(&app, &vault, mp),
@@ -372,6 +396,12 @@ fn main() -> Result<()> {
             clipboard_timeout,
         ),
         Commands::Totp { vault, label } => cmd::totp(&app, &vault, &label, mp),
+        Commands::BackupCodes {
+            vault,
+            label,
+            generate,
+            verify,
+        } => cmd::backup_codes(&app, &vault, &label, generate, verify.as_deref(), mp),
         Commands::ChangeMasterPassword { vault } => cmd::change_master_password(&app, &vault, mp),
 
         Commands::Backup { vault } => cmd::backup(&app, &vault),

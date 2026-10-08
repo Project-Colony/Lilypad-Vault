@@ -664,6 +664,45 @@ pub fn totp(app: &App, vault: &str, label: &str, provided_pw: Option<&str>) -> R
     Ok(())
 }
 
+/// Shows, regenerates or consumes an entry's TOTP backup codes.
+pub fn backup_codes(
+    app: &App,
+    vault: &str,
+    label: &str,
+    generate: bool,
+    verify: Option<&str>,
+    provided_pw: Option<&str>,
+) -> Result<()> {
+    let mut session = unlock(app, vault, provided_pw)?;
+    let unused = if generate {
+        let codes = lilypad_app::generate_backup_codes(app, &mut session, label)?;
+        println!("New backup codes for '{label}' (each works once; store them offline):");
+        for code in codes.iter() {
+            let (a, b) = code.split_at(code.len() / 2);
+            println!("  {a}-{b}");
+        }
+        return Ok(());
+    } else if let Some(code) = verify {
+        let left = lilypad_app::use_backup_code(app, &mut session, label, code)?;
+        println!("Backup code accepted and marked used; {left} unused left.");
+        left
+    } else {
+        let secret = lilypad_app::reveal_secret(&session, label)?;
+        let total = secret.totp_backup_codes.len();
+        if total == 0 {
+            println!("No backup codes for '{label}'; --generate creates a set.");
+            return Ok(());
+        }
+        let unused = secret.unused_backup_codes_count();
+        println!("Backup codes for '{label}': {unused} unused of {total}.");
+        unused
+    };
+    if unused < 3 {
+        eprintln!("WARNING: backup codes are running low; --generate replaces the set.");
+    }
+    Ok(())
+}
+
 pub fn change_master_password(app: &App, vault: &str, provided_pw: Option<&str>) -> Result<()> {
     let mut session = unlock(app, vault, provided_pw)?;
     let new_pw = io::prompt_new_master_password()?;

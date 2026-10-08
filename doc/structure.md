@@ -13,7 +13,7 @@ The workspace contains eight crates:
 
 - `lilypad-core/`: Cryptographic workflows (XChaCha20-Poly1305, Argon2id key derivation), data models (Vault, Entry, EntryMetadata, EntrySecret), domain services, and error types.
 - `lilypad-storage/`: Encrypted local persistence with versioned `.lily` file format, atomic writes, backup/restore, and the storage interface consumed by sync backends.
-- `lilypad-common/`: Shared utilities — clipboard management, password health analysis (strength scoring, reuse/expiry/2FA detection), advanced search engine, input validation, timestamp formatting, and key file management.
+- `lilypad-common/`: Shared utilities: clipboard management, password health analysis (strength scoring, reuse/expiry/2FA detection), advanced search engine, input validation, timestamp formatting, and key file management.
 - `lilypad-oauth/`: GitHub OAuth (Device Flow), token management, and the encrypted vault sync backend.
 - `lilypad-app/`: The shared application/service layer every frontend is a thin client of. Owns unlocking (never writes), the master-password normalization choke point, locked read-modify-write entry mutations (including the field-preserving `edit_entry`), Trash (soft delete/restore), health reports, settings, the audit log, entry history, the auto-detecting importer (LastPass, Bitwarden CSV/JSON, KeePassXC, 1Password, Safari, Chrome/Edge, Firefox, Proton Pass, Dashlane) with native CSV export, and validated sync (remote payloads are proven to decrypt before they can replace the local vault).
 - `lilypad-cli/`: Command-line interface over `lilypad-app`: vault management, entry CRUD, trash/restore, audit/health, audit-log, entry history, import/export, generator, TOTP, backups, and GitHub sync (login/push/pull/status).

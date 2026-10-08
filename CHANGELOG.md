@@ -12,8 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Core**: Entry history tracking with `EntryHistoryRecord` and `EntryChangeType`
 - **Core**: Password expiration support with configurable expiry dates
 - **Core**: Entry favorites, access tracking, and color labels
-- **CLI**: `--force` flag for sync conflict resolution on push/pull
+- **CLI**: `--force` flag for sync conflict resolution on push
 - **CLI**: CSV audit log export and entry history commands
+- **CLI**: `trash`/`restore` and `sync merge`; `import` detects 11 password-manager formats
 - **CLI**: Shell completion generation (bash, zsh, fish, PowerShell)
 - **CLI**: Password strength enforcement on vault init
 - **Desktop**: CSV export for vault entries
@@ -34,6 +35,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Project**: GPL-3.0-or-later LICENSE file
 - **Project**: `deny.toml` for cargo-deny license and vulnerability checking
 - **Project**: Comprehensive `.gitignore`
+
+### Changed
+- **App**: New `lilypad-app` service layer shared by the CLI, TUI and desktop app, which are rewritten as thin clients over it
+- **Storage**: All three frontends use one data directory: `--data-dir`, else `$LILYPAD_DATA_DIR`, else the platform `Colony/Lilypad` directory the desktop app already used (`~/.config/Colony/Lilypad` on Linux, `~/Library/Application Support/Colony/Lilypad` on macOS, `%APPDATA%\Colony\Lilypad\config` on Windows). The CLI and TUI no longer default to `./.lilypad`; the CLI prints a hint when it finds vaults there, and `--data-dir .lilypad` still opens them
+- **Sync**: Each vault syncs to `vaults/<name>.lily` in the `lilypad-vault-<user>` repository instead of a single root `vault.lily`. A vault pushed only by an older build is not pulled automatically: move the remote file to `vaults/<name>.lily` first
+
+### Removed
+- **CLI**: `rotate-key`; `change-master-password` re-encrypts the vault instead
+- **CLI**: `verify-vault`; unlocking a vault (for example `list`) authenticates every byte with the AEAD tag, a stronger check than the old checksum
+- **CLI**: `sync delete`; delete `vaults/<name>.lily` from the `lilypad-vault-<user>` repository on GitHub
+- **CLI**: `sync pull --force`; pull validates the remote vault and keeps a safety backup, and `sync merge` reconciles diverged copies
+- **CLI**: `export --format lily|json` and `import --format/--source`; export writes Lilypad CSV and import detects the format (the `.lily` file itself is the native backup, see `backup`)
 
 ### Fixed
 - Desktop TOTP detection now correctly reads `totp_secret.is_some()` instead of hardcoded `false`

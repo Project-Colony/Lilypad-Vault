@@ -33,10 +33,10 @@ pub mod vault;
 pub use breach::{breach_check, collect_hashes, query_hashes, BreachReport, BreachedEntry};
 pub use crypto_ops::change_master_password;
 pub use entries::{
-    add_entry, add_tag, audit_log, delete_entry, edit_entry, entry_history, list_entries,
-    list_trash, remove_tag, rename_entry, restore, reveal_secret, search_entries, set_color,
-    set_expiry_days, set_favorite, set_folder, soft_delete, update_metadata, update_secret,
-    EntryEdit, EntryView, HistoryEvent,
+    add_entry, add_tag, audit_log, delete_entry, edit_entry, entry_history, generate_backup_codes,
+    list_entries, list_trash, remove_tag, rename_entry, restore, reveal_secret, search_entries,
+    set_color, set_expiry_days, set_favorite, set_folder, soft_delete, update_metadata,
+    update_secret, use_backup_code, EntryEdit, EntryView, HistoryEvent,
 };
 pub use error::{AppError, Result};
 pub use generator::{generate_password, PasswordOptions};

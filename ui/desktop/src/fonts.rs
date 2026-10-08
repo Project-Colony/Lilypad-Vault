@@ -68,7 +68,7 @@ pub mod icons {
     pub const HEART: &str = "\u{f004}"; //
     pub const HEART_PULSE: &str = "\u{f21e}"; //
     pub const DICE: &str = "\u{f522}"; //
-    pub const WAND: &str = "\u{f0d0}"; //  magic wand — password generator
+    pub const WAND: &str = "\u{f0d0}"; //  magic wand - password generator
     pub const SYNC: &str = "\u{f021}"; //
     pub const REFRESH: &str = "\u{f021}"; //
     pub const USER: &str = "\u{f007}"; //

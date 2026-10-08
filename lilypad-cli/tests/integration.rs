@@ -382,3 +382,36 @@ fn auth_status_reports_not_authenticated() {
         .success()
         .stdout(contains("Not authenticated"));
 }
+
+#[test]
+fn backup_codes_generate_verify_once_and_report() {
+    let dir = TempDir::new().unwrap();
+    lily(&dir, "pw").args(["init", "v"]).assert().success();
+    lily(&dir, "pw")
+        .args(["add", "v", "gh", "--totp-secret", "JBSWY3DPEHPK3PXP"])
+        .write_stdin("s3cret")
+        .assert()
+        .success();
+    let out = lily(&dir, "pw")
+        .args(["backup-codes", "v", "gh", "--generate"])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let out = String::from_utf8(out).unwrap();
+    let code = out.lines().nth(1).unwrap().trim().to_string();
+    lily(&dir, "pw")
+        .args(["backup-codes", "v", "gh", "--verify", &code])
+        .assert()
+        .success();
+    lily(&dir, "pw")
+        .args(["backup-codes", "v", "gh", "--verify", &code])
+        .assert()
+        .failure();
+    lily(&dir, "pw")
+        .args(["backup-codes", "v", "gh"])
+        .assert()
+        .success()
+        .stdout(contains("9 unused of 10"));
+}

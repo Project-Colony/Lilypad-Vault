@@ -17,7 +17,7 @@ use crate::secret::{open_secret, seal_secret, RevealedSecret};
 use crate::session::Session;
 use crate::vault::App;
 use lilypad_core::{Entry, EntryMetadata, EntrySecret, EntryType, Vault};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 /// A read-only, secret-free projection of an entry for list/detail views.
 #[derive(Debug, Clone)]
@@ -158,6 +158,62 @@ pub fn update_secret(
         vault
             .update_entry(&label, ciphertext)
             .map_err(AppError::from)
+    })
+}
+
+/// Applies `f` to an entry's decrypted secret under the vault lock and saves
+/// the re-sealed result; `f` returning an error leaves the vault untouched.
+fn mutate_secret<T>(
+    app: &App,
+    session: &mut Session,
+    label: &str,
+    f: impl FnOnce(&mut EntrySecret) -> Result<T>,
+) -> Result<T> {
+    let key = session.key().clone();
+    let mut out = None;
+    mutate(app, session, |vault| {
+        let entry = vault
+            .find_entry(label)
+            .ok_or_else(|| AppError::Other(format!("entry '{label}' not found")))?;
+        let mut secret = open_secret(&key, entry)?.get().clone();
+        let sealed = f(&mut secret).and_then(|v| Ok((v, seal_secret(&key, &secret)?)));
+        wipe_secret(&mut secret);
+        let (v, ciphertext) = sealed?;
+        out = Some(v);
+        vault
+            .update_entry(label, ciphertext)
+            .map_err(AppError::from)
+    })?;
+    out.ok_or_else(|| AppError::Other("secret mutation produced no result".to_string()))
+}
+
+/// Replaces a TOTP entry's backup codes with a fresh set and returns them, to
+/// be shown to the user once.
+pub fn generate_backup_codes(
+    app: &App,
+    session: &mut Session,
+    label: &str,
+) -> Result<Zeroizing<Vec<String>>> {
+    mutate_secret(app, session, label, |secret| {
+        if secret.totp_secret.is_none() {
+            return Err(AppError::Validation(format!(
+                "entry '{label}' has no TOTP secret; backup codes require TOTP"
+            )));
+        }
+        Ok(Zeroizing::new(secret.generate_backup_codes()))
+    })
+}
+
+/// Marks a backup code as used and returns how many unused codes remain.
+pub fn use_backup_code(app: &App, session: &mut Session, label: &str, code: &str) -> Result<usize> {
+    mutate_secret(app, session, label, |secret| {
+        if secret.use_backup_code(code) {
+            Ok(secret.unused_backup_codes_count())
+        } else {
+            Err(AppError::Validation(
+                "invalid or already used backup code".to_string(),
+            ))
+        }
     })
 }
 
