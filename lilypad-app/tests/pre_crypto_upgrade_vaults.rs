@@ -1,7 +1,8 @@
 //! Vaults written before the RustCrypto upgrade (argon2 0.5, sha2 0.10,
 //! chacha20poly1305 0.10, rand_core 0.6) must keep opening, byte for byte.
 //!
-//! `fixtures/pre-crypto-upgrade/data` was written by commit b9b7b3d with
+//! `fixtures/pre-crypto-upgrade/data` was written by commit 5a84c43 ("ci:
+//! release through release-please and the shared signing workflow") with
 //! [`PASSWORD`]: `current` is a self-contained V2 vault (Argon2id parameters
 //! embedded in the file), `legacy` is a V1 vault whose key comes from the
 //! `key.json` keyfile beside it. `expected.json` is what that same commit read
