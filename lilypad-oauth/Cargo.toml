@@ -21,11 +21,11 @@ zeroize.workspace = true
 # OAuth specific dependencies
 chacha20poly1305.workspace = true
 rand.workspace = true
-url = "2.5"
-webbrowser = "1.1"
-tiny_http = "0.12"
-directories = "6.0"
-hostname = "0.4"
+url.workspace = true
+webbrowser.workspace = true
+tiny_http.workspace = true
+directories.workspace = true
+hostname.workspace = true
 whoami.workspace = true
 
 [dev-dependencies]

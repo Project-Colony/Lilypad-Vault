@@ -13,7 +13,7 @@ clap.workspace = true
 clap_complete.workspace = true
 lilypad-app = { path = "../lilypad-app" }
 lilypad-common = { path = "../lilypad-common" }
-rpassword = "7.3"
+rpassword.workspace = true
 serde_json.workspace = true
 zeroize.workspace = true
 
@@ -21,6 +21,6 @@ zeroize.workspace = true
 winresource.workspace = true
 
 [dev-dependencies]
-assert_cmd = "2.0"
-predicates = "3.1"
+assert_cmd.workspace = true
+predicates.workspace = true
 tempfile.workspace = true

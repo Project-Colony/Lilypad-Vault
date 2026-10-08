@@ -25,7 +25,7 @@ sha2.workspace = true
 tempfile.workspace = true
 # Pure-Rust Unicode NFC for the master-password choke point, so composed vs
 # decomposed accents (NFC on Linux, NFD on macOS) derive the same key.
-unicode-normalization = "0.1"
+unicode-normalization.workspace = true
 # CSV parsing/writing for the importer (LastPass, Bitwarden, KeePassXC, ...)
 # and the native export.
 csv.workspace = true
