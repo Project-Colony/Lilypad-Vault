@@ -4,6 +4,9 @@
 //!
 //! This is the main entry point for the Lilypad desktop application.
 
+// A GUI program: on Windows, without this, launching it from Colony or
+// Explorer also opens an empty console window beside the app.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 // The theme and font modules deliberately carry a full palette of styles,
 // colors and icons; not every one is wired into the current lean UI.
 #![allow(dead_code)]
