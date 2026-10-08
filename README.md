@@ -84,7 +84,7 @@ The workspace has eight crates: `lilypad-core` (cryptography and models),
 `lilypad-storage` (vault files, backups, locking), `lilypad-common`
 (validation, health checks, search), `lilypad-oauth` (GitHub sign-in and the
 GitHub API), `lilypad-app` (the service layer the three programs share),
-`lilypad-cli`, `ui/tui` and `ui/desktop`. See [`doc/doc.md`](doc/doc.md) for
+`lilypad-cli`, `ui/tui` and `ui/desktop`. See [`docs/doc.md`](docs/doc.md) for
 the architecture.
 
 Code, comments, documentation and commit messages are in English. Commits

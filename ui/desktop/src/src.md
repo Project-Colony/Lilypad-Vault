@@ -31,4 +31,4 @@ Maintenance notes:
   close - keep that invariant when adding fields.
 - Never call blocking crypto or network on the UI thread; follow the
   `derive_key_task` / sync-handler pattern.
-- Keep this file in sync when adding modules (see `doc/structure.md`).
+- Keep this file in sync when adding modules (see `docs/structure.md`).
