@@ -1251,6 +1251,13 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
 }
 
 fn main() -> Result<()> {
+    // Answered before the terminal is switched to raw mode, so release CI can
+    // smoke-test the binary without a TTY.
+    if std::env::args_os().nth(1).is_some_and(|a| a == "--version") {
+        println!("lilypad-tui {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     let mut app = App::new(None)?;
 
     enable_raw_mode()?;

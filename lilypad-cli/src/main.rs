@@ -22,7 +22,7 @@ pub enum OutputFormat {
 }
 
 #[derive(Debug, Parser)]
-#[command(name = "lilypad", about = "Secure password manager.", long_about = None)]
+#[command(name = "lilypad", version, about = "Secure password manager.", long_about = None)]
 struct Cli {
     /// Data directory (default: platform data dir, or $LILYPAD_DATA_DIR)
     #[arg(long, value_name = "DIR", global = true)]

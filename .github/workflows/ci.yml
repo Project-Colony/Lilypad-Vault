@@ -42,6 +42,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
 
+      # Same check as the release workflow's Windows leg: SignPath signs only
+      # an .exe whose version resource names the project and carries its
+      # version, and each binary's build.rs is what writes it. Checked here so
+      # a pull request that breaks it fails now rather than at the next release.
+      - name: Check the Windows version resources
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cargo build -p lilypad-desktop -p lilypad-cli -p lilypad-tui
+          $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
+            Where-Object name -eq 'lilypad-desktop' | ForEach-Object version
+          $failed = $false
+          foreach ($exe in 'lilypad-desktop.exe', 'lilypad-cli.exe', 'lilypad-tui.exe') {
+            $info = (Get-Item "target\debug\$exe").VersionInfo
+            "$exe ProductName='$($info.ProductName)' ProductVersion='$($info.ProductVersion)' FileDescription='$($info.FileDescription)'"
+            if ($info.ProductName -cne 'Lilypad' -or $info.ProductVersion -cne $version) {
+              "::error::$exe has ProductName '$($info.ProductName)' and ProductVersion '$($info.ProductVersion)', expected 'Lilypad' and '$version'"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -62,6 +84,21 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+
+  # Cargo.toml promises rust-version = 1.89. Every other job builds on stable,
+  # so a dependency bump that raised the floor would pass them all unnoticed.
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.89"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: msrv
+      - run: cargo check --workspace --all-targets --locked
 
   deny:
     name: Dependency Check

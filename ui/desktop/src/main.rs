@@ -17,7 +17,14 @@ use iced::{Size, Task};
 
 /// Application entry point
 fn main() -> iced::Result {
-    // Initialize logging — suppress noisy warnings from GPU and font subsystems
+    // Answered before any window or GPU setup, so release CI can smoke-test
+    // the binary on a runner with no display.
+    if std::env::args_os().nth(1).is_some_and(|a| a == "--version") {
+        println!("lilypad-desktop {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    // Initialize logging: suppress noisy warnings from GPU and font subsystems
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()

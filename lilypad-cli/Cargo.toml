@@ -1,9 +1,10 @@
 [package]
 name = "lilypad-cli"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 anyhow.workspace = true
@@ -15,6 +16,9 @@ lilypad-common = { path = "../lilypad-common" }
 rpassword = "7.3"
 serde_json.workspace = true
 zeroize.workspace = true
+
+[build-dependencies]
+winresource.workspace = true
 
 [dev-dependencies]
 assert_cmd = "2.0"

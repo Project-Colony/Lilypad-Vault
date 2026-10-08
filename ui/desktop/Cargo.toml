@@ -1,9 +1,10 @@
 [package]
 name = "lilypad-desktop"
-version = "0.1.0"
-edition = "2021"
-authors = ["Lilypad Contributors"]
-license = "GPL-3.0-or-later"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
 description = "Lilypad desktop GUI built with Iced"
 
 [dependencies]
@@ -28,6 +29,9 @@ webbrowser = "1.1"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[build-dependencies]
+winresource.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -1,9 +1,10 @@
 [package]
 name = "lilypad-tui"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+rust-version.workspace = true
 description = "Terminal User Interface for Lilypad password manager"
 
 [[bin]]
@@ -17,6 +18,9 @@ lilypad-app = { path = "../../lilypad-app" }
 lilypad-common = { path = "../../lilypad-common" }
 ratatui.workspace = true
 zeroize.workspace = true
+
+[build-dependencies]
+winresource.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

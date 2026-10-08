@@ -4,9 +4,10 @@
   "category": "security",
   "platforms": ["windows", "linux", "macos", "macos-x86"],
   "releaseFiles": {
-    "windows": { "tag": "latest", "filePattern": "desktop-x86_64-pc-windows-msvc" },
-    "linux": { "tag": "latest", "filePattern": "desktop-x86_64-unknown-linux-gnu" },
-    "macos": { "tag": "latest", "filePattern": "desktop-aarch64-apple-darwin" },
-    "macos-x86": { "tag": "latest", "filePattern": "desktop-x86_64-apple-darwin" }
-  }
+    "windows": { "tag": "latest", "file": "lilypad-windows.exe" },
+    "linux": { "tag": "latest", "file": "lilypad-linux" },
+    "macos": { "tag": "latest", "file": "lilypad-macos" },
+    "macos-x86": { "tag": "latest", "file": "lilypad-macos-x86" }
+  },
+  "signed": true
 }

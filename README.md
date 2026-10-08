@@ -1,49 +1,152 @@
 # Lilypad
 
-Lilypad is a Rust-based password manager focused on security, reliability, and a clean developer experience. The project will grow into a fully featured tool for generating, storing, and syncing secrets across devices while keeping cryptography and safety front and center. The roadmap prioritizes:
+Lilypad is a local-first password manager written in Rust, part of
+[Project Colony](https://github.com/Project-Colony). It comes as three programs
+that share one service layer, so they read and write vaults the same way:
 
-- **Reproducible security**: Documented cryptographic primitives, predictable key management, and transparent storage formats.
-- **Maintainable modules**: Clearly separated crates for core logic, storage, and user interfaces to keep the codebase testable and auditable.
-- **Flexible frontends**: CLI, TUI, and GUI experiences that can be iterated independently while sharing a common core.
+- **Lilypad** (`lilypad-desktop`), the desktop app, built with iced;
+- **Lilypad TUI** (`lilypad-tui`), a keyboard-driven terminal interface;
+- **Lilypad CLI** (`lilypad-cli`), for scripts and the shell.
 
-## Prerequisites
-- **Rust toolchain**: Rust (stable) **1.89.0** or newer with `cargo` installed (use [`rustup`](https://rustup.rs/) to manage toolchains). This is the Minimum Supported Rust Version (MSRV).
-- **Build tools**: Standard C toolchain for your platform (e.g., `build-essential` on Debian/Ubuntu, Xcode Command Line Tools on macOS).
-- **Optional developer tools**: `rustfmt` and `clippy` components for formatting and linting, and `cargo-edit` for dependency management quality-of-life commands.
-- **Git**: Required for source control and fetching dependencies.
+## What it does
 
-## Language Policy
-The project language is **English** for now. All code comments, documentation, commit messages, and user-facing text must be written in English to avoid confusion while the foundations are being built. Additional languages will be added later as Lilypad matures.
+- Several vaults, each with its own master password (Argon2id key derivation,
+  XChaCha20-Poly1305 encryption).
+- Logins, notes, cards and other entry types, with tags, folders, favourites,
+  colour labels, password expiry, change history and a Trash.
+- Password generator, TOTP codes and TOTP backup codes.
+- Password health report (weak, reused, old, expiring), and an optional check
+  against Have I Been Pwned that never sends a password (see the privacy policy
+  below).
+- Import from Lilypad, LastPass, Bitwarden (CSV and JSON), KeePassXC,
+  1Password, Safari, Chrome and Edge, Firefox, Proton Pass and Dashlane, with
+  the format detected from the file's content. Export to CSV.
+- Optional sync of vaults through a private repository on your own GitHub
+  account, with an entry-by-entry merge when two devices both changed a vault.
+- Safety backups before deleting a vault, changing a master password,
+  restoring a backup and applying a synced copy; auto-lock; a clipboard that
+  clears itself.
 
-## Getting Started
-The Rust workspace is fully functional with eight crates: `lilypad-core` (cryptography and models), `lilypad-storage` (encrypted local persistence), `lilypad-common` (validation, health checks, utilities), `lilypad-oauth` (GitHub OAuth and sync), `lilypad-app` (the shared application/service layer - it owns unlocking, entry mutation, settings, and validated sync, so the three frontends stay thin clients), `lilypad-cli` (command-line interface), `ui/tui` (terminal UI), and `ui/desktop` (desktop GUI). See [`doc/doc.md`](doc/doc.md) for architecture details and development workflows.
+## Install
+
+From [Colony](https://github.com/Project-Colony/Colony), the Project Colony
+app store, or from the [releases page](https://github.com/Project-Colony/Lilypad-Vault/releases/latest):
+
+| Platform | Desktop app | CLI | TUI |
+| --- | --- | --- | --- |
+| Linux (x86_64) | `lilypad-linux` | `lilypad-cli-linux` | `lilypad-tui-linux` |
+| Windows (x86_64) | `lilypad-windows.exe` | `lilypad-cli-windows.exe` | `lilypad-tui-windows.exe` |
+| macOS (Apple Silicon) | `lilypad-macos` | `lilypad-cli-macos` | `lilypad-tui-macos` |
+| macOS (Intel) | `lilypad-macos-x86` | `lilypad-cli-macos-x86` | `lilypad-tui-macos-x86` |
+
+Every file has a detached ed25519 signature (`.sig`) and a signed metadata
+sidecar (`.meta`, `.meta.sig`) made with the Project Colony release key, which
+Colony checks before installing.
+
+## Where your data lives
+
+Vaults, settings and the GitHub sign-in token live in one directory:
+`~/.config/Colony/Lilypad` on Linux, `~/Library/Application Support/Colony/Lilypad`
+on macOS and `%APPDATA%\Colony\Lilypad\config` on Windows. The
+`LILYPAD_DATA_DIR` environment variable (all three programs) or `--data-dir`
+(CLI) moves the vaults and settings elsewhere; the GitHub token stays in the
+platform directory.
+
+A vault file is encrypted as a whole with a key derived from its master
+password (Argon2id, then XChaCha20-Poly1305), and each entry's secrets
+(password, notes, TOTP secret, backup codes, attachments) are encrypted a
+second time inside it. Outside the encryption, the file carries only its
+format version, a key identifier, the algorithm names, the key derivation
+parameters and salt, a checksum of the ciphertext and an encrypted
+password verifier. What someone holding the file can learn without the master
+password is the vault's name (the file name), its size and when it changed.
+
+## Build from source
+
+Rust 1.89 or newer and a C toolchain for your platform. On Linux, also
+`pkg-config` and the OpenSSL development package (`libssl-dev` on Debian and
+Ubuntu, `openssl` on Arch, `openssl-devel` on Fedora): HTTPS goes through the
+system OpenSSL.
 
 ```bash
-cargo build --workspace          # Build all crates
-cargo test --workspace           # Run all 240+ tests
-cargo run --bin lilypad-cli -- help    # CLI
-cargo run -p lilypad-desktop     # Desktop GUI
-cargo run -p lilypad-tui         # Terminal UI
+cargo build --release -p lilypad-desktop -p lilypad-cli -p lilypad-tui
+cargo test --workspace
 ```
 
-## Framework Guidance
-You have flexibility in selecting frameworks for each layer as long as security and maintainability stay front and center:
+GitHub sync needs the client ID of a GitHub OAuth App with device flow
+enabled, compiled in through the `LILYPAD_GITHUB_CLIENT_ID` environment
+variable at build time. Without it, everything else works and sync says that
+no client ID was compiled in.
 
-- **CLI**: Prefer `clap` or `lexopt` for argument parsing, combined with `indicatif` for progress output when needed.
-- **TUI**: `ratatui` or `crossterm` enable a responsive, keyboard-first terminal experience.
-- **Desktop GUI**: The desktop interface uses the `iced` retained-mode toolkit (pure Rust, cross-platform).
-- **Crypto and storage**: Uses `chacha20poly1305` for encryption, `argon2` for key derivation, and `zeroize` for memory safety, with `serde` + `serde_json` for structured storage metadata.
+## Development
 
-Feel free to prototype multiple interface layers in parallel, but keep the cryptographic and storage guarantees consistent across them.
+The workspace has eight crates: `lilypad-core` (cryptography and models),
+`lilypad-storage` (vault files, backups, locking), `lilypad-common`
+(validation, health checks, search), `lilypad-oauth` (GitHub sign-in and the
+GitHub API), `lilypad-app` (the service layer the three programs share),
+`lilypad-cli`, `ui/tui` and `ui/desktop`. See [`doc/doc.md`](doc/doc.md) for
+the architecture.
 
-## Documentation Expectation
-- Keep new folders accompanied by a short Markdown explainer as described in [`doc/structure.md`](doc/structure.md).
-- Expand [`doc/doc.md`](doc/doc.md) with implementation notes, diagrams, and troubleshooting steps as new crates or interfaces are added.
-- Ensure all contributor-facing text remains in English until the localization plan is introduced.
+Code, comments, documentation and commit messages are in English. Commits
+follow [Conventional Commits](https://www.conventionalcommits.org/): releases,
+their version and their changelog are made by release-please from them.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
+
+Windows builds are Authenticode-signed this way once the SignPath Foundation
+has accepted the project; until then they ship without Authenticode. Every
+release asset, on every platform, is always signed with the Project-Colony
+ed25519 release key, and Colony verifies that signature before installing.
+
+Team roles and members:
+
+- Committers and reviewers: [MotherSphere](https://github.com/MotherSphere)
+- Approvers: [MotherSphere](https://github.com/MotherSphere)
+
+### Privacy policy
+
+Lilypad has no telemetry, no analytics, no account of its own and no update
+check. It contacts two networked services, each only when you ask it to.
+
+- **GitHub, for sync.** Signing in (`lilypad-cli login`, or Settings > Sync in
+  the desktop app) uses GitHub's OAuth device flow: Lilypad shows a code, you
+  approve it on github.com, and GitHub returns a token with the `repo` and
+  `read:user` scopes. `repo` grants access to all your repositories, because
+  GitHub OAuth Apps have no narrower scope for a single private repository;
+  Lilypad only uses it on its own vault repository. The token is stored
+  in `oauth_tokens.json` in the platform directory above, readable only by
+  your account on Linux and macOS. It is scrambled with a key derived from the
+  machine's host name and your user name, not from a master password, so
+  treat that file as you would the token itself. On push, pull,
+  merge or status, Lilypad talks to `api.github.com` to find or create a
+  private repository named `lilypad-vault-<your GitHub username>` and to read or
+  write the vault files in it. What it uploads is the encrypted vault file,
+  as `vaults/<vault name>.lily`: GitHub sees the vault's name, its size and
+  when it changed, not its contents (see
+  [Where your data lives](#where-your-data-lives)).
+  Nothing is sent to GitHub until you sign in, and nothing after `logout`.
+- **Have I Been Pwned, for the breach check.** Only when you run it
+  (`lilypad-cli breach-check`, or the button in the desktop app's vault health
+  settings). Lilypad hashes each password with SHA-1 on your machine and sends
+  only the first five characters of each hash to
+  `https://api.pwnedpasswords.com/range/`, with padding enabled. The service
+  never receives a password or a full hash, and the answer is compared
+  locally.
+
+Opening an entry's URL hands it to your default browser; Lilypad itself does
+not fetch it. Like any HTTPS request, both services see your IP address.
 
 ## License
-Lilypad is licensed under the **GNU General Public License, version 3 or (at your option) any later version** (`GPL-3.0-or-later`). The full text is in [`LICENSE`](LICENSE).
 
-Contributions are accepted under the same terms: by submitting a patch you agree that it may be distributed under GPL-3.0-or-later.
+Lilypad is licensed under the **GNU General Public License, version 3 or (at
+your option) any later version** (`GPL-3.0-or-later`). The full text is in
+[`LICENSE`](LICENSE).
 
-The bundled JetBrains Mono fonts under `ui/Assets/Fonts/` and `ui/desktop/assets/fonts/` are third-party assets distributed under the SIL Open Font License 1.1 and are not covered by the GPL.
+Contributions are accepted under the same terms: by submitting a patch you
+agree that it may be distributed under GPL-3.0-or-later.
+
+The bundled JetBrains Mono fonts under `ui/Assets/Fonts/` and
+`ui/desktop/assets/fonts/` are third-party assets distributed under the SIL
+Open Font License 1.1 and are not covered by the GPL.
