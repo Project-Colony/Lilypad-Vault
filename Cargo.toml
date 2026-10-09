@@ -51,7 +51,7 @@ iced = "0.14.0"
 predicates = "3.1.4"
 rand = "0.10.3"
 ratatui = "0.30.2"
-reqwest = { version = "0.12.28", features = ["blocking"] }
+reqwest = { version = "0.13.5", features = ["blocking"] }
 rpassword = "7.5.4"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
