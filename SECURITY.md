@@ -45,8 +45,9 @@ Reports of particular interest:
   A crafted file that crashes Lilypad, corrupts an existing vault or replaces
   it without the right password is in scope.
 - **GitHub sync**: anything that sends unencrypted vault data, or the sign-in
-  token, anywhere other than `api.github.com`, or that lets a remote copy
-  replace a local vault without first being decrypted with that vault's key.
+  token, anywhere other than `github.com` and `api.github.com`, or that lets
+  a remote copy replace a local vault without first being decrypted with that
+  vault's key.
 - **Network privacy**: the breach check sending more than the first five
   characters of a SHA-1 hash, or any network request Lilypad makes without
   the user asking for it (see the privacy policy in the README).

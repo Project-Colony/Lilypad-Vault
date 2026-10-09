@@ -59,9 +59,6 @@ pub enum OAuthError {
     /// Configuration error.
     ConfigError(String),
 
-    /// Local server error (for OAuth callback).
-    LocalServerError(String),
-
     /// Generic IO error.
     IoError(std::io::Error),
 }
@@ -129,9 +126,6 @@ impl fmt::Display for OAuthError {
             OAuthError::ConfigError(msg) => {
                 write!(f, "Configuration error: {}", msg)
             }
-            OAuthError::LocalServerError(msg) => {
-                write!(f, "Local OAuth server error: {}", msg)
-            }
             OAuthError::IoError(err) => {
                 write!(f, "IO error: {}", err)
             }
@@ -169,12 +163,6 @@ impl From<reqwest::Error> for OAuthError {
 impl From<serde_json::Error> for OAuthError {
     fn from(err: serde_json::Error) -> Self {
         OAuthError::ParseError(err.to_string())
-    }
-}
-
-impl From<url::ParseError> for OAuthError {
-    fn from(err: url::ParseError) -> Self {
-        OAuthError::ConfigError(format!("invalid URL: {}", err))
     }
 }
 
@@ -217,7 +205,6 @@ mod tests {
             OAuthError::ParseError("unexpected token".to_string()),
             OAuthError::TokenStoreError("permission denied".to_string()),
             OAuthError::ConfigError("missing field".to_string()),
-            OAuthError::LocalServerError("port in use".to_string()),
             OAuthError::IoError(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "file not found",

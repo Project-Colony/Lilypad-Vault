@@ -29,18 +29,9 @@ pub struct OAuthConfig {
     /// OAuth client ID (from GitHub OAuth App settings).
     pub client_id: String,
 
-    /// OAuth client secret (optional, required for Authorization Code Flow).
-    /// For Device Flow, this is not required.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub client_secret: Option<String>,
-
     /// OAuth scopes to request.
     #[serde(default = "default_scopes")]
     pub scopes: Vec<String>,
-
-    /// OAuth authorization URL.
-    #[serde(default = "default_auth_url")]
-    pub auth_url: String,
 
     /// OAuth token URL.
     #[serde(default = "default_token_url")]
@@ -53,36 +44,13 @@ pub struct OAuthConfig {
     /// API base URL.
     #[serde(default = "default_api_url")]
     pub api_url: String,
-
-    /// Local callback port for Authorization Code Flow.
-    #[serde(default = "default_callback_port")]
-    pub callback_port: u16,
-
-    /// Preferred authentication flow.
-    #[serde(default)]
-    pub preferred_flow: AuthFlow,
-}
-
-/// Authentication flow preference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum AuthFlow {
-    /// Device Flow (recommended for CLI applications).
-    /// User visits a URL and enters a code.
-    #[default]
-    DeviceFlow,
-
-    /// Authorization Code Flow with local callback server.
-    /// Opens browser and receives callback on localhost.
-    AuthorizationCode,
 }
 
 fn default_scopes() -> Vec<String> {
-    vec!["repo".to_string(), "read:user".to_string()]
-}
-
-fn default_auth_url() -> String {
-    "https://github.com/login/oauth/authorize".to_string()
+    crate::DEFAULT_GITHUB_SCOPES
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
 }
 
 fn default_token_url() -> String {
@@ -97,23 +65,15 @@ fn default_api_url() -> String {
     "https://api.github.com".to_string()
 }
 
-fn default_callback_port() -> u16 {
-    8585
-}
-
 impl Default for OAuthConfig {
     fn default() -> Self {
         Self {
             provider: OAuthProvider::GitHub,
             client_id: String::new(),
-            client_secret: None,
             scopes: default_scopes(),
-            auth_url: default_auth_url(),
             token_url: default_token_url(),
             device_auth_url: default_device_auth_url(),
             api_url: default_api_url(),
-            callback_port: default_callback_port(),
-            preferred_flow: AuthFlow::default(),
         }
     }
 }
@@ -128,27 +88,25 @@ impl OAuthConfig {
         }
     }
 
-    /// Sets the client secret (for Authorization Code Flow).
-    pub fn with_client_secret(mut self, secret: impl Into<String>) -> Self {
-        self.client_secret = Some(secret.into());
-        self
+    /// The GitHub configuration Lilypad signs in and refreshes tokens with:
+    /// the client ID compiled in through `LILYPAD_GITHUB_CLIENT_ID` at build
+    /// time ([`BUILTIN_GITHUB_CLIENT_ID`](crate::BUILTIN_GITHUB_CLIENT_ID)) and
+    /// the default scopes. Nothing is read from the environment at run time,
+    /// so a variable set by another program cannot redirect sign-in or token
+    /// refresh to a different OAuth App.
+    pub fn builtin_github() -> Result<Self> {
+        if crate::BUILTIN_GITHUB_CLIENT_ID.is_empty() {
+            return Err(OAuthError::ConfigError(
+                "no GitHub OAuth client id was compiled in (build with LILYPAD_GITHUB_CLIENT_ID)"
+                    .to_string(),
+            ));
+        }
+        Ok(Self::github(crate::BUILTIN_GITHUB_CLIENT_ID))
     }
 
     /// Sets custom OAuth scopes.
     pub fn with_scopes(mut self, scopes: Vec<String>) -> Self {
         self.scopes = scopes;
-        self
-    }
-
-    /// Sets the preferred authentication flow.
-    pub fn with_flow(mut self, flow: AuthFlow) -> Self {
-        self.preferred_flow = flow;
-        self
-    }
-
-    /// Sets the callback port for Authorization Code Flow.
-    pub fn with_callback_port(mut self, port: u16) -> Self {
-        self.callback_port = port;
         self
     }
 
@@ -160,12 +118,6 @@ impl OAuthConfig {
             ));
         }
 
-        if self.preferred_flow == AuthFlow::AuthorizationCode && self.client_secret.is_none() {
-            return Err(OAuthError::ConfigError(
-                "client_secret is required for Authorization Code Flow".to_string(),
-            ));
-        }
-
         if self.scopes.is_empty() {
             return Err(OAuthError::ConfigError(
                 "at least one OAuth scope is required".to_string(),
@@ -173,51 +125,6 @@ impl OAuthConfig {
         }
 
         Ok(())
-    }
-
-    /// Creates configuration from environment variables.
-    ///
-    /// Reads the following environment variables:
-    /// - `LILYPAD_GITHUB_CLIENT_ID` - OAuth client ID (required)
-    /// - `LILYPAD_GITHUB_CLIENT_SECRET` - OAuth client secret (optional)
-    /// - `LILYPAD_GITHUB_SCOPES` - Comma-separated scopes (optional)
-    /// - `LILYPAD_OAUTH_FLOW` - `device` or `authorization_code` (optional)
-    /// - `LILYPAD_OAUTH_PORT` - Callback port (optional)
-    pub fn from_env() -> Result<Self> {
-        let client_id = std::env::var("LILYPAD_GITHUB_CLIENT_ID")
-            .unwrap_or_else(|_| crate::BUILTIN_GITHUB_CLIENT_ID.to_string());
-
-        let mut config = Self::github(client_id);
-
-        if let Ok(secret) = std::env::var("LILYPAD_GITHUB_CLIENT_SECRET") {
-            config.client_secret = Some(secret);
-        }
-
-        if let Ok(scopes) = std::env::var("LILYPAD_GITHUB_SCOPES") {
-            config.scopes = scopes.split(',').map(|s| s.trim().to_string()).collect();
-        }
-
-        if let Ok(flow) = std::env::var("LILYPAD_OAUTH_FLOW") {
-            config.preferred_flow = match flow.to_lowercase().as_str() {
-                "device" | "device_flow" => AuthFlow::DeviceFlow,
-                "authorization_code" | "auth_code" => AuthFlow::AuthorizationCode,
-                _ => AuthFlow::DeviceFlow,
-            };
-        }
-
-        if let Ok(port) = std::env::var("LILYPAD_OAUTH_PORT") {
-            if let Ok(p) = port.parse() {
-                config.callback_port = p;
-            }
-        }
-
-        config.validate()?;
-        Ok(config)
-    }
-
-    /// Returns the callback URL for Authorization Code Flow.
-    pub fn callback_url(&self) -> String {
-        format!("http://127.0.0.1:{}/callback", self.callback_port)
     }
 
     /// Returns the scopes as a space-separated string.
@@ -235,19 +142,33 @@ mod tests {
         let config = OAuthConfig::default();
         assert_eq!(config.provider, OAuthProvider::GitHub);
         assert!(config.client_id.is_empty());
-        assert!(config.client_secret.is_none());
-        assert!(!config.scopes.is_empty());
+        assert_eq!(config.scopes, crate::DEFAULT_GITHUB_SCOPES);
     }
 
     #[test]
     fn test_github_config() {
-        let config = OAuthConfig::github("test-client-id")
-            .with_client_secret("test-secret")
-            .with_flow(AuthFlow::AuthorizationCode);
-
+        let config = OAuthConfig::github("test-client-id");
         assert_eq!(config.client_id, "test-client-id");
-        assert_eq!(config.client_secret, Some("test-secret".to_string()));
-        assert_eq!(config.preferred_flow, AuthFlow::AuthorizationCode);
+        assert_eq!(
+            config.token_url,
+            "https://github.com/login/oauth/access_token"
+        );
+    }
+
+    #[test]
+    fn test_builtin_github_uses_the_compiled_in_client_id() {
+        match OAuthConfig::builtin_github() {
+            Ok(config) => {
+                assert!(!crate::BUILTIN_GITHUB_CLIENT_ID.is_empty());
+                assert_eq!(config.client_id, crate::BUILTIN_GITHUB_CLIENT_ID);
+                assert_eq!(config.scopes, crate::DEFAULT_GITHUB_SCOPES);
+            }
+            Err(OAuthError::ConfigError(msg)) => {
+                assert!(crate::BUILTIN_GITHUB_CLIENT_ID.is_empty());
+                assert!(msg.contains("no GitHub OAuth client id was compiled in"));
+            }
+            Err(other) => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]
@@ -257,10 +178,6 @@ mod tests {
 
         let valid_config = OAuthConfig::github("client-id");
         assert!(valid_config.validate().is_ok());
-
-        let invalid_auth_code =
-            OAuthConfig::github("client-id").with_flow(AuthFlow::AuthorizationCode);
-        assert!(invalid_auth_code.validate().is_err());
     }
 
     #[test]
@@ -280,23 +197,6 @@ mod tests {
         // Default scopes
         let default_cfg = OAuthConfig::github("id123");
         assert_eq!(default_cfg.scopes_string(), "repo read:user");
-    }
-
-    #[test]
-    fn test_config_callback_url() {
-        let config = OAuthConfig::github("id123");
-        assert_eq!(
-            config.callback_url(),
-            "http://127.0.0.1:8585/callback",
-            "Default callback URL should use port 8585"
-        );
-
-        let custom = OAuthConfig::github("id123").with_callback_port(9999);
-        assert_eq!(
-            custom.callback_url(),
-            "http://127.0.0.1:9999/callback",
-            "Custom port should be reflected in callback URL"
-        );
     }
 
     #[test]

@@ -6,7 +6,6 @@
 use crate::config::{OAuthConfig, OAuthProvider};
 use crate::error::{OAuthError, Result};
 use crate::github_api::GitHubClient;
-use crate::oauth::OAuthFlow;
 use crate::token_store::{TokenInfo, TokenStoreManager};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -131,21 +130,13 @@ impl GitHubSyncBackend {
     /// Attempts to refresh an expired token using the refresh_token grant.
     fn try_refresh_token(token_store: &TokenStoreManager, token: &TokenInfo) -> Result<TokenInfo> {
         let refresh_token = token.refresh_token().ok_or(OAuthError::TokenExpired)?;
-
-        let config = OAuthConfig::from_env().unwrap_or_default();
+        let (token_url, request) = refresh_request(refresh_token)?;
 
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .user_agent("Lilypad-OAuth/1.0")
             .build()
             .map_err(|e| OAuthError::NetworkError(e.to_string()))?;
-
-        #[derive(serde::Serialize)]
-        struct RefreshRequest<'a> {
-            client_id: &'a str,
-            grant_type: &'a str,
-            refresh_token: &'a str,
-        }
 
         #[derive(serde::Deserialize)]
         struct RefreshResponse {
@@ -158,14 +149,8 @@ impl GitHubSyncBackend {
             error_description: Option<String>,
         }
 
-        let request = RefreshRequest {
-            client_id: &config.client_id,
-            grant_type: "refresh_token",
-            refresh_token,
-        };
-
         let response = client
-            .post(&config.token_url)
+            .post(&token_url)
             .header("Accept", "application/json")
             .form(&request)
             .send()?;
@@ -200,30 +185,6 @@ impl GitHubSyncBackend {
         token_store.save_token(OAuthProvider::GitHub, new_token.clone())?;
 
         Ok(new_token)
-    }
-
-    /// Creates a new GitHub sync backend with a fresh OAuth flow.
-    pub fn authenticate(config: OAuthConfig) -> Result<Self> {
-        let flow = OAuthFlow::new(config)?;
-        let result = flow.authenticate()?;
-
-        // Get user info
-        let client = GitHubClient::new(&result.access_token)?;
-        let user = client.get_user()?;
-
-        // Store token
-        let token_store = TokenStoreManager::new()?;
-        let token_info = result.to_token_info().with_username(user.login.clone());
-        token_store.save_token(OAuthProvider::GitHub, token_info)?;
-
-        Ok(Self {
-            client,
-            username: user.login,
-            token_store,
-            metadata: None,
-            cached_sha: None,
-            device_id: generate_device_id(),
-        })
     }
 
     /// Returns the authenticated GitHub username.
@@ -483,6 +444,28 @@ fn generate_device_id() -> String {
 }
 
 /// Returns the current Unix timestamp.
+/// Form of a `refresh_token` grant.
+#[derive(serde::Serialize)]
+struct RefreshRequest<'a> {
+    client_id: String,
+    grant_type: &'static str,
+    refresh_token: &'a str,
+}
+
+/// The token endpoint and form that refresh `refresh_token` with the OAuth App
+/// it was issued to at sign-in: the compiled-in one.
+fn refresh_request(refresh_token: &str) -> Result<(String, RefreshRequest<'_>)> {
+    let config = OAuthConfig::builtin_github()?;
+    Ok((
+        config.token_url,
+        RefreshRequest {
+            client_id: config.client_id,
+            grant_type: "refresh_token",
+            refresh_token,
+        },
+    ))
+}
+
 fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -493,6 +476,45 @@ fn current_timestamp() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_refresh_request_carries_the_compiled_in_client_id() {
+        match refresh_request("refresh") {
+            Ok((token_url, request)) => {
+                assert!(!crate::BUILTIN_GITHUB_CLIENT_ID.is_empty());
+                assert_eq!(request.client_id, crate::BUILTIN_GITHUB_CLIENT_ID);
+                assert_eq!(request.grant_type, "refresh_token");
+                assert_eq!(request.refresh_token, "refresh");
+                assert_eq!(token_url, "https://github.com/login/oauth/access_token");
+            }
+            Err(OAuthError::ConfigError(msg)) => {
+                assert!(crate::BUILTIN_GITHUB_CLIENT_ID.is_empty());
+                assert!(msg.contains("no GitHub OAuth client id was compiled in"));
+            }
+            Err(other) => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_refresh_needs_the_compiled_in_client_id() {
+        if !crate::BUILTIN_GITHUB_CLIENT_ID.is_empty() {
+            // With a client ID compiled in, the refresh would reach GitHub;
+            // test_refresh_request_carries_the_compiled_in_client_id covers it.
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let store = TokenStoreManager::with_path(dir.path().join("tokens.json"));
+        let token = TokenInfo::new("expired".into(), "bearer".into(), "repo".into())
+            .with_refresh_token(Some("refresh".into()));
+
+        // Fails before any request instead of POSTing an empty client_id.
+        let err = GitHubSyncBackend::try_refresh_token(&store, &token).unwrap_err();
+        let OAuthError::ConfigError(msg) = &err else {
+            panic!("unexpected error: {err:?}");
+        };
+        assert!(msg.contains("no GitHub OAuth client id was compiled in"));
+        assert!(store.load_token(OAuthProvider::GitHub).unwrap().is_none());
+    }
 
     #[test]
     fn test_sync_metadata() {

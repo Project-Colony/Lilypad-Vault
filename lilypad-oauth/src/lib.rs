@@ -1,7 +1,7 @@
 //! Lilypad OAuth - GitHub OAuth authentication and vault synchronization.
 //!
 //! This crate provides:
-//! - GitHub OAuth authentication flow (Device Flow and Authorization Code Flow)
+//! - GitHub OAuth authentication (Device Flow)
 //! - GitHub API client for repository management
 //! - Vault synchronization backend for storing encrypted vaults in GitHub repos
 //!
@@ -40,13 +40,14 @@ mod token_store;
 pub use config::{OAuthConfig, OAuthProvider};
 pub use error::{OAuthError, Result};
 pub use github_api::{GitHubClient, GitHubRepo, GitHubUser};
-pub use oauth::{AuthorizationResult, DeviceFlowAuth, OAuthFlow};
+pub use oauth::{AuthorizationResult, DeviceFlowAuth};
 pub use sync::{GitHubSyncBackend, SyncMetadata, SyncStatus};
 pub use token_store::{TokenInfo, TokenStoreManager};
 
 /// Built-in OAuth client ID, set at compile time via `LILYPAD_GITHUB_CLIENT_ID`.
-/// At runtime, the environment variable `LILYPAD_GITHUB_CLIENT_ID` takes precedence.
-/// If neither is set, OAuth operations will fail with a clear configuration error.
+/// It is the only client ID Lilypad uses: the variable is not read at run time.
+/// If it was not set at build time, sign-in and token refresh fail with a
+/// configuration error (see [`OAuthConfig::builtin_github`]).
 ///
 /// ```
 /// // When built without the env var, the constant is an empty string.
