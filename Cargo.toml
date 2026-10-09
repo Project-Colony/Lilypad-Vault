@@ -19,7 +19,8 @@ version = "0.2.0" # x-release-please-version
 edition = "2021"
 authors = ["Lilypad Contributors"]
 license = "GPL-3.0-or-later"
-# The floor CI checks (job "MSRV"); clippy.toml carries the same value.
+repository = "https://github.com/Project-Colony/Lilypad-Vault"
+# The floor CI checks (job "MSRV"). Clippy reads it too, as its MSRV.
 rust-version = "1.89"
 
 # Shared by every Project Colony program (Project-Colony-Resources,
