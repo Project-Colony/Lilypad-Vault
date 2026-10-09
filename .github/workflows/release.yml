@@ -135,8 +135,12 @@ jobs:
           ref: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable branch
+      # Pinned to master with `toolchain: stable` rather than to the `stable`
+      # branch: that branch is rebased onto every master commit, so a SHA
+      # pinned on it stops being reachable from any branch.
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master, 2026-10-09
         with:
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       # No build cache here: SignPath forbids release builds that reuse
