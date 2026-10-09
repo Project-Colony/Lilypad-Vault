@@ -2,8 +2,9 @@
 
 All notable changes to Lilypad will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+From 0.2.0 on, entries are written by release-please from the Conventional
+Commits merged into main. The project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.2.0](https://github.com/Project-Colony/Lilypad-Vault/compare/v0.1.1...v0.2.0) (2026-10-09)
 
@@ -27,7 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * add a security policy, move doc/ to docs/ and write the core README in English ([#5](https://github.com/Project-Colony/Lilypad-Vault/issues/5)) ([ed71482](https://github.com/Project-Colony/Lilypad-Vault/commit/ed71482bef5fbd581b8c925f75de4d5fe330c7a1))
 
-## [Unreleased]
+## Before 0.2.0 (February to March 2026)
+
+Work done after 0.1.1 that never shipped in a release of its own. 0.2.0 then
+rebuilt the CLI, the TUI and the desktop app on a shared service layer, so
+the entries about those frontends describe the versions it replaced.
 
 ### Added
 - **Core**: Compromised and IncompleteEntry health issue detection with severity levels
