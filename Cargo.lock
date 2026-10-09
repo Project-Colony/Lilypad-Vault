@@ -2866,7 +2866,7 @@ dependencies = [
 
 [[package]]
 name = "lilypad-app"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "csv",
@@ -2891,7 +2891,7 @@ dependencies = [
 
 [[package]]
 name = "lilypad-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2910,7 +2910,7 @@ dependencies = [
 
 [[package]]
 name = "lilypad-common"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "arboard",
@@ -2924,7 +2924,7 @@ dependencies = [
 
 [[package]]
 name = "lilypad-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "argon2",
  "chacha20poly1305",
@@ -2938,7 +2938,7 @@ dependencies = [
 
 [[package]]
 name = "lilypad-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "iced",
  "lilypad-app",
@@ -2954,7 +2954,7 @@ dependencies = [
 
 [[package]]
 name = "lilypad-oauth"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -2978,7 +2978,7 @@ dependencies = [
 
 [[package]]
 name = "lilypad-storage"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2995,7 +2995,7 @@ dependencies = [
 
 [[package]]
 name = "lilypad-tui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "crossterm",

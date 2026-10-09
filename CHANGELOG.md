@@ -2,10 +2,37 @@
 
 All notable changes to Lilypad will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+From 0.2.0 on, entries are written by release-please from the Conventional
+Commits merged into main. The project adheres to
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0](https://github.com/Project-Colony/Lilypad-Vault/compare/v0.1.1...v0.2.0) (2026-10-09)
+
+
+### Features
+
+* rebuild the frontends on a shared service layer ([484ccf9](https://github.com/Project-Colony/Lilypad-Vault/commit/484ccf96be71ed19f85dad793bdb591ba90b28db))
+
+
+### Fixes
+
+* **ci:** grant the Security Audit job permission to publish its check run ([2321cdb](https://github.com/Project-Colony/Lilypad-Vault/commit/2321cdb4d358c86baf1879692c19148a2ca5a1e4))
+* **deps:** move the TUI to ratatui 0.30 to drop lru 0.12 ([44bc117](https://github.com/Project-Colony/Lilypad-Vault/commit/44bc11711a3d98063176ac2390cc46b33e2e6e31))
+* **deps:** move to the RustCrypto 0.11 stack, whoami 2 and criterion 0.8 ([#1](https://github.com/Project-Colony/Lilypad-Vault/issues/1)) ([990c9ee](https://github.com/Project-Colony/Lilypad-Vault/commit/990c9ee24aa4e346aa9b5cf838a51c5878920171))
+* **desktop:** pass the message constructor instead of wrapping it ([b6bc9b4](https://github.com/Project-Colony/Lilypad-Vault/commit/b6bc9b4efe21de166cd42e001f14d27dde52f832))
+* **desktop:** stop opening a console window beside the app on Windows ([#3](https://github.com/Project-Colony/Lilypad-Vault/issues/3)) ([6a31ff1](https://github.com/Project-Colony/Lilypad-Vault/commit/6a31ff1300d1e828c9e1bee6896d43f7cd30ed06))
+* keep existing vaults reachable after the frontend rewrite ([db75fd5](https://github.com/Project-Colony/Lilypad-Vault/commit/db75fd556110a8f1f03ac48afe920e14f224b0b9))
+
+
+### Documentation
+
+* add a security policy, move doc/ to docs/ and write the core README in English ([#5](https://github.com/Project-Colony/Lilypad-Vault/issues/5)) ([ed71482](https://github.com/Project-Colony/Lilypad-Vault/commit/ed71482bef5fbd581b8c925f75de4d5fe330c7a1))
+
+## Before 0.2.0 (February to March 2026)
+
+Work done after 0.1.1 that never shipped in a release of its own. 0.2.0 then
+rebuilt the CLI, the TUI and the desktop app on a shared service layer, so
+the entries about those frontends describe the versions it replaced.
 
 ### Added
 - **Core**: Compromised and IncompleteEntry health issue detection with severity levels
