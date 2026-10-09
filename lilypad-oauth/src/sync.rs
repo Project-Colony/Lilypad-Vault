@@ -130,22 +130,13 @@ impl GitHubSyncBackend {
     /// Attempts to refresh an expired token using the refresh_token grant.
     fn try_refresh_token(token_store: &TokenStoreManager, token: &TokenInfo) -> Result<TokenInfo> {
         let refresh_token = token.refresh_token().ok_or(OAuthError::TokenExpired)?;
-
-        // The same OAuth App the token was issued to at sign-in.
-        let config = OAuthConfig::builtin_github()?;
+        let (token_url, request) = refresh_request(refresh_token)?;
 
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .user_agent("Lilypad-OAuth/1.0")
             .build()
             .map_err(|e| OAuthError::NetworkError(e.to_string()))?;
-
-        #[derive(serde::Serialize)]
-        struct RefreshRequest<'a> {
-            client_id: &'a str,
-            grant_type: &'a str,
-            refresh_token: &'a str,
-        }
 
         #[derive(serde::Deserialize)]
         struct RefreshResponse {
@@ -158,14 +149,8 @@ impl GitHubSyncBackend {
             error_description: Option<String>,
         }
 
-        let request = RefreshRequest {
-            client_id: &config.client_id,
-            grant_type: "refresh_token",
-            refresh_token,
-        };
-
         let response = client
-            .post(&config.token_url)
+            .post(&token_url)
             .header("Accept", "application/json")
             .form(&request)
             .send()?;
@@ -459,6 +444,28 @@ fn generate_device_id() -> String {
 }
 
 /// Returns the current Unix timestamp.
+/// Form of a `refresh_token` grant.
+#[derive(serde::Serialize)]
+struct RefreshRequest<'a> {
+    client_id: String,
+    grant_type: &'static str,
+    refresh_token: &'a str,
+}
+
+/// The token endpoint and form that refresh `refresh_token` with the OAuth App
+/// it was issued to at sign-in: the compiled-in one.
+fn refresh_request(refresh_token: &str) -> Result<(String, RefreshRequest<'_>)> {
+    let config = OAuthConfig::builtin_github()?;
+    Ok((
+        config.token_url,
+        RefreshRequest {
+            client_id: config.client_id,
+            grant_type: "refresh_token",
+            refresh_token,
+        },
+    ))
+}
+
 fn current_timestamp() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -471,10 +478,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_refresh_request_carries_the_compiled_in_client_id() {
+        match refresh_request("refresh") {
+            Ok((token_url, request)) => {
+                assert!(!crate::BUILTIN_GITHUB_CLIENT_ID.is_empty());
+                assert_eq!(request.client_id, crate::BUILTIN_GITHUB_CLIENT_ID);
+                assert_eq!(request.grant_type, "refresh_token");
+                assert_eq!(request.refresh_token, "refresh");
+                assert_eq!(token_url, "https://github.com/login/oauth/access_token");
+            }
+            Err(OAuthError::ConfigError(msg)) => {
+                assert!(crate::BUILTIN_GITHUB_CLIENT_ID.is_empty());
+                assert!(msg.contains("no GitHub OAuth client id was compiled in"));
+            }
+            Err(other) => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
     fn test_refresh_needs_the_compiled_in_client_id() {
         if !crate::BUILTIN_GITHUB_CLIENT_ID.is_empty() {
-            // With a client ID compiled in, the refresh would reach GitHub.
-            // config::tests checks that this is the ID it carries.
+            // With a client ID compiled in, the refresh would reach GitHub;
+            // test_refresh_request_carries_the_compiled_in_client_id covers it.
             return;
         }
         let dir = tempfile::tempdir().unwrap();
