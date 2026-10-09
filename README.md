@@ -91,6 +91,9 @@ Code, comments, documentation and commit messages are in English. Commits
 follow [Conventional Commits](https://www.conventionalcommits.org/): releases,
 their version and their changelog are made by release-please from them.
 
+How to build, test and open a pull request is in
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
+
 ## Code signing policy
 
 Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
@@ -147,6 +150,8 @@ your option) any later version** (`GPL-3.0-or-later`). The full text is in
 Contributions are accepted under the same terms: by submitting a patch you
 agree that it may be distributed under GPL-3.0-or-later.
 
-The bundled JetBrains Mono fonts under `ui/Assets/Fonts/` and
-`ui/desktop/assets/fonts/` are third-party assets distributed under the SIL
-Open Font License 1.1 and are not covered by the GPL.
+The JetBrains Mono Nerd Font files in `ui/desktop/assets/fonts/` are
+third-party assets under the SIL Open Font License 1.1, with icon glyphs under
+their own licences, and are not covered by the GPL. See
+[`OFL.txt`](ui/desktop/assets/fonts/OFL.txt) and
+[`NERD-FONTS-NOTICE.md`](ui/desktop/assets/fonts/NERD-FONTS-NOTICE.md).

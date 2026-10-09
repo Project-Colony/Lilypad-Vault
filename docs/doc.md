@@ -9,7 +9,7 @@ This document outlines how to develop Lilypad, a Rust-based password manager. It
    - Install optional helpers such as `cargo-edit` for managing dependencies.
 2. **Create the workspace layout**
    - Initialize a Cargo workspace with crates for `core` (cryptography and secrets domain), `storage` (local and synced persistence), and `interfaces` (CLI, TUI, or desktop frontends).
-   - Add shared tooling configuration (e.g., `rustfmt.toml`, `clippy.toml`) at the workspace root.
+   - Add shared tooling configuration (e.g., `.rustfmt.toml`) at the workspace root. Clippy takes its MSRV from `rust-version` in `Cargo.toml`.
 3. **Implement core functionality**
    - Define domain models for vaults, entries, key material, and audit logs.
    - Integrate cryptographic primitives (key derivation, encryption/decryption, secure random generation) using vetted crates.
