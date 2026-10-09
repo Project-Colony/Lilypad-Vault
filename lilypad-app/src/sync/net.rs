@@ -14,7 +14,7 @@ use crate::error::{AppError, Result};
 use crate::vault::App;
 use lilypad_oauth::{
     DeviceFlowAuth, GitHubClient, GitHubSyncBackend, OAuthConfig, OAuthError, OAuthProvider,
-    TokenStoreManager, BUILTIN_GITHUB_CLIENT_ID, DEFAULT_GITHUB_SCOPES,
+    TokenStoreManager,
 };
 
 use super::state::SyncState;
@@ -64,19 +64,9 @@ fn map_oauth(e: OAuthError) -> AppError {
     }
 }
 
+/// The compiled-in OAuth App; token refresh in `lilypad-oauth` uses the same.
 fn github_config() -> Result<OAuthConfig> {
-    if BUILTIN_GITHUB_CLIENT_ID.is_empty() {
-        return Err(AppError::Sync(
-            "no GitHub OAuth client id was compiled in (build with LILYPAD_GITHUB_CLIENT_ID)"
-                .to_string(),
-        ));
-    }
-    Ok(OAuthConfig::github(BUILTIN_GITHUB_CLIENT_ID).with_scopes(
-        DEFAULT_GITHUB_SCOPES
-            .iter()
-            .map(|s| s.to_string())
-            .collect(),
-    ))
+    OAuthConfig::builtin_github().map_err(map_oauth)
 }
 
 /// Current authentication state (reads the local token store; the
