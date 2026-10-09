@@ -11,17 +11,17 @@ Commits merged into main. The project adheres to
 
 ### Features
 
-* rebuild the frontends on a shared service layer ([#62](https://github.com/Project-Colony/Lilypad-Vault/issues/62)) ([484ccf9](https://github.com/Project-Colony/Lilypad-Vault/commit/484ccf96be71ed19f85dad793bdb591ba90b28db))
+* rebuild the frontends on a shared service layer ([484ccf9](https://github.com/Project-Colony/Lilypad-Vault/commit/484ccf96be71ed19f85dad793bdb591ba90b28db))
 
 
 ### Fixes
 
-* **ci:** grant the Security Audit job permission to publish its check run ([#59](https://github.com/Project-Colony/Lilypad-Vault/issues/59)) ([2321cdb](https://github.com/Project-Colony/Lilypad-Vault/commit/2321cdb4d358c86baf1879692c19148a2ca5a1e4))
-* **deps:** move the TUI to ratatui 0.30 to drop lru 0.12 ([#65](https://github.com/Project-Colony/Lilypad-Vault/issues/65)) ([44bc117](https://github.com/Project-Colony/Lilypad-Vault/commit/44bc11711a3d98063176ac2390cc46b33e2e6e31))
+* **ci:** grant the Security Audit job permission to publish its check run ([2321cdb](https://github.com/Project-Colony/Lilypad-Vault/commit/2321cdb4d358c86baf1879692c19148a2ca5a1e4))
+* **deps:** move the TUI to ratatui 0.30 to drop lru 0.12 ([44bc117](https://github.com/Project-Colony/Lilypad-Vault/commit/44bc11711a3d98063176ac2390cc46b33e2e6e31))
 * **deps:** move to the RustCrypto 0.11 stack, whoami 2 and criterion 0.8 ([#1](https://github.com/Project-Colony/Lilypad-Vault/issues/1)) ([990c9ee](https://github.com/Project-Colony/Lilypad-Vault/commit/990c9ee24aa4e346aa9b5cf838a51c5878920171))
 * **desktop:** pass the message constructor instead of wrapping it ([b6bc9b4](https://github.com/Project-Colony/Lilypad-Vault/commit/b6bc9b4efe21de166cd42e001f14d27dde52f832))
 * **desktop:** stop opening a console window beside the app on Windows ([#3](https://github.com/Project-Colony/Lilypad-Vault/issues/3)) ([6a31ff1](https://github.com/Project-Colony/Lilypad-Vault/commit/6a31ff1300d1e828c9e1bee6896d43f7cd30ed06))
-* keep existing vaults reachable after the frontend rewrite ([#63](https://github.com/Project-Colony/Lilypad-Vault/issues/63)) ([db75fd5](https://github.com/Project-Colony/Lilypad-Vault/commit/db75fd556110a8f1f03ac48afe920e14f224b0b9))
+* keep existing vaults reachable after the frontend rewrite ([db75fd5](https://github.com/Project-Colony/Lilypad-Vault/commit/db75fd556110a8f1f03ac48afe920e14f224b0b9))
 
 
 ### Documentation
