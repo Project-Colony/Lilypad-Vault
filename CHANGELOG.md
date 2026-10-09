@@ -6,6 +6,15 @@ From 0.2.0 on, entries are written by release-please from the Conventional
 Commits merged into main. The project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1](https://github.com/Project-Colony/Lilypad-Vault/compare/v0.2.0...v0.2.1) (2026-10-09)
+
+
+### Fixes
+
+* **deps:** update clap_complete to 4.6.11 and refresh locked dependencies ([#18](https://github.com/Project-Colony/Lilypad-Vault/issues/18)) ([c591a4d](https://github.com/Project-Colony/Lilypad-Vault/commit/c591a4d0e73d7bbf55553dc609c124a0d9209e0e))
+* **deps:** update openssl to 0.10.81 ([#8](https://github.com/Project-Colony/Lilypad-Vault/issues/8)) ([a41d9fe](https://github.com/Project-Colony/Lilypad-Vault/commit/a41d9fe04b3d95deccb574c77fa276f149bcd287))
+* **sync:** ignore OAuth settings from the environment and refresh tokens with the built-in client ID ([#10](https://github.com/Project-Colony/Lilypad-Vault/issues/10)) ([d6a0aa5](https://github.com/Project-Colony/Lilypad-Vault/commit/d6a0aa56f4778550b327053c0a4cc57df52e8574))
+
 ## [0.2.0](https://github.com/Project-Colony/Lilypad-Vault/compare/v0.1.1...v0.2.0) (2026-10-09)
 
 
