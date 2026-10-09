@@ -15,7 +15,7 @@ resolver = "2"
 # One version for every crate, bumped by release-please (see
 # release-please-config.json). It is what `--version` prints and what the
 # Windows version resource carries.
-version = "0.1.0" # x-release-please-version
+version = "0.2.0" # x-release-please-version
 edition = "2021"
 authors = ["Lilypad Contributors"]
 license = "GPL-3.0-or-later"
