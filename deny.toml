@@ -31,7 +31,10 @@ allow = [
     "Zlib",
     "BSL-1.0",
     "CC0-1.0",
-    "OpenSSL",
+    # The Mozilla root certificate data in webpki-root-certs, pulled in by
+    # rustls-platform-verifier (reqwest's TLS stack). A permissive data licence
+    # with no copyleft.
+    "CDLA-Permissive-2.0",
     # MPL-2.0 is weak, file-level copyleft, not strong copyleft: it reaches only
     # the MPL-licensed files themselves, never the work they are linked into, so
     # it cannot infect Lilypad's own code. It is also explicitly GPL-compatible
