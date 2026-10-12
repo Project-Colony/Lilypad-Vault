@@ -639,6 +639,11 @@ impl LilypadApp {
 
             Message::VaultSelected(v) => {
                 self.leave_preferences();
+                // Picked in the sidebar: show its unlock card, also from the
+                // create-vault card.
+                if self.session.is_none() {
+                    self.screen = Screen::Unlock;
+                }
                 self.selected_vault = Some(v);
                 // The last fetched sync status described the previous vault.
                 self.sync_status = None;

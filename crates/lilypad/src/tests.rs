@@ -139,6 +139,17 @@ fn the_toggle_opens_and_closes_preferences() {
 }
 
 #[test]
+fn picking_a_vault_in_the_sidebar_shows_its_unlock_card() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "v", "pw", "gh");
+    let _ = app.update(Message::ShowCreate);
+    let _ = app.update(Message::VaultSelected("v".to_string()));
+    assert!(app.screen == crate::state::Screen::Unlock);
+    assert_eq!(app.selected_vault.as_deref(), Some("v"));
+}
+
+#[test]
 fn choosing_a_sidebar_destination_leaves_preferences() {
     let dir = TempDir::new().unwrap();
     let mut app = app_in(&dir);
