@@ -29,7 +29,7 @@ request merges only when all of it is green.
 To run a program during development:
 
 ```bash
-cargo run -p lilypad-desktop
+cargo run -p lilypad
 cargo run -p lilypad-tui
 cargo run -p lilypad-cli -- --help
 ```

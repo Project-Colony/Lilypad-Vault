@@ -1,0 +1,130 @@
+# Architecture
+
+Lilypad ships three programs, the desktop app, the TUI and the CLI, over one
+library that knows everything about vaults. The programs only collect input
+and render results; every decision about a vault (unlocking, writing,
+locking, syncing, clipboard policy) is made in the library, so the three can
+never disagree about how a vault is read or written.
+
+```
+crates/
+├── lilypad/        the desktop app (iced), binary `lilypad`
+├── lilypad-tui/    the terminal interface (ratatui), binary `lilypad-tui`
+├── lilypad-cli/    the command line (clap), binary `lilypad-cli`
+└── lilypad-core/   the library the three share
+```
+
+Each binary has its own `build.rs`, which writes the Windows version resource
+(product name `Lilypad`, the workspace version) that code signing requires.
+
+## Data flow
+
+```
+ lilypad / lilypad-tui / lilypad-cli
+        │  App::open, App::unlock, add_entry, sync::net::push, ...
+        ▼
+ lilypad-core service layer ── AppError (one typed error)
+        │                 │
+        ▼                 ▼
+     storage            oauth ──► api.github.com
+   (vault files,     (device-flow sign-in,
+    backups, keys)    token store, GitHub API)
+        │
+        ▼
+   models + crypto
+ (Vault, Entry, Argon2id, XChaCha20-Poly1305)
+```
+
+A frontend opens an `App` for a data directory, unlocks a vault into a
+`Session` and passes that session to the operation it wants. Unlocking only
+reads: a wrong master password can never overwrite a vault. Every write is a
+read-modify-write under an exclusive per-vault lock (`locking`), so two
+programs working on the same vault cannot lose each other's changes.
+
+## lilypad-core
+
+| Module | What lives there |
+|---|---|
+| `models/` | `Vault` and its merge logic (`vault.rs`), `Entry` with metadata, colours, custom fields and history (`entry.rs`), the encrypted `EntrySecret` with TOTP backup codes and attachments (`secret.rs`), key metadata (`keys.rs`) |
+| `crypto` | Argon2id key derivation and XChaCha20-Poly1305 encryption |
+| `error` | `CoreError` for the models and the crypto, `AppError` for everything the frontends call |
+| `storage` | `LocalStore`: the `.lily` file format, atomic writes, key files, backups, the audit log |
+| `oauth/` | GitHub device-flow sign-in (`device_flow.rs`), the token store, the GitHub API client and the sync backend that stores a vault in a private repository |
+| `sync/` | validated pull, push and entry-level merge over `oauth` (`net.rs`), and the per-vault sync state (`state.rs`) |
+| `vault` | `App` and `OpenOptions`: opening a data directory, creating, unlocking, renaming and deleting vaults |
+| `session` | `Session`: an unlocked vault and its key, with the idle auto-lock policy |
+| `entries` | every entry operation: add, edit (field-preserving), tags, folders, Trash, history, backup codes |
+| `secret` | the one place an `EntrySecret` is encrypted or decrypted, with zeroizing guards |
+| `password` | master-password normalization (trim, then Unicode NFC), applied once before every key derivation |
+| `crypto_ops` | changing a master password |
+| `locking` | the cross-process per-vault lock |
+| `management` | backups: create, list, restore, prune |
+| `import` | the importer (format detected from content) and the CSV export |
+| `breach` | the Have I Been Pwned k-anonymity check |
+| `health` | the password health analysis and the report for an unlocked vault |
+| `search` | the fuzzy and advanced search |
+| `validation` | vault names, entry sizes, password strength |
+| `generator`, `totp` | the password generator and TOTP codes |
+| `keyfile`, `clipboard`, `time` | the legacy `key.json` key file, the clipboard, timestamp formatting |
+| `paths` | resolving the data directory |
+| `settings` | the settings file every frontend shares |
+
+### The vault file
+
+A vault is `vaults/<name>.lily` in the data directory. The file starts with a
+`LILYPAD_VAULT_V2` header line and a comment saying the file is an encrypted
+vault, followed by JSON: the format version, the key metadata (key identifier,
+algorithm and, from V2, the Argon2id parameters and salt), a checksum of the
+ciphertext, an encrypted password verifier and the ciphertext itself. The
+ciphertext holds the whole vault (name, entries, metadata); each entry's
+secrets are encrypted a second time inside it. A V1 vault has no embedded key
+parameters and needs the `key.json` key file beside it. Legacy `.json` vault
+files are still read; new vaults are always written as `.lily`.
+
+## lilypad (desktop)
+
+```
+src/
+├── main.rs        entry point: --version, logging, the iced application
+├── state.rs       LilypadApp, the screens and overlays, shared helpers
+├── message.rs     every message the app handles
+├── update.rs      the update loop and the background tasks (Argon2, sync)
+├── view/          mod.rs (shell, toast, shared widgets), unlock.rs, vault.rs, entry.rs
+├── settings.rs    the settings page
+├── theme.rs       styles
+└── fonts.rs       fonts and icon glyphs
+```
+
+Argon2 and every network call run off the UI thread (`Task` plus
+`spawn_blocking`). Buffers holding secrets (form fields, master-password
+fields, the sync password) are zeroized on drop, on lock and when the
+settings page closes.
+
+## lilypad-tui
+
+`main.rs` sets up the terminal and runs the event loop; `app.rs` holds the
+state, `input.rs` the keyboard handling of every screen and `ui.rs` the
+rendering.
+
+## lilypad-cli
+
+`main.rs` parses the arguments and dispatches; `args.rs` declares every flag
+and subcommand; `cmd.rs` implements the commands and `io.rs` the prompts and
+output. The CLI output is English only: it is a scripting interface.
+
+CLI builds older than the shared service layer kept vaults in `./.lilypad`,
+relative to the working directory. Lilypad cannot move those automatically;
+when the data directory is empty and `./.lilypad/vaults` holds vaults, the CLI
+prints a hint to open them with `--data-dir .lilypad`.
+
+## Tests
+
+- Unit tests sit next to the code they test.
+- `crates/lilypad-core/tests/` holds the integration tests: vaults written
+  before the RustCrypto upgrade must keep opening byte for byte
+  (`pre_crypto_upgrade_vaults.rs`, with fixtures), the store round-trip, and
+  the OAuth configuration seen from outside the crate.
+- `crates/lilypad-cli/tests/integration.rs` drives the CLI binary end to end.
+- The desktop and TUI test their state machines without a window or a
+  terminal (`crates/lilypad/src/tests.rs`, `crates/lilypad-tui/src/tests.rs`).
+- `cargo bench -p lilypad-core` measures key derivation and encryption.

@@ -4,7 +4,7 @@ Lilypad is a local-first password manager written in Rust, part of
 [Project Colony](https://github.com/Project-Colony). It comes as three programs
 that share one service layer, so they read and write vaults the same way:
 
-- **Lilypad** (`lilypad-desktop`), the desktop app, built with iced;
+- **Lilypad** (`lilypad`), the desktop app, built with iced;
 - **Lilypad TUI** (`lilypad-tui`), a keyboard-driven terminal interface;
 - **Lilypad CLI** (`lilypad-cli`), for scripts and the shell.
 
@@ -69,7 +69,7 @@ Ubuntu, `openssl` on Arch, `openssl-devel` on Fedora): HTTPS goes through the
 system OpenSSL.
 
 ```bash
-cargo build --release -p lilypad-desktop -p lilypad-cli -p lilypad-tui
+cargo build --release -p lilypad -p lilypad-cli -p lilypad-tui
 cargo test --workspace
 ```
 
@@ -80,12 +80,11 @@ no client ID was compiled in.
 
 ## Development
 
-The workspace has eight crates: `lilypad-core` (cryptography and models),
-`lilypad-storage` (vault files, backups, locking), `lilypad-common`
-(validation, health checks, search), `lilypad-oauth` (GitHub sign-in and the
-GitHub API), `lilypad-app` (the service layer the three programs share),
-`lilypad-cli`, `ui/tui` and `ui/desktop`. See [`docs/doc.md`](docs/doc.md) for
-the architecture.
+The workspace has four crates under `crates/`: `lilypad` (the desktop app),
+`lilypad-tui`, `lilypad-cli`, and `lilypad-core`, the library the three share
+(models, cryptography, storage, GitHub sync and the service layer). See
+[`docs/internals/architecture.md`](docs/internals/architecture.md) for the
+architecture.
 
 Code, comments, documentation and commit messages are in English. Commits
 follow [Conventional Commits](https://www.conventionalcommits.org/): releases,
