@@ -66,6 +66,7 @@ programs working on the same vault cannot lose each other's changes.
 | `validation` | vault names, entry sizes, password strength |
 | `generator`, `totp` | the password generator and TOTP codes |
 | `keyfile`, `clipboard`, `time` | the legacy `key.json` key file, the clipboard, timestamp formatting |
+| `i18n` | the interface strings of the desktop app and the TUI (see below) |
 | `paths` | the config and data directories, and the one-time move from where earlier releases kept their files |
 | `settings` | `preferences.json`: the Colony standard preferences plus Lilypad's own, shared by every frontend |
 
@@ -101,30 +102,51 @@ secrets are encrypted a second time inside it. A V1 vault has no embedded key
 parameters and needs the `key.json` key file beside it. Legacy `.json` vault
 files are still read; new vaults are always written as `.lily`.
 
+### Interface strings
+
+`config/i18n/en.json` and `fr.json` hold every string the desktop app and the
+TUI show, embedded at build time. `i18n::t` looks a key up in the active
+locale, then in English, then in the labels every Colony program shares
+(`colony_ui::i18n`: the Preferences skeleton, themes, accents). The locale is
+colony-ui's, set once at startup from the `language` preference or the
+system's. Errors shown in a window go through `AppError::localized`; the CLI
+prints `Display`, which stays English. Tests check that both files have the
+same keys and placeholders, that every key the code asks for exists and that
+every key is used.
+
 ## lilypad (desktop)
 
 ```
 src/
-├── main.rs        entry point: --version, logging, the iced application
+├── main.rs        entry point: --version, logging, fonts, the iced application
 ├── state.rs       LilypadApp, the screens and overlays, shared helpers
 ├── message.rs     every message the app handles
 ├── update.rs      the update loop and the background tasks (Argon2, sync)
-├── view/          mod.rs (shell, toast, shared widgets), unlock.rs, vault.rs, entry.rs
-├── settings.rs    the settings page
-├── theme.rs       styles
-└── fonts.rs       fonts and icon glyphs
+├── view/          mod.rs (shell, notices, dialogs), sidebar.rs, unlock.rs, vault.rs, entry.rs
+├── preferences/   mod.rs (page, General, Appearance, About), security.rs, vault.rs, sync.rs
+├── theme.rs       widget styles and the interface density
+└── icons.rs       the Nerd Font glyphs it draws
 ```
+
+The app is built on `colony-ui`, the Project Colony design system: every
+colour comes from the active Colony palette (theme, accent, high contrast),
+every font from its accessors (OpenDyslexic when the dyslexia font is on),
+every text size through `sz()` (font size times reading size), and Appearance
+and Accessibility are the kit's own sections. The Lilypad name at the top of
+the sidebar opens and closes Preferences, which replaces the content area
+while the sidebar stays. Tests reject a hand-written colour or a raw text size
+in `src/`.
 
 Argon2 and every network call run off the UI thread (`Task` plus
 `spawn_blocking`). Buffers holding secrets (form fields, master-password
-fields, the sync password) are zeroized on drop, on lock and when the
-settings page closes.
+fields, the sync password) are zeroized on drop, on lock and when
+Preferences closes.
 
 ## lilypad-tui
 
 `main.rs` sets up the terminal and runs the event loop; `app.rs` holds the
 state, `input.rs` the keyboard handling of every screen and `ui.rs` the
-rendering.
+rendering. It follows the same `language` preference as the desktop app.
 
 ## lilypad-cli
 
@@ -142,8 +164,9 @@ prints a hint to open them with `--data-dir .lilypad`.
 - Unit tests sit next to the code they test.
 - `crates/lilypad-core/tests/` holds the integration tests: vaults written
   before the RustCrypto upgrade must keep opening byte for byte
-  (`pre_crypto_upgrade_vaults.rs`, with fixtures), the store round-trip, and
-  the OAuth configuration seen from outside the crate.
+  (`pre_crypto_upgrade_vaults.rs`, with fixtures), the store round-trip, the
+  OAuth configuration seen from outside the crate, and the interface strings
+  against the code of every crate (`i18n_keys.rs`).
 - `crates/lilypad-cli/tests/integration.rs` drives the CLI binary end to end.
 - The desktop and TUI test their state machines without a window or a
   terminal (`crates/lilypad/src/tests.rs`, `crates/lilypad-tui/src/tests.rs`).

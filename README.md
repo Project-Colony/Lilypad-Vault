@@ -26,6 +26,10 @@ that share one service layer, so they read and write vaults the same way:
 - Safety backups before deleting a vault, changing a master password,
   restoring a backup and applying a synced copy; auto-lock; a clipboard that
   clears itself.
+- The desktop app and the TUI in English and French. The desktop app uses the
+  Project Colony themes and accent colours, and honours text size, high
+  contrast, a dyslexia-friendly font and reduced motion; click the Lilypad
+  name in its sidebar to open Preferences.
 
 ## Install
 
@@ -123,7 +127,7 @@ Team roles and members:
 Lilypad has no telemetry, no analytics, no account of its own and no update
 check. It contacts two networked services, each only when you ask it to.
 
-- **GitHub, for sync.** Signing in (`lilypad-cli login`, or Settings > Sync in
+- **GitHub, for sync.** Signing in (`lilypad-cli login`, or Preferences > Sync in
   the desktop app) uses GitHub's OAuth device flow: Lilypad shows a code, you
   approve it on github.com, and GitHub returns a token with the `repo` and
   `read:user` scopes. `repo` grants access to all your repositories, because
@@ -141,8 +145,8 @@ check. It contacts two networked services, each only when you ask it to.
   [Where your data lives](#where-your-data-lives)).
   Nothing is sent to GitHub until you sign in, and nothing after `logout`.
 - **Have I Been Pwned, for the breach check.** Only when you run it
-  (`lilypad-cli breach-check`, or the button in the desktop app's vault health
-  settings). Lilypad hashes each password with SHA-1 on your machine and sends
+  (`lilypad-cli breach-check`, or the button in Preferences > Vault > Health in
+  the desktop app). Lilypad hashes each password with SHA-1 on your machine and sends
   only the first five characters of each hash to
   `https://api.pwnedpasswords.com/range/`, with padding enabled. The service
   never receives a password or a full hash, and the answer is compared
@@ -160,8 +164,9 @@ your option) any later version** (`GPL-3.0-or-later`). The full text is in
 Contributions are accepted under the same terms: by submitting a patch you
 agree that it may be distributed under GPL-3.0-or-later.
 
-The JetBrains Mono Nerd Font files in `ui/desktop/assets/fonts/` are
-third-party assets under the SIL Open Font License 1.1, with icon glyphs under
-their own licences, and are not covered by the GPL. See
-[`OFL.txt`](ui/desktop/assets/fonts/OFL.txt) and
-[`NERD-FONTS-NOTICE.md`](ui/desktop/assets/fonts/NERD-FONTS-NOTICE.md).
+The desktop app embeds the Project Colony fonts (JetBrains Mono Nerd Font,
+OpenDyslexic and Font Awesome 6 Free) through the
+[`colony-ui`](https://crates.io/crates/colony-ui) crate. They are third-party
+assets under their own licences (the SIL Open Font License 1.1 for the
+typefaces), shipped with their licence texts in that crate, and are not
+covered by the GPL.
