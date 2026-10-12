@@ -1,6 +1,7 @@
 //! The TUI state and the operations every screen shares.
 
 use anyhow::Result;
+use lilypad_core::i18n::{t, tf};
 use lilypad_core::{App as Service, EntryView, OpenOptions, Session};
 use ratatui::widgets::ListState;
 use std::time::{Duration, Instant};
@@ -48,14 +49,14 @@ impl FormField {
         Self::ORDER[(i + Self::ORDER.len() - 1) % Self::ORDER.len()]
     }
     pub fn label(self) -> &'static str {
-        match self {
-            FormField::Label => "Label",
-            FormField::Username => "Username",
-            FormField::Url => "URL",
-            FormField::Password => "Password",
-            FormField::Notes => "Notes",
-            FormField::Totp => "TOTP secret",
-        }
+        t(match self {
+            FormField::Label => "field_label",
+            FormField::Username => "field_username",
+            FormField::Url => "field_url",
+            FormField::Password => "field_password",
+            FormField::Notes => "field_notes",
+            FormField::Totp => "tui_field_totp_secret",
+        })
     }
 }
 
@@ -145,6 +146,7 @@ impl App {
             auto_lock_after: None,
         })?;
         let settings = bootstrap.load_settings();
+        lilypad_core::i18n::set_locale(settings.locale());
         let auto_lock = settings.auto_lock_duration();
         let clipboard_clear_secs = settings.clipboard_clear_secs.max(1);
         let service = Service::open(OpenOptions {
@@ -273,17 +275,18 @@ impl App {
         }
     }
 
-    pub fn copy_to_clipboard(&mut self, value: &str, what: &str) {
+    /// Copies `value`; `what_key` is the i18n key naming what was copied.
+    pub fn copy_to_clipboard(&mut self, value: &str, what_key: &str) {
         match lilypad_core::clipboard::copy_to_clipboard(value) {
             Ok(()) => {
                 self.clipboard_clear_at =
                     Some(Instant::now() + Duration::from_secs(self.clipboard_clear_secs));
-                self.set_status(format!(
-                    "Copied {what} (auto-clears in {}s)",
-                    self.clipboard_clear_secs
+                self.set_status(tf(
+                    "status_copied",
+                    &[("what", &t(what_key)), ("secs", &self.clipboard_clear_secs)],
                 ));
             }
-            Err(_) => self.set_status("Clipboard unavailable (install wl-copy or xclip)"),
+            Err(_) => self.set_status(t("status_clipboard_unavailable")),
         }
     }
 
@@ -302,7 +305,7 @@ impl App {
         }
         if self.session.as_ref().is_some_and(|s| s.is_expired()) {
             self.lock();
-            self.set_status("Locked (idle timeout)");
+            self.set_status(t("status_locked_idle"));
         }
     }
 }

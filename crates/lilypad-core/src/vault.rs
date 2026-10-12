@@ -73,8 +73,14 @@ impl App {
         self.config_dir.join(crate::paths::TOKEN_FILE)
     }
 
-    pub(crate) fn data_dir(&self) -> &std::path::Path {
+    /// Where this profile's vaults, backups and sync state live.
+    pub fn data_dir(&self) -> &std::path::Path {
         &self.data_dir
+    }
+
+    /// Where this profile's preferences and GitHub sign-in live.
+    pub fn config_dir(&self) -> &std::path::Path {
+        &self.config_dir
     }
 
     pub(crate) fn sync_dir(&self) -> PathBuf {

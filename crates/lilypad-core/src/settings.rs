@@ -42,6 +42,10 @@ pub struct Settings {
     /// Seconds a copied secret stays on the clipboard before it is cleared.
     #[serde(default = "default_clipboard")]
     pub clipboard_clear_secs: u64,
+    /// The interface language as a tag (`en`, `fr`); `None` follows the
+    /// system.
+    #[serde(default)]
+    pub language: Option<String>,
     /// The vault to preselect on the unlock screen.
     #[serde(default)]
     pub active_vault: Option<String>,
@@ -67,6 +71,7 @@ impl Default for Settings {
         Self {
             auto_lock_minutes: default_auto_lock(),
             clipboard_clear_secs: default_clipboard(),
+            language: None,
             active_vault: None,
             standard: StandardPreferences::default(),
             density: 0,
@@ -134,6 +139,15 @@ impl Settings {
         settings.standard.selected_theme = family.to_string();
         settings.standard.selected_variant = variant.to_string();
         Ok(settings)
+    }
+
+    /// The interface locale: the chosen language, or the system's.
+    pub fn locale(&self) -> crate::i18n::Locale {
+        let tag = self
+            .language
+            .clone()
+            .unwrap_or_else(crate::i18n::system_language);
+        crate::i18n::Locale::from_tag(&tag)
     }
 
     /// Auto-lock duration, or `None` if disabled (0).
@@ -226,6 +240,17 @@ mod tests {
         let back = Settings::load(dir.path());
         assert_eq!(back.standard, s.standard);
         assert_eq!(back.auto_lock_minutes, 7);
+    }
+
+    #[test]
+    fn a_chosen_language_wins_over_the_system() {
+        let mut s = Settings {
+            language: Some("fr".to_string()),
+            ..Settings::default()
+        };
+        assert_eq!(s.locale(), crate::i18n::Locale::Fr);
+        s.language = Some("en-GB".to_string());
+        assert_eq!(s.locale(), crate::i18n::Locale::En);
     }
 
     #[test]

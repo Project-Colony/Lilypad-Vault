@@ -1,24 +1,31 @@
 //! The view layer: the window shell, shared widgets and helpers.
+//!
+//! The sidebar is always there; the content area to its right shows the
+//! current screen, or Preferences while it is open.
 
 mod entry;
+mod sidebar;
 mod unlock;
 mod vault;
 
-use crate::fonts;
+pub use entry::severity_color;
+
+use crate::icons;
 use crate::message::Message;
 use crate::state::{LilypadApp, Overlay, Screen};
-use crate::theme::{self};
-use iced::widget::{button, canvas, container, row, stack, text, Space};
-use iced::{Alignment, Background, Color, Element, Length, Radians};
+use crate::theme;
+use colony_ui::theme::Palette;
+use colony_ui::{sz, widgets, Typography};
+use iced::widget::{button, canvas, column, container, row, stack, text, Space};
+use iced::{Alignment, Color, Element, Length, Radians};
+use lilypad_core::i18n::{t, tf};
 use lilypad_core::EntryType;
 use std::time::Instant;
 
 impl LilypadApp {
     pub fn view(&self) -> Element<'_, Message> {
-        // The settings page is a full-screen replacement, reachable while locked
-        // or unlocked; it takes precedence over the normal screen.
-        let base: Element<Message> = if self.settings_open {
-            self.view_settings()
+        let content: Element<Message> = if self.preferences_open {
+            self.view_preferences()
         } else {
             match self.screen {
                 Screen::Unlock => self.view_unlock(),
@@ -28,55 +35,106 @@ impl LilypadApp {
         };
 
         let mut content: Element<Message> = match &self.overlay {
-            Overlay::None => base,
-            Overlay::Generator => stack![base, self.modal(self.view_generator())].into(),
-            Overlay::AddForm => stack![base, self.modal(self.view_add_form())].into(),
+            Overlay::None => content,
+            Overlay::Generator => stack![content, self.modal(self.view_generator())].into(),
+            Overlay::AddForm => stack![content, self.modal(self.view_add_form())].into(),
             Overlay::ConfirmDelete(label) => {
-                stack![base, self.modal(self.view_confirm(label))].into()
+                stack![content, self.modal(self.view_confirm(label))].into()
             }
         };
 
+        let notices = self.notices();
+        if let Some(notices) = notices {
+            content = stack![content, notices].into();
+        }
         if let Some(at) = self.clipboard_clear_at {
             let left = at.saturating_duration_since(Instant::now()).as_secs();
             content = stack![content, self.copy_toast(left)].into();
         }
 
-        let (t, d) = (self.theme, self.density);
-        container(content)
+        let d = self.density;
+        container(row![self.sidebar(), content])
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(move |_| theme::app_container(t, d))
+            .style(move |_| theme::app_container(d))
             .into()
     }
 
-    pub fn icon(&self, glyph: &str, size: f32, color: Color) -> Element<'static, Message> {
-        // Nerd Font glyphs have an asymmetric side-bearing (they sit right of
-        // center in their advance box). Compensate with a right nudge so icons
-        // look centered - especially in icon-only buttons.
-        fonts::centered_icon_colored(glyph, size, color)
+    /// The dismissible notices at the bottom of the content: "Theme
+    /// applied." and the last status message.
+    fn notices(&self) -> Option<Element<'_, Message>> {
+        let typo = Typography::current();
+        let mut col = column![].spacing(8).align_x(Alignment::Center);
+        let mut any = false;
+        if let Some(notice) = self.notice {
+            col = col.push(widgets::toast(&typo, notice, Message::DismissNotice));
+            any = true;
+        }
+        if let Some(status) = &self.status {
+            col = col.push(self.status_toast(status));
+            any = true;
+        }
+        any.then(|| {
+            container(col)
+                .padding(16)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .align_x(iced::alignment::Horizontal::Center)
+                .align_y(iced::alignment::Vertical::Bottom)
+                .into()
+        })
     }
 
-    // -- Unlock / Create -----------------------------------------------------
+    /// The last status message, neutral (it may be an error): click to
+    /// dismiss.
+    fn status_toast(&self, status: &str) -> Element<'static, Message> {
+        let d = self.density;
+        button(
+            row![
+                text(status.to_string())
+                    .size(sz(13))
+                    .color(Palette::TEXT_PRIMARY()),
+                hgap(10.0),
+                text(widgets::icons::CLOSE)
+                    .size(sz(12))
+                    .font(colony_ui::fonts::glyph_font())
+                    .color(Palette::TEXT_DIMMER()),
+            ]
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::Dismiss)
+        .padding([8, 16])
+        .style(move |_, _| {
+            let card = theme::modal_container(d);
+            button::Style {
+                background: card.background,
+                text_color: Palette::TEXT_PRIMARY(),
+                border: card.border,
+                shadow: card.shadow,
+                snap: false,
+            }
+        })
+        .into()
+    }
 
     pub fn copy_toast(&self, left: u64) -> Element<'static, Message> {
-        let (t, d) = (self.theme, self.density);
-        let p = self.theme.palette();
+        let d = self.density;
         let card = container(
             row![
-                self.icon(fonts::icons::CIRCLE_CHECK, 13.0, p.success),
+                icons::icon(icons::CIRCLE_CHECK, 13, Palette::SUCCESS()),
                 hgap(8.0),
-                text(format!("Copied · clears in {left}s"))
-                    .size(12)
-                    .color(p.text_secondary),
+                text(tf("copy_toast", &[("secs", &left)]))
+                    .size(sz(12))
+                    .color(Palette::TEXT_SECONDARY()),
                 hgap(10.0),
-                button(text("Undo").size(12))
+                button(text(t("copy_toast_undo")).size(sz(12)))
                     .on_press(Message::ClipboardCancel)
-                    .style(theme::ghost_style(t, d)),
+                    .style(theme::ghost_style(d)),
             ]
             .align_y(Alignment::Center),
         )
         .padding([8, 12])
-        .style(move |_| theme::modal_container(t, d));
+        .style(move |_| theme::modal_container(d));
         container(card)
             .width(Length::Fill)
             .height(Length::Fill)
@@ -86,54 +144,39 @@ impl LilypadApp {
             .into()
     }
 
-    pub fn status_inline(&self) -> Element<'_, Message> {
-        let p = self.theme.palette();
-        match &self.status {
-            Some(msg) => text(msg.clone()).size(13).color(p.text_secondary).into(),
-            None => vgap(0.0).into(),
-        }
-    }
-
     pub fn centered<'a>(&self, content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
-        let (t, d) = (self.theme, self.density);
+        let d = self.density;
         let card = container(content)
             .padding(28)
             .width(Length::Fill)
-            .max_width(440)
-            .style(move |_| theme::card_container(t, d));
+            .max_width(440.0 * colony_ui::font_scale())
+            .style(move |_| theme::card_container(d));
         container(card)
             .width(Length::Fill)
             .height(Length::Fill)
+            .padding(16)
             .align_x(iced::alignment::Horizontal::Center)
             .align_y(iced::alignment::Vertical::Center)
             .into()
     }
 
     pub fn modal<'a>(&self, content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
-        let (t, d) = (self.theme, self.density);
+        let d = self.density;
         let card = container(content)
             .padding(24)
-            .max_width(560)
-            .style(move |_| theme::modal_container(t, d));
+            .max_width(560.0 * colony_ui::font_scale())
+            .style(move |_| theme::modal_container(d));
         container(card)
             .width(Length::Fill)
             .height(Length::Fill)
             .center_x(Length::Fill)
             .center_y(Length::Fill)
-            .style(|_| container::Style {
-                background: Some(Background::Color(Color {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 0.55,
-                })),
-                ..Default::default()
-            })
+            .style(|_| theme::modal_backdrop())
             .into()
     }
 }
 
-/// All entry types, in picker order (labels via `type_label`).
+/// All entry types, in picker order.
 pub const ALL_TYPES: [EntryType; 8] = [
     EntryType::Login,
     EntryType::Card,
@@ -145,45 +188,23 @@ pub const ALL_TYPES: [EntryType; 8] = [
     EntryType::Custom,
 ];
 
-/// Expiry picker choices (label, value). None = keep the current setting.
+/// Expiry picker choices: (i18n key, value). None keeps the current setting,
+/// Some(0) means never.
 pub const EXPIRY_CHOICES: [(&str, Option<u32>); 7] = [
-    ("Keep current", None),
-    ("Never", Some(0)),
-    ("30 days", Some(30)),
-    ("60 days", Some(60)),
-    ("90 days", Some(90)),
-    ("180 days", Some(180)),
-    ("1 year", Some(365)),
+    ("expiry_keep", None),
+    ("expiry_never", Some(0)),
+    ("expiry_30_days", Some(30)),
+    ("expiry_60_days", Some(60)),
+    ("expiry_90_days", Some(90)),
+    ("expiry_180_days", Some(180)),
+    ("expiry_1_year", Some(365)),
 ];
 
-pub fn expiry_label_for(days: Option<u32>) -> &'static str {
-    EXPIRY_CHOICES
-        .iter()
-        .find(|(_, v)| *v == days)
-        .map(|(l, _)| *l)
-        .unwrap_or("Keep current")
-}
-
-/// The iced color for an entry's color label (mirrors EntryColor::to_hex).
-pub fn entry_color(c: lilypad_core::EntryColor) -> Color {
-    use lilypad_core::EntryColor as C;
-    match c {
-        C::Red => Color::from_rgb8(0xEF, 0x44, 0x44),
-        C::Orange => Color::from_rgb8(0xF9, 0x73, 0x16),
-        C::Yellow => Color::from_rgb8(0xEA, 0xB3, 0x08),
-        C::Green => Color::from_rgb8(0x22, 0xC5, 0x5E),
-        C::Blue => Color::from_rgb8(0x3B, 0x82, 0xF6),
-        C::Purple => Color::from_rgb8(0xA8, 0x55, 0xF7),
-        C::Pink => Color::from_rgb8(0xEC, 0x48, 0x99),
-        C::Gray => Color::from_rgb8(0x6B, 0x72, 0x80),
-    }
-}
-
-/// A circular countdown ring (used for the TOTP timer).
+/// A circular countdown ring (the TOTP timer).
 pub struct Ring {
-    fraction: f32,
-    color: Color,
-    track: Color,
+    pub fraction: f32,
+    pub color: Color,
+    pub track: Color,
 }
 
 impl canvas::Program<Message> for Ring {
@@ -225,31 +246,16 @@ impl canvas::Program<Message> for Ring {
     }
 }
 
-pub fn grade_letter(g: lilypad_core::HealthGrade) -> &'static str {
-    use lilypad_core::HealthGrade as G;
-    match g {
-        G::A => "A",
-        G::B => "B",
-        G::C => "C",
-        G::D => "D",
-        G::F => "F",
-    }
-}
-
 /// Grade letter with a +/- refinement from where the score sits in its band
 /// (e.g. score 88 in band B -> "B+"). F has no modifier.
 pub fn grade_display(score: u8, g: lilypad_core::HealthGrade) -> String {
     use lilypad_core::HealthGrade as G;
-    let letter = grade_letter(g);
-    if matches!(g, G::F) {
-        return letter.to_string();
-    }
-    let floor = match g {
-        G::A => 90,
-        G::B => 80,
-        G::C => 70,
-        G::D => 60,
-        G::F => 0,
+    let (letter, floor) = match g {
+        G::A => ("A", 90),
+        G::B => ("B", 80),
+        G::C => ("C", 70),
+        G::D => ("D", 60),
+        G::F => return "F".to_string(),
     };
     let within = score.saturating_sub(floor);
     let suffix = if within >= 7 {
@@ -262,22 +268,18 @@ pub fn grade_display(score: u8, g: lilypad_core::HealthGrade) -> String {
     format!("{letter}{suffix}")
 }
 
-/// A translucent tint of a color, for banners.
-pub fn tint(c: Color, alpha: f32) -> Color {
-    Color { a: alpha, ..c }
-}
-
-/// Maps a 1..=5 strength level to a representative 0-100 score, because
-/// `theme::strength_color` buckets on a 0-100 score (not the level).
-pub fn strength_score(level: u8) -> u8 {
-    match level {
-        1 => 10,
-        2 => 35,
-        3 => 55,
-        4 => 75,
-        5 => 95,
-        _ => 0,
-    }
+/// A health grade as a filled badge.
+pub fn grade_badge<'a>(report: &lilypad_core::HealthReport, base: u16) -> Element<'a, Message> {
+    let fill = theme::health_grade_color(report.score.grade);
+    container(
+        text(grade_display(report.score.score, report.score.grade))
+            .size(sz(base))
+            .font(colony_ui::ui_font_bold())
+            .color(colony_ui::contrast_on(fill)),
+    )
+    .padding([1, 7])
+    .style(move |_| theme::filled(fill, 5.0))
+    .into()
 }
 
 /// Password strength as a 1..=5 level (higher = stronger).
@@ -293,30 +295,30 @@ pub fn strength_level(pw: &str) -> u8 {
 }
 
 pub fn type_icon(t: &EntryType) -> &'static str {
-    use fonts::icons::*;
     match t {
-        EntryType::Login => KEY,
-        EntryType::Card => CREDIT_CARD,
-        EntryType::Identity => ID_CARD,
-        EntryType::SecureNote => STICKY_NOTE,
-        EntryType::SoftwareLicense => CERTIFICATE,
-        EntryType::Wifi => WIFI,
-        EntryType::Server => SERVER,
-        EntryType::Custom => LEAF,
+        EntryType::Login => icons::KEY,
+        EntryType::Card => icons::CREDIT_CARD,
+        EntryType::Identity => icons::ID_CARD,
+        EntryType::SecureNote => icons::STICKY_NOTE,
+        EntryType::SoftwareLicense => icons::CERTIFICATE,
+        EntryType::Wifi => icons::WIFI,
+        EntryType::Server => icons::SERVER,
+        EntryType::Custom => icons::LEAF,
     }
 }
 
+/// The plural name of an entry type, as the sidebar lists it.
 pub fn type_label(t: &EntryType) -> &'static str {
-    match t {
-        EntryType::Login => "Logins",
-        EntryType::Card => "Cards",
-        EntryType::Identity => "Identities",
-        EntryType::SecureNote => "Notes",
-        EntryType::SoftwareLicense => "Licenses",
-        EntryType::Wifi => "Wifi",
-        EntryType::Server => "Servers",
-        EntryType::Custom => "Custom",
-    }
+    lilypad_core::i18n::t(match t {
+        EntryType::Login => "type_logins",
+        EntryType::Card => "type_cards",
+        EntryType::Identity => "type_identities",
+        EntryType::SecureNote => "type_notes",
+        EntryType::SoftwareLicense => "type_licenses",
+        EntryType::Wifi => "type_wifi",
+        EntryType::Server => "type_servers",
+        EntryType::Custom => "type_custom",
+    })
 }
 
 pub fn vgap(px: f32) -> Space {
@@ -330,11 +332,3 @@ pub fn hgap(px: f32) -> Space {
 pub fn hfill() -> Space {
     Space::new().width(Length::Fill)
 }
-
-pub type BtnStyle = Box<dyn Fn(&iced::Theme, button::Status) -> button::Style>;
-
-pub fn boxed_btn(f: impl Fn(&iced::Theme, button::Status) -> button::Style + 'static) -> BtnStyle {
-    Box::new(f)
-}
-
-// Async key derivation -------------------------------------------------------

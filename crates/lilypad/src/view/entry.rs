@@ -1,24 +1,24 @@
-//! The entry detail pane, the edit and add forms, and the overlays.
+//! The entry detail pane, the edit and add forms, and the dialogs.
 
 use super::{
-    boxed_btn, entry_color, expiry_label_for, hfill, hgap, strength_level, strength_score, tint,
-    type_icon, type_label, vgap, BtnStyle, Ring, ALL_TYPES, EXPIRY_CHOICES,
+    hfill, hgap, strength_level, type_icon, type_label, vgap, Ring, ALL_TYPES, EXPIRY_CHOICES,
 };
-use crate::fonts;
+use crate::icons;
 use crate::message::{CharSet, FormField, Message};
 use crate::state::LilypadApp;
-use crate::theme::{self};
+use crate::theme;
+use colony_ui::theme::Palette;
+use colony_ui::{sz, ui_font_bold, ui_font_medium, widgets, Typography};
 use iced::widget::{
-    button, column, container, mouse_area, pick_list, row, scrollable, slider, text, text_input,
-    Canvas, Space,
+    button, column, container, mouse_area, row, scrollable, slider, text, text_input, Canvas, Space,
 };
 use iced::{Alignment, Background, Color, Element, Length};
+use lilypad_core::i18n::{t, tf};
 use lilypad_core::EntryType;
 
 impl LilypadApp {
     pub fn detail_pane(&self) -> Element<'_, Message> {
-        let p = self.theme.palette();
-        let (t, d) = (self.theme, self.density);
+        let d = self.density;
         let inner: Element<Message> = if self.editing {
             self.detail_edit()
         } else if let Some(label) = &self.selected {
@@ -26,9 +26,11 @@ impl LilypadApp {
         } else {
             container(
                 column![
-                    self.icon(fonts::icons::VAULT, 40.0, p.text_muted),
+                    icons::icon(icons::VAULT, 40, Palette::TEXT_MUTED()),
                     vgap(10.0),
-                    text("Select an entry").size(16).color(p.text_muted),
+                    text(t("detail_select_entry"))
+                        .size(sz(16))
+                        .color(Palette::TEXT_MUTED()),
                 ]
                 .align_x(Alignment::Center),
             )
@@ -42,63 +44,73 @@ impl LilypadApp {
             .padding(20)
             .width(Length::Fill)
             .height(Length::Fill)
-            .style(move |_| theme::card_container(t, d))
+            .style(move |_| theme::card_container(d))
             .into()
     }
 
     pub fn detail_view(&self, label: &str) -> Element<'_, Message> {
-        let p = self.theme.palette();
-        let (t, d) = (self.theme, self.density);
+        let d = self.density;
         let view = self.entries.iter().find(|e| e.label == label);
         let entry_type = view
             .map(|v| v.entry_type.clone())
             .unwrap_or(EntryType::Login);
+        let favorite = view.is_some_and(|v| v.is_favorite);
 
         let header = row![
-            container(self.icon(type_icon(&entry_type), 20.0, p.primary))
-                .center(Length::Fixed(40.0))
-                .style(move |_| theme::icon_badge_container(t, d)),
+            container(icons::icon(type_icon(&entry_type), 20, Palette::ACCENT()))
+                .center(Length::Fixed(sz(40)))
+                .style(|_| theme::icon_badge_container()),
             hgap(12.0),
             text(label.to_string())
-                .size(20)
-                .font(fonts::FONT_BOLD)
-                .color(p.text_primary),
+                .size(sz(20))
+                .font(ui_font_bold())
+                .color(Palette::TEXT_PRIMARY()),
             hgap(8.0),
-            button(self.icon(
-                fonts::icons::STAR,
-                15.0,
-                if view.map(|v| v.is_favorite).unwrap_or(false) {
-                    p.warning
+            button(icons::icon(
+                icons::STAR,
+                15,
+                if favorite {
+                    Palette::WARNING()
                 } else {
-                    p.text_muted
+                    Palette::TEXT_MUTED()
                 },
             ))
             .on_press(Message::ToggleFavorite(label.to_string()))
-            .style(theme::ghost_style(t, d)),
+            .style(theme::ghost_style(d)),
             hfill(),
             button(
                 row![
-                    self.icon(fonts::icons::EDIT, 13.0, p.text_secondary),
+                    icons::icon(icons::EDIT, 13, Palette::ACCENT()),
                     hgap(6.0),
-                    text("Edit").size(13)
+                    text(t("detail_edit")).size(sz(13))
                 ]
                 .align_y(Alignment::Center)
             )
             .on_press(Message::StartEdit)
-            .style(theme::secondary_style(t, d)),
-            button(self.icon(fonts::icons::TRASH, 13.0, p.danger))
+            .style(theme::secondary_style(d)),
+            button(icons::icon(icons::TRASH, 13, Palette::ERROR()))
                 .on_press(Message::DeleteRequested(label.to_string()))
-                .style(theme::ghost_style(t, d)),
+                .style(theme::ghost_style(d)),
         ]
         .align_y(Alignment::Center);
 
         let mut body = column![].spacing(2);
         if let Some(v) = view {
             if let Some(u) = &v.username {
-                body = body.push(self.field("Username", u, Some(Message::CopyUsername), None));
+                body = body.push(self.field(
+                    t("field_username"),
+                    u,
+                    Some(Message::CopyUsername),
+                    None,
+                ));
             }
             if let Some(u) = &v.url {
-                body = body.push(self.field("URL", u, None, Some(Message::OpenUrl(u.clone()))));
+                body = body.push(self.field(
+                    t("field_url"),
+                    u,
+                    None,
+                    Some(Message::OpenUrl(u.clone())),
+                ));
             }
         }
         if let Some(secret) = &self.selected_secret {
@@ -107,26 +119,35 @@ impl LilypadApp {
             } else {
                 "•".repeat(secret.password.chars().count().max(8))
             };
-            let pw_area = mouse_area(text(shown).size(14).color(p.text_primary))
+            let pw_area = mouse_area(text(shown).size(sz(14)).color(Palette::TEXT_PRIMARY()))
                 .on_press(Message::RevealHold(true))
                 .on_release(Message::RevealHold(false));
             body = body.push(
                 self.field_row(
-                    "Password",
+                    t("field_password"),
                     row![
                         pw_area,
                         hgap(10.0),
-                        text("hold to reveal").size(11).color(p.text_muted),
+                        text(t("detail_hold_to_reveal"))
+                            .size(sz(11))
+                            .color(Palette::TEXT_MUTED()),
                     ]
                     .align_y(Alignment::Center)
                     .into(),
                     row![
-                        button(text(if self.revealed() { "Hide" } else { "Show" }).size(12))
-                            .on_press(Message::ToggleReveal)
-                            .style(theme::ghost_style(t, d)),
-                        button(self.icon(fonts::icons::COPY, 13.0, p.text_secondary))
+                        button(
+                            text(if self.revealed() {
+                                t("detail_hide")
+                            } else {
+                                t("detail_show")
+                            })
+                            .size(sz(12))
+                        )
+                        .on_press(Message::ToggleReveal)
+                        .style(theme::ghost_style(d)),
+                        button(icons::icon(icons::COPY, 13, Palette::TEXT_SECONDARY()))
                             .on_press(Message::CopyPassword)
-                            .style(theme::ghost_style(t, d)),
+                            .style(theme::ghost_style(d)),
                     ]
                     .spacing(4)
                     .into(),
@@ -144,66 +165,69 @@ impl LilypadApp {
                 } else {
                     code
                 };
-                let frac = self.totp_left as f32 / 30.0;
-                let ring_color = if self.totp_left <= 5 {
-                    p.warning
-                } else {
-                    p.primary
-                };
                 let ring = Canvas::new(Ring {
-                    fraction: frac,
-                    color: ring_color,
-                    track: p.surface_variant,
+                    fraction: self.totp_left as f32 / 30.0,
+                    color: if self.totp_left <= 5 {
+                        Palette::WARNING()
+                    } else {
+                        Palette::ACCENT()
+                    },
+                    track: Palette::BG_CARD_HOVER(),
                 })
-                .width(Length::Fixed(30.0))
-                .height(Length::Fixed(30.0));
+                .width(Length::Fixed(sz(30)))
+                .height(Length::Fixed(sz(30)));
                 body = body.push(
                     self.field_row(
-                        "TOTP",
+                        t("field_totp"),
                         row![
                             ring,
                             hgap(12.0),
                             text(grouped)
-                                .size(18)
-                                .font(fonts::FONT_SEMIBOLD)
-                                .color(p.text_primary),
+                                .size(sz(18))
+                                .font(ui_font_bold())
+                                .color(Palette::TEXT_PRIMARY()),
                             hgap(8.0),
-                            text(format!("{}s", self.totp_left))
-                                .size(12)
-                                .color(p.text_muted),
+                            text(tf("detail_totp_seconds", &[("secs", &self.totp_left)]))
+                                .size(sz(12))
+                                .color(Palette::TEXT_MUTED()),
                         ]
                         .align_y(Alignment::Center)
                         .into(),
-                        button(self.icon(fonts::icons::COPY, 13.0, p.text_secondary))
+                        button(icons::icon(icons::COPY, 13, Palette::TEXT_SECONDARY()))
                             .on_press(Message::CopyTotp)
-                            .style(theme::ghost_style(t, d))
+                            .style(theme::ghost_style(d))
                             .into(),
                     ),
                 );
             }
             if let Some(n) = &secret.notes {
-                body = body.push(self.field("Notes", n, None, None));
+                body = body.push(self.field(t("field_notes"), n, None, None));
             }
         }
         if let Some(v) = view {
             if !v.tags.is_empty() {
                 let chips = v.tags.iter().fold(row![].spacing(5), |r, tag| {
                     r.push(
-                        container(text(tag.clone()).size(11).color(p.text_secondary))
-                            .padding([1, 8])
-                            .style(move |_| theme::badge_container(t, d)),
+                        container(
+                            text(tag.clone())
+                                .size(sz(11))
+                                .color(Palette::TEXT_SECONDARY()),
+                        )
+                        .padding([1, 8])
+                        .style(|_| theme::badge_container()),
                     )
                 });
-                body = body.push(self.field_row("Tags", chips.into(), Space::new().into()));
+                body =
+                    body.push(self.field_row(t("field_tags"), chips.into(), Space::new().into()));
             }
-            // Color label picker: 8 dots + clear. The active color has a ring.
+            // Colour label picker: 8 dots + clear. The active colour has a ring.
             let mut dots = row![].spacing(6).align_y(Alignment::Center);
             for c in lilypad_core::EntryColor::all() {
                 let c = *c;
                 let active = v.color == Some(c);
-                let fill = entry_color(c);
+                let fill = theme::entry_color(c);
                 let ring = if active {
-                    p.text_primary
+                    Palette::TEXT_PRIMARY()
                 } else {
                     Color::TRANSPARENT
                 };
@@ -226,13 +250,13 @@ impl LilypadApp {
             }
             if v.color.is_some() {
                 dots = dots.push(
-                    button(text("clear").size(11))
+                    button(text(t("detail_color_clear")).size(sz(11)))
                         .on_press(Message::SetColor(label.to_string(), None))
                         .padding([2, 6])
-                        .style(theme::ghost_style(t, d)),
+                        .style(theme::ghost_style(d)),
                 );
             }
-            body = body.push(self.field_row("Color", dots.into(), Space::new().into()));
+            body = body.push(self.field_row(t("field_color"), dots.into(), Space::new().into()));
 
             if v.password_expires_at > 0 {
                 let days = v
@@ -240,14 +264,14 @@ impl LilypadApp {
                     .saturating_sub(lilypad_core::current_timestamp())
                     / 86_400;
                 body = body.push(self.field(
-                    "Password expires",
-                    &format!("in {days} day(s)"),
+                    t("field_password_expires"),
+                    &tf("detail_expires_in_days", &[("days", &days)]),
                     None,
                     None,
                 ));
             }
             body = body.push(self.field(
-                "Modified",
+                t("field_modified"),
                 &lilypad_core::format_timestamp_relative(v.updated_at),
                 None,
                 None,
@@ -264,32 +288,20 @@ impl LilypadApp {
                     .filter(|i| i.affected_entries.iter().any(|a| a == label))
                     .max_by_key(|i| i.severity)
                     .map(|issue| {
-                        let sev = match issue.severity {
-                            lilypad_core::IssueSeverity::Critical => p.danger,
-                            lilypad_core::IssueSeverity::Warning => p.warning,
-                            lilypad_core::IssueSeverity::Info => p.primary,
-                        };
-                        let bg = tint(sev, 0.14);
-                        let bd = tint(sev, 0.4);
+                        let sev = severity_color(issue.severity);
                         container(
                             row![
-                                self.icon(fonts::icons::TRIANGLE_EXCLAMATION, 13.0, sev),
+                                icons::icon(icons::TRIANGLE_EXCLAMATION, 13, sev),
                                 hgap(8.0),
-                                text(issue.title.clone()).size(12).color(p.text_primary),
+                                text(issue.localized_title().to_string())
+                                    .size(sz(12))
+                                    .color(Palette::TEXT_PRIMARY()),
                             ]
                             .align_y(Alignment::Center),
                         )
                         .padding([8, 10])
                         .width(Length::Fill)
-                        .style(move |_| container::Style {
-                            background: Some(Background::Color(bg)),
-                            border: iced::Border {
-                                radius: 8.0.into(),
-                                color: bd,
-                                width: 1.0,
-                            },
-                            ..Default::default()
-                        })
+                        .style(move |_| theme::banner(sev))
                         .into()
                     })
             })
@@ -300,7 +312,8 @@ impl LilypadApp {
             vgap(12.0),
             banner,
             vgap(4.0),
-            scrollable(container(body).max_width(720)).height(Length::Fill)
+            scrollable(container(body).max_width(720.0 * colony_ui::font_scale()))
+                .height(Length::Fill)
         ]
         .spacing(4)
         .height(Length::Fill)
@@ -308,24 +321,20 @@ impl LilypadApp {
     }
 
     pub fn strength_bar(&self, pw: &str) -> Element<'static, Message> {
-        let p = self.theme.palette();
         let level = strength_level(pw);
-        let color = theme::strength_color(strength_score(level), &p);
+        let color = theme::strength_color(level);
         let mut r = row![].spacing(4).width(Length::Fixed(200.0));
         for i in 0..5u8 {
-            let c = if i < level { color } else { p.surface_variant };
+            let c = if i < level {
+                color
+            } else {
+                Palette::BG_CARD_HOVER()
+            };
             r = r.push(
                 container(Space::new())
                     .width(Length::Fill)
                     .height(Length::Fixed(5.0))
-                    .style(move |_| container::Style {
-                        background: Some(Background::Color(c)),
-                        border: iced::Border {
-                            radius: 2.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    }),
+                    .style(move |_| theme::filled(c, 2.0)),
             );
         }
         r.into()
@@ -338,28 +347,27 @@ impl LilypadApp {
         copy: Option<Message>,
         open: Option<Message>,
     ) -> Element<'static, Message> {
-        let p = self.theme.palette();
-        let (t, d) = (self.theme, self.density);
+        let d = self.density;
         let mut actions = row![].spacing(4);
         if let Some(open) = open {
             actions = actions.push(
-                button(self.icon(fonts::icons::EXTERNAL_LINK, 13.0, p.primary))
+                button(icons::icon(icons::EXTERNAL_LINK, 13, Palette::ACCENT()))
                     .on_press(open)
-                    .style(theme::ghost_style(t, d)),
+                    .style(theme::ghost_style(d)),
             );
         }
         if let Some(copy) = copy {
             actions = actions.push(
-                button(self.icon(fonts::icons::COPY, 13.0, p.text_secondary))
+                button(icons::icon(icons::COPY, 13, Palette::TEXT_SECONDARY()))
                     .on_press(copy)
-                    .style(theme::ghost_style(t, d)),
+                    .style(theme::ghost_style(d)),
             );
         }
         self.field_row(
             label,
             text(value.to_string())
-                .size(14)
-                .color(p.text_primary)
+                .size(sz(14))
+                .color(Palette::TEXT_PRIMARY())
                 .into(),
             actions.into(),
         )
@@ -371,9 +379,11 @@ impl LilypadApp {
         value: Element<'static, Message>,
         actions: Element<'static, Message>,
     ) -> Element<'static, Message> {
-        let p = self.theme.palette();
         column![
-            text(label.to_uppercase()).size(10).color(p.text_muted),
+            text(label.to_uppercase())
+                .size(sz(10))
+                .font(ui_font_medium())
+                .color(Palette::TEXT_MUTED()),
             row![value, hfill(), actions].align_y(Alignment::Center),
         ]
         .spacing(3)
@@ -382,85 +392,98 @@ impl LilypadApp {
     }
 
     pub fn detail_edit(&self) -> Element<'_, Message> {
-        let p = self.theme.palette();
-        let (t, d) = (self.theme, self.density);
+        let d = self.density;
+        let typo = Typography::current();
         let title = if self.form.editing.is_some() {
-            "Edit entry"
+            t("form_edit_title")
         } else {
-            "New entry"
+            t("form_new_title")
         };
-        let inp = |ph: &'static str, value: &str, field: FormField, secure: bool| {
-            text_input(ph, value)
+        let inp = |placeholder: &str, value: &str, field: FormField, secure: bool| {
+            text_input(placeholder, value)
                 .on_input(move |v| Message::FormChanged(field, v))
                 .secure(secure)
+                .size(sz(13))
                 .padding(10)
-                .style(theme::text_input_style_closure(t, d))
+                .style(theme::text_input_style(d))
         };
-        let small = |s: &'static str| text(s).size(10).color(p.text_muted);
+        let small = |s: &str| {
+            text(s.to_uppercase())
+                .size(sz(10))
+                .font(ui_font_medium())
+                .color(Palette::TEXT_MUTED())
+        };
 
-        // Entry-type picker.
-        let type_labels: Vec<String> = ALL_TYPES
-            .iter()
-            .map(|ty| type_label(ty).to_string())
-            .collect();
-        let type_selected = Some(
-            type_label(self.form.entry_type.as_ref().unwrap_or(&EntryType::Login)).to_string(),
+        let type_pick = widgets::dropdown(
+            &typo,
+            ALL_TYPES
+                .iter()
+                .map(|ty| (ty.clone(), type_label(ty).to_string())),
+            self.form.entry_type.as_ref().unwrap_or(&EntryType::Login),
+            Message::FormTypeSelected,
         );
-        let type_pick = pick_list(type_labels, type_selected, Message::FormTypeSelected)
-            .text_size(12)
-            .padding([6, 10]);
-
-        // Expiry picker ("Keep current" leaves the entry's setting untouched).
-        let expiry_labels: Vec<String> =
-            EXPIRY_CHOICES.iter().map(|(l, _)| l.to_string()).collect();
-        let expiry_selected = Some(expiry_label_for(self.form.expiry_days).to_string());
-        let expiry_pick = pick_list(expiry_labels, expiry_selected, Message::FormExpirySelected)
-            .text_size(12)
-            .padding([6, 10]);
+        let expiry_pick = widgets::dropdown(
+            &typo,
+            EXPIRY_CHOICES
+                .iter()
+                .map(|(key, days)| (*days, t(key).to_string())),
+            &self.form.expiry_days,
+            Message::FormExpirySelected,
+        );
 
         column![
             text(title)
-                .size(20)
-                .font(fonts::FONT_BOLD)
-                .color(p.text_primary),
+                .size(sz(20))
+                .font(ui_font_bold())
+                .color(Palette::TEXT_PRIMARY()),
             vgap(6.0),
-            inp("Label", &self.form.label, FormField::Label, false),
+            inp(t("field_label"), &self.form.label, FormField::Label, false),
             row![
-                column![small("TYPE"), type_pick].spacing(3),
+                column![small(t("form_type")), type_pick].spacing(3),
                 hgap(10.0),
-                column![small("PASSWORD EXPIRES"), expiry_pick].spacing(3),
+                column![small(t("field_password_expires")), expiry_pick].spacing(3),
             ]
             .align_y(Alignment::End),
-            inp("Username", &self.form.username, FormField::Username, false),
-            inp("URL", &self.form.url, FormField::Url, false),
-            inp("Password", &self.form.password, FormField::Password, true),
-            inp("Notes", &self.form.notes, FormField::Notes, false),
             inp(
-                "TOTP secret (base32 or otpauth://)",
+                t("field_username"),
+                &self.form.username,
+                FormField::Username,
+                false
+            ),
+            inp(t("field_url"), &self.form.url, FormField::Url, false),
+            inp(
+                t("field_password"),
+                &self.form.password,
+                FormField::Password,
+                true
+            ),
+            inp(t("field_notes"), &self.form.notes, FormField::Notes, false),
+            inp(
+                t("form_totp_placeholder"),
                 &self.form.totp,
                 FormField::Totp,
                 false
             ),
             inp(
-                "Tags (comma-separated)",
+                t("form_tags_placeholder"),
                 &self.form.tags,
                 FormField::Tags,
                 false
             ),
             inp(
-                "Folder (e.g. Work/Email)",
+                t("form_folder_placeholder"),
                 &self.form.folder,
                 FormField::Folder,
                 false
             ),
             vgap(4.0),
             row![
-                button(text("Save").size(14))
+                button(text(t("form_save")).size(sz(14)))
                     .on_press(Message::FormSave)
-                    .style(theme::primary_style(t, d)),
-                button(text("Cancel").size(14))
+                    .style(theme::primary_style(d)),
+                button(text(t("form_cancel")).size(sz(14)))
                     .on_press(Message::FormCancel)
-                    .style(theme::ghost_style(t, d)),
+                    .style(theme::ghost_style(d)),
             ]
             .spacing(8),
         ]
@@ -468,31 +491,34 @@ impl LilypadApp {
         .into()
     }
 
-    // -- Overlays ------------------------------------------------------------
-
     pub fn view_add_form(&self) -> Element<'_, Message> {
         self.detail_edit()
     }
 
     pub fn view_confirm(&self, label: &str) -> Element<'_, Message> {
-        let p = self.theme.palette();
-        let (t, d) = (self.theme, self.density);
+        let d = self.density;
+        let in_trash = self.trashed.iter().any(|e| e.label == label);
+        let (title, body) = if in_trash {
+            ("confirm_delete_title", "confirm_delete_body")
+        } else {
+            ("confirm_trash_title", "confirm_trash_body")
+        };
         column![
-            text("Delete entry?")
-                .size(20)
-                .font(fonts::FONT_BOLD)
-                .color(p.danger),
-            text(format!("'{label}' will be permanently removed."))
-                .size(14)
-                .color(p.text_secondary),
+            text(t(title))
+                .size(sz(20))
+                .font(ui_font_bold())
+                .color(Palette::ERROR()),
+            text(tf(body, &[("label", &label)]))
+                .size(sz(14))
+                .color(Palette::TEXT_SECONDARY()),
             vgap(8.0),
             row![
-                button(text("Delete").size(14))
+                button(text(t("confirm_delete")).size(sz(14)))
                     .on_press(Message::DeleteConfirmed)
-                    .style(theme::danger_style(t, d)),
-                button(text("Cancel").size(14))
+                    .style(theme::danger_style(d)),
+                button(text(t("form_cancel")).size(sz(14)))
                     .on_press(Message::DeleteCancelled)
-                    .style(theme::ghost_style(t, d)),
+                    .style(theme::ghost_style(d)),
             ]
             .spacing(8),
         ]
@@ -501,31 +527,50 @@ impl LilypadApp {
     }
 
     pub fn view_generator(&self) -> Element<'_, Message> {
-        let p = self.theme.palette();
-        let (t, d) = (self.theme, self.density);
+        let d = self.density;
         let toggle = |label: &'static str, on: bool, set: CharSet| {
-            let style: BtnStyle = if on {
-                boxed_btn(theme::primary_style(t, d))
+            let style = if on {
+                theme::primary_style(d)
             } else {
-                boxed_btn(theme::secondary_style(t, d))
+                theme::secondary_style(d)
             };
-            button(text(format!("{} {label}", if on { "☑" } else { "☐" })).size(13))
-                .on_press(Message::GenToggle(set))
-                .style(style)
+            let ink = if on {
+                colony_ui::contrast_on(Palette::ACCENT())
+            } else {
+                Palette::ACCENT()
+            };
+            button(
+                row![
+                    icons::icon(
+                        if on {
+                            icons::CHECKBOX_ON
+                        } else {
+                            icons::CHECKBOX_OFF
+                        },
+                        13,
+                        ink
+                    ),
+                    text(label).size(sz(13)),
+                ]
+                .spacing(4)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::GenToggle(set))
+            .style(style)
         };
         column![
-            text("Password generator")
-                .size(20)
-                .font(fonts::FONT_BOLD)
-                .color(p.text_primary),
+            text(t("generator_title"))
+                .size(sz(20))
+                .font(ui_font_bold())
+                .color(Palette::TEXT_PRIMARY()),
             text(self.gen_result.clone())
-                .size(16)
-                .color(p.primary)
-                .font(fonts::FONT_SEMIBOLD),
+                .size(sz(16))
+                .color(Palette::ACCENT())
+                .font(ui_font_bold()),
             row![
-                text(format!("Length: {}", self.gen_length))
-                    .size(13)
-                    .color(p.text_secondary),
+                text(tf("generator_length", &[("length", &self.gen_length)]))
+                    .size(sz(13))
+                    .color(Palette::TEXT_SECONDARY()),
                 slider(4.0..=64.0, self.gen_length as f32, Message::GenLength),
             ]
             .spacing(10)
@@ -538,22 +583,29 @@ impl LilypadApp {
             ]
             .spacing(6),
             row![
-                button(text("Regenerate").size(13))
+                button(text(t("generator_regenerate")).size(sz(13)))
                     .on_press(Message::GenRegenerate)
-                    .style(theme::secondary_style(t, d)),
-                button(text("Copy").size(13))
+                    .style(theme::secondary_style(d)),
+                button(text(t("generator_copy")).size(sz(13)))
                     .on_press(Message::GenUse)
-                    .style(theme::primary_style(t, d)),
+                    .style(theme::primary_style(d)),
                 hfill(),
-                button(text("Close").size(13))
+                button(text(t("generator_close")).size(sz(13)))
                     .on_press(Message::CloseGenerator)
-                    .style(theme::ghost_style(t, d)),
+                    .style(theme::ghost_style(d)),
             ]
             .spacing(8),
         ]
         .spacing(12)
         .into()
     }
+}
 
-    // -- Shared chrome -------------------------------------------------------
+/// The colour of a health issue's severity.
+pub fn severity_color(severity: lilypad_core::IssueSeverity) -> Color {
+    match severity {
+        lilypad_core::IssueSeverity::Critical => Palette::ERROR(),
+        lilypad_core::IssueSeverity::Warning => Palette::WARNING(),
+        lilypad_core::IssueSeverity::Info => Palette::ACCENT(),
+    }
 }

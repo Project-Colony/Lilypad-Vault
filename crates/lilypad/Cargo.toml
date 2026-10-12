@@ -20,6 +20,10 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time"] }
 # Lilypad service layer (owns all vault logic)
 lilypad-core.workspace = true
 
+# The Colony design system: palettes, fonts, the Preferences kit, shared
+# labels. "fonts" embeds the Colony fonts, so none ship in this repository.
+colony-ui = { workspace = true, features = ["fonts"] }
+
 # Security
 zeroize.workspace = true
 

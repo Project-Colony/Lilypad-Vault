@@ -982,6 +982,31 @@ impl MergeResult {
     }
 
     /// Returns a human-readable summary of the merge.
+    /// [`Self::summary`] in the interface language, for the desktop app.
+    pub fn localized_summary(&self) -> String {
+        use crate::i18n::tf;
+        let ties = self.tie_conflicts_local_won.len() + self.tie_conflicts_remote_won.len();
+        let parts: Vec<String> = [
+            ("merge_added", self.added_from_remote.len()),
+            ("merge_updated", self.updated_from_remote.len()),
+            ("merge_kept_local", self.kept_local.len()),
+            ("merge_unchanged", self.unchanged.len()),
+            ("merge_local_only", self.local_only.len()),
+            ("merge_removed", self.removed_by_tombstone.len()),
+            ("merge_suppressed", self.suppressed_by_tombstone.len()),
+            ("merge_ties", ties),
+        ]
+        .into_iter()
+        .filter(|(_, count)| *count > 0)
+        .map(|(key, count)| tf(key, &[("count", &count)]))
+        .collect();
+        if parts.is_empty() {
+            crate::i18n::t("merge_nothing").to_string()
+        } else {
+            parts.join(", ")
+        }
+    }
+
     pub fn summary(&self) -> String {
         let mut parts = Vec::new();
         if !self.added_from_remote.is_empty() {

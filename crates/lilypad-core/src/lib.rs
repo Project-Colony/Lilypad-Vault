@@ -23,6 +23,7 @@ pub mod entries;
 pub mod error;
 pub mod generator;
 pub mod health;
+pub mod i18n;
 pub mod import;
 pub mod keyfile;
 pub mod locking;

@@ -97,6 +97,32 @@ pub enum AppError {
     Other(String),
 }
 
+impl AppError {
+    /// The message in the interface language, for the desktop app and the
+    /// TUI. Details from lower layers (a file name, a network error) stay as
+    /// they were reported. `Display` stays English: the CLI prints it.
+    pub fn localized(&self) -> String {
+        use crate::i18n::{t, tf};
+        match self {
+            AppError::VaultNotFound(name) => tf("error_vault_not_found", &[("name", name)]),
+            AppError::VaultAlreadyExists(name) => tf("error_vault_exists", &[("name", name)]),
+            AppError::WrongMasterPassword => t("error_wrong_master_password").to_string(),
+            AppError::IntegrityCheckFailed => t("error_integrity").to_string(),
+            AppError::NotSelfContained(name) => tf("error_not_self_contained", &[("name", name)]),
+            AppError::UnsupportedVersion => t("error_unsupported_version").to_string(),
+            AppError::Locked => t("error_locked").to_string(),
+            AppError::NotAuthenticated => t("error_not_authenticated").to_string(),
+            AppError::Network(detail) => tf("error_network", &[("detail", detail)]),
+            AppError::Sync(detail) => tf("error_sync", &[("detail", detail)]),
+            AppError::Validation(detail) => tf("error_validation", &[("detail", detail)]),
+            AppError::Crypto(detail) => tf("error_crypto", &[("detail", detail)]),
+            AppError::Kdf(detail) => tf("error_kdf", &[("detail", detail)]),
+            AppError::Io(detail) => tf("error_io", &[("detail", detail)]),
+            AppError::Other(detail) => detail.clone(),
+        }
+    }
+}
+
 /// Maps a borrowed [`CoreError`] into an [`AppError`]. `CoreError` is not
 /// `Clone`, so the owned and borrowed conversions both route through here.
 fn from_core_ref(e: &CoreError) -> AppError {

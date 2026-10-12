@@ -123,6 +123,25 @@ pub struct HealthIssue {
     pub recommendation: String,
 }
 
+impl HealthIssue {
+    /// The title in the interface language, for the desktop app.
+    pub fn localized_title(&self) -> &str {
+        let key = match self.title.as_str() {
+            "Very weak passwords detected" => "health_very_weak",
+            "Expired passwords" => "health_expired",
+            "Weak passwords detected" => "health_weak",
+            "Password reuse detected" => "health_reused",
+            "Passwords expiring soon" => "health_expiring",
+            "Old passwords" => "health_old",
+            "Compromised passwords detected" => "health_compromised",
+            "2FA not enabled" => "health_no_2fa",
+            "Incomplete entries" => "health_incomplete",
+            _ => return &self.title,
+        };
+        crate::i18n::t(key)
+    }
+}
+
 /// Severity levels for health issues.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IssueSeverity {

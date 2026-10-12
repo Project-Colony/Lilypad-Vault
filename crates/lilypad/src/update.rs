@@ -2,8 +2,9 @@
 
 use crate::message::{CharSet, Filter, FormField, Message, QuickKind};
 use crate::state::{FormBuffers, LilypadApp, Overlay, Screen};
-use crate::view::{type_label, ALL_TYPES, EXPIRY_CHOICES};
+use colony_ui::preferences::Change;
 use iced::Task;
+use lilypad_core::i18n::{t, tf};
 use lilypad_core::{
     App as Service, EntryMetadata, EntrySecret, EntryType, KeyMaterial, OpenOptions,
 };
@@ -14,7 +15,6 @@ use zeroize::Zeroize;
 impl LilypadApp {
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::Noop => Task::none(),
             Message::Tick => {
                 if let Some(at) = self.status_at {
                     if at.elapsed() > Duration::from_secs(4) {
@@ -30,7 +30,7 @@ impl LilypadApp {
                 }
                 if self.session.as_ref().is_some_and(|s| s.is_expired()) {
                     self.lock();
-                    self.set_status("Locked (idle timeout)");
+                    self.set_status(t("status_locked_idle"));
                 }
                 if self.selected_secret.is_some() {
                     self.refresh_totp();
@@ -42,23 +42,23 @@ impl LilypadApp {
                 Task::none()
             }
 
-            Message::ThemeSelected(t) => {
-                self.theme = t;
-                self.persist_settings();
-                Task::none()
-            }
             Message::DensitySelected(d) => {
                 self.density = d;
                 self.persist_settings();
                 Task::none()
             }
 
-            Message::OpenSettings => {
-                self.settings_open = true;
+            Message::TogglePreferences => {
+                self.preferences_open = !self.preferences_open;
+                self.preferences_category = 0;
+                if !self.preferences_open {
+                    self.close_preferences();
+                    return Task::none();
+                }
                 self.overlay = Overlay::None;
                 // Populate the GitHub auth state from the local token store
-                // (fast disk read, no network) so the Sync tab is correct even
-                // before the first unlock.
+                // (fast disk read, no network) so the Sync category is correct
+                // even before the first unlock.
                 if self.authed.is_none() {
                     self.authed =
                         match lilypad_core::sync::net::auth_status(&self.service.token_file()) {
@@ -70,24 +70,33 @@ impl LilypadApp {
                 }
                 Task::none()
             }
-            Message::CloseSettings => {
-                self.settings_open = false;
-                self.cm_new.zeroize();
-                self.cm_new.clear();
-                self.cm_confirm.zeroize();
-                self.cm_confirm.clear();
-                self.sync_pull_password.zeroize();
-                self.sync_pull_password.clear();
+            Message::PreferencesCategory(i) => {
+                self.preferences_category = i;
                 Task::none()
             }
-            Message::SettingsCategory(i) => {
-                self.settings_category = i;
-                Task::none()
-            }
-            Message::SettingsToggleSection(key) => {
-                if !self.settings_sections.remove(&key) {
-                    self.settings_sections.insert(key);
+            Message::ToggleSection(key) => {
+                if !self.expanded.remove(key) {
+                    self.expanded.insert(key.to_string());
                 }
+                Task::none()
+            }
+            Message::Preference(change) => {
+                // Applies at once (no Save button) and is saved right away.
+                self.prefs.update(change);
+                self.persist_settings();
+                if matches!(change, Change::Theme { .. }) {
+                    self.notice = Some(t("theme_applied"));
+                }
+                Task::none()
+            }
+            Message::SetLanguage(locale) => {
+                lilypad_core::i18n::set_locale(locale);
+                self.language = Some(locale.as_str().to_string());
+                self.persist_settings();
+                Task::none()
+            }
+            Message::DismissNotice => {
+                self.notice = None;
                 Task::none()
             }
             Message::SetAutoLock(minutes) => {
@@ -100,16 +109,16 @@ impl LilypadApp {
                 }
                 self.persist_settings();
                 self.set_status(if minutes == 0 {
-                    "Auto-lock disabled".to_string()
+                    t("status_auto_lock_off").to_string()
                 } else {
-                    format!("Auto-lock set to {minutes} min")
+                    tf("status_auto_lock_set", &[("minutes", &minutes)])
                 });
                 Task::none()
             }
             Message::SetClipboardSecs(secs) => {
                 self.clipboard_secs = secs;
                 self.persist_settings();
-                self.set_status(format!("Clipboard clears after {secs}s"));
+                self.set_status(tf("status_clipboard_set", &[("secs", &secs)]));
                 Task::none()
             }
             Message::SetDefaultFilter(f) => {
@@ -132,11 +141,11 @@ impl LilypadApp {
             }
             Message::ChangeMasterSubmit => {
                 if self.cm_new.len() < 8 {
-                    self.set_status("Master password must be at least 8 characters");
+                    self.set_status(t("status_master_too_short"));
                     return Task::none();
                 }
                 if self.cm_new != self.cm_confirm {
-                    self.set_status("Passwords do not match");
+                    self.set_status(t("status_passwords_differ"));
                     return Task::none();
                 }
                 // Zeroizing: this working copy of the new master password is
@@ -147,7 +156,7 @@ impl LilypadApp {
                         lilypad_core::change_master_password(&self.service, session, &new)
                     }
                     None => {
-                        self.set_status("Unlock a vault first");
+                        self.set_status(t("status_unlock_first"));
                         return Task::none();
                     }
                 };
@@ -157,9 +166,9 @@ impl LilypadApp {
                         self.cm_new.clear();
                         self.cm_confirm.zeroize();
                         self.cm_confirm.clear();
-                        self.set_status("Master password changed");
+                        self.set_status(t("status_master_changed"));
                     }
-                    Err(e) => self.set_status(format!("{e}")),
+                    Err(e) => self.set_status(e.localized()),
                 }
                 Task::none()
             }
@@ -171,20 +180,20 @@ impl LilypadApp {
             Message::ImportRun => {
                 let path = self.import_path.trim().to_string();
                 if path.is_empty() {
-                    self.set_status("Enter the path of the exported file to import");
+                    self.set_status(t("status_import_path_needed"));
                     return Task::none();
                 }
                 if self.session.is_none() {
-                    self.set_status("Unlock a vault first");
+                    self.set_status(t("status_unlock_first"));
                     return Task::none();
                 }
                 let result = std::fs::read(&path)
-                    .map_err(|e| format!("failed to read {path}: {e}"))
+                    .map_err(|e| tf("status_read_failed", &[("path", &path), ("detail", &e)]))
                     .and_then(|bytes| {
                         let format =
-                            lilypad_core::detect_format(&bytes).map_err(|e| e.to_string())?;
+                            lilypad_core::detect_format(&bytes).map_err(|e| e.localized())?;
                         let parsed = lilypad_core::parse_import(&bytes, format)
-                            .map_err(|e| e.to_string())?;
+                            .map_err(|e| e.localized())?;
                         Ok((format, parsed))
                     });
                 match result {
@@ -195,27 +204,26 @@ impl LilypadApp {
                             Ok(report) => {
                                 self.refresh_entries();
                                 self.import_path.clear();
-                                let mut msg = format!(
-                                    "Imported {} entries from {}",
-                                    report.added,
-                                    format.name()
-                                );
+                                let mut msg = vec![tf(
+                                    "status_imported",
+                                    &[("count", &report.added), ("format", &format.name())],
+                                )];
                                 if !report.renamed.is_empty() {
-                                    msg.push_str(&format!(
-                                        " ({} renamed to avoid overwriting)",
-                                        report.renamed.len()
+                                    msg.push(tf(
+                                        "status_import_renamed",
+                                        &[("count", &report.renamed.len())],
                                     ));
                                 }
                                 if report.skipped > 0 || warnings > 0 {
-                                    msg.push_str(&format!(
-                                        " - {} skipped/warnings",
-                                        report.skipped + warnings
+                                    msg.push(tf(
+                                        "status_import_skipped",
+                                        &[("count", &(report.skipped + warnings))],
                                     ));
                                 }
-                                msg.push_str(" - delete the source file once verified");
-                                self.set_status(msg);
+                                msg.push(t("status_import_delete_source").to_string());
+                                self.set_status(msg.join(" "));
                             }
-                            Err(e) => self.set_status(format!("{e}")),
+                            Err(e) => self.set_status(e.localized()),
                         }
                     }
                     Err(e) => self.set_status(e),
@@ -229,11 +237,11 @@ impl LilypadApp {
             Message::ExportRun => {
                 let path = self.export_path.trim().to_string();
                 if path.is_empty() {
-                    self.set_status("Enter a destination path for the CSV export");
+                    self.set_status(t("status_export_path_needed"));
                     return Task::none();
                 }
                 let Some(session) = self.session.as_ref() else {
-                    self.set_status("Unlock a vault first");
+                    self.set_status(t("status_unlock_first"));
                     return Task::none();
                 };
                 match lilypad_core::export_csv(session) {
@@ -250,14 +258,15 @@ impl LilypadApp {
                         match write {
                             Ok(()) => {
                                 self.export_path.clear();
-                                self.set_status(format!(
-                                    "Exported PLAINTEXT CSV to {path} - store it safely, delete it when done"
-                                ));
+                                self.set_status(tf("status_exported", &[("path", &path)]));
                             }
-                            Err(e) => self.set_status(format!("failed to write {path}: {e}")),
+                            Err(e) => self.set_status(tf(
+                                "status_write_failed",
+                                &[("path", &path), ("detail", &e)],
+                            )),
                         }
                     }
-                    Err(e) => self.set_status(format!("{e}")),
+                    Err(e) => self.set_status(e.localized()),
                 }
                 Task::none()
             }
@@ -267,7 +276,7 @@ impl LilypadApp {
                     return Task::none();
                 }
                 let Some(session) = self.session.as_ref() else {
-                    self.set_status("Unlock a vault first");
+                    self.set_status(t("status_unlock_first"));
                     return Task::none();
                 };
                 // Hashing is local and fast (UI thread); only the k-anonymity
@@ -275,7 +284,7 @@ impl LilypadApp {
                 // session crosses the thread boundary - only SHA-1 fragments.
                 let hashes = lilypad_core::collect_hashes(session);
                 self.breach_busy = true;
-                self.set_status("Checking against Have-I-Been-Pwned...");
+                self.set_status(t("status_breach_checking"));
                 Task::perform(
                     async move {
                         tokio::task::spawn_blocking(move || {
@@ -289,10 +298,10 @@ impl LilypadApp {
                                             .collect::<Vec<_>>(),
                                     )
                                 })
-                                .map_err(|e| e.to_string())
+                                .map_err(|e| e.localized())
                         })
                         .await
-                        .unwrap_or_else(|e| Err(format!("background task failed: {e}")))
+                        .unwrap_or_else(|e| Err(tf("error_background", &[("detail", &e)])))
                     },
                     Message::BreachChecked,
                 )
@@ -307,14 +316,9 @@ impl LilypadApp {
                         // grade, the sidebar badge, and the per-entry banners.
                         self.refresh_entries();
                         self.set_status(if n == 0 {
-                            format!(
-                                "Breach check: {unique} unique passwords checked - none breached"
-                            )
+                            tf("status_breach_none", &[("count", &unique)])
                         } else {
-                            format!(
-                                "Breach check: {n} entr{} with breached passwords - change them",
-                                if n == 1 { "y" } else { "ies" }
-                            )
+                            tf("status_breach_found", &[("count", &n)])
                         });
                     }
                     Err(e) => self.set_status(e),
@@ -330,10 +334,10 @@ impl LilypadApp {
                 Task::perform(
                     async {
                         tokio::task::spawn_blocking(|| {
-                            lilypad_core::sync::net::begin_login().map_err(|e| e.to_string())
+                            lilypad_core::sync::net::begin_login().map_err(|e| e.localized())
                         })
                         .await
-                        .unwrap_or_else(|e| Err(format!("background task failed: {e}")))
+                        .unwrap_or_else(|e| Err(tf("error_background", &[("detail", &e)])))
                     },
                     Message::SyncLoginStarted,
                 )
@@ -349,10 +353,10 @@ impl LilypadApp {
                         async move {
                             tokio::task::spawn_blocking(move || {
                                 lilypad_core::sync::net::complete_login(&token_file, &login)
-                                    .map_err(|e| e.to_string())
+                                    .map_err(|e| e.localized())
                             })
                             .await
-                            .unwrap_or_else(|e| Err(format!("background task failed: {e}")))
+                            .unwrap_or_else(|e| Err(tf("error_background", &[("detail", &e)])))
                         },
                         Message::SyncLoginDone,
                     )
@@ -368,7 +372,7 @@ impl LilypadApp {
                 // server-side or completes and is still recorded harmlessly.
                 self.sync_busy = false;
                 self.sync_login = None;
-                self.set_status("Sign-in cancelled");
+                self.set_status(t("status_signin_cancelled"));
                 Task::none()
             }
             Message::SyncLoginDone(result) => {
@@ -378,7 +382,7 @@ impl LilypadApp {
                 match result {
                     Ok(username) => {
                         self.authed = Some(username.clone());
-                        self.set_status(format!("Signed in to GitHub as {username}"));
+                        self.set_status(tf("status_signed_in", &[("user", &username)]));
                     }
                     // A cancelled flow's eventual expiry error is not news.
                     Err(_) if was_cancelled => {}
@@ -395,15 +399,15 @@ impl LilypadApp {
                     Ok(()) => {
                         self.authed = None;
                         self.sync_status = None;
-                        self.set_status("Signed out of GitHub");
+                        self.set_status(t("status_signed_out"));
                     }
-                    Err(e) => self.set_status(format!("{e}")),
+                    Err(e) => self.set_status(e.localized()),
                 }
                 Task::none()
             }
             Message::SyncPush => {
                 let Some(vault) = self.active_vault_name() else {
-                    self.set_status("No vault selected");
+                    self.set_status(t("status_no_vault"));
                     return Task::none();
                 };
                 if self.sync_busy {
@@ -418,13 +422,13 @@ impl LilypadApp {
                                 data_dir,
                                 auto_lock_after: None,
                             })
-                            .map_err(|e| e.to_string())?;
+                            .map_err(|e| e.localized())?;
                             lilypad_core::sync::net::push(&app, &vault, false)
                                 .map(|_| vault)
-                                .map_err(|e| e.to_string())
+                                .map_err(|e| e.localized())
                         })
                         .await
-                        .unwrap_or_else(|e| Err(format!("background task failed: {e}")))
+                        .unwrap_or_else(|e| Err(tf("error_background", &[("detail", &e)])))
                     },
                     Message::SyncPushDone,
                 )
@@ -437,7 +441,7 @@ impl LilypadApp {
                         if self.active_vault_name().as_deref() == Some(vault.as_str()) {
                             self.sync_status = Some(lilypad_core::SyncStatusView::InSync);
                         }
-                        self.set_status(format!("Pushed '{vault}' to GitHub"));
+                        self.set_status(tf("status_pushed", &[("vault", &vault)]));
                     }
                     Err(e) => self.set_status(e),
                 }
@@ -452,11 +456,11 @@ impl LilypadApp {
                     return Task::none();
                 }
                 let Some(vault) = self.active_vault_name() else {
-                    self.set_status("No vault selected");
+                    self.set_status(t("status_no_vault"));
                     return Task::none();
                 };
                 if self.sync_pull_password.is_empty() {
-                    self.set_status("Enter the master password (Settings > Sync section) to validate the pulled vault");
+                    self.set_status(t("status_pull_password_needed"));
                     return Task::none();
                 }
                 self.sync_busy = true;
@@ -467,7 +471,7 @@ impl LilypadApp {
                 // and an edit landing in that window is silently clobbered.
                 if self.session.is_some() {
                     self.lock();
-                    self.set_status("Locked for pull...");
+                    self.set_status(t("status_locked_for_pull"));
                 }
                 Task::perform(
                     async move {
@@ -479,12 +483,12 @@ impl LilypadApp {
                                 data_dir,
                                 auto_lock_after: None,
                             })
-                            .map_err(|e| e.to_string())?;
+                            .map_err(|e| e.localized())?;
                             lilypad_core::sync::net::pull(&app, &vault, &pw)
-                                .map_err(|e| e.to_string())
+                                .map_err(|e| e.localized())
                         })
                         .await
-                        .unwrap_or_else(|e| Err(format!("background task failed: {e}")))
+                        .unwrap_or_else(|e| Err(tf("error_background", &[("detail", &e)])))
                     },
                     Message::SyncPullDone,
                 )
@@ -500,10 +504,10 @@ impl LilypadApp {
                             self.lock();
                         }
                         self.sync_status = Some(lilypad_core::SyncStatusView::InSync);
-                        self.set_status("Pulled from GitHub - unlock to open the updated vault");
+                        self.set_status(t("status_pulled"));
                     }
                     Ok(lilypad_core::sync::net::PullOutcome::NoRemote) => {
-                        self.set_status("No remote vault with this name")
+                        self.set_status(t("status_no_remote"))
                     }
                     Err(e) => self.set_status(e),
                 }
@@ -514,11 +518,11 @@ impl LilypadApp {
                     return Task::none();
                 }
                 let Some(vault) = self.active_vault_name() else {
-                    self.set_status("No vault selected");
+                    self.set_status(t("status_no_vault"));
                     return Task::none();
                 };
                 if self.sync_pull_password.is_empty() {
-                    self.set_status("Enter the master password (Settings > Sync section) to sync");
+                    self.set_status(t("status_sync_password_needed"));
                     return Task::none();
                 }
                 self.sync_busy = true;
@@ -529,7 +533,7 @@ impl LilypadApp {
                 // otherwise be silently clobbered.
                 if self.session.is_some() {
                     self.lock();
-                    self.set_status("Locked for sync...");
+                    self.set_status(t("status_locked_for_sync"));
                 }
                 Task::perform(
                     async move {
@@ -541,9 +545,9 @@ impl LilypadApp {
                                 data_dir,
                                 auto_lock_after: None,
                             })
-                            .map_err(|e| e.to_string())?;
+                            .map_err(|e| e.localized())?;
                             match lilypad_core::sync::net::sync_merge(&app, &vault, &pw)
-                                .map_err(|e| e.to_string())?
+                                .map_err(|e| e.localized())?
                             {
                                 lilypad_core::sync::net::MergeOutcome::NoRemote => {
                                     Ok((vault, None))
@@ -551,11 +555,11 @@ impl LilypadApp {
                                 lilypad_core::sync::net::MergeOutcome::Merged {
                                     report,
                                     pushed,
-                                } => Ok((vault, Some((report.summary(), pushed)))),
+                                } => Ok((vault, Some((report.localized_summary(), pushed)))),
                             }
                         })
                         .await
-                        .unwrap_or_else(|e| Err(format!("background task failed: {e}")))
+                        .unwrap_or_else(|e| Err(tf("error_background", &[("detail", &e)])))
                     },
                     Message::SyncMergeDone,
                 )
@@ -563,9 +567,7 @@ impl LilypadApp {
             Message::SyncMergeDone(result) => {
                 self.sync_busy = false;
                 match result {
-                    Ok((_, None)) => {
-                        self.set_status("No remote vault with this name - push first to create it")
-                    }
+                    Ok((_, None)) => self.set_status(t("status_no_remote_push_first")),
                     Ok((vault, Some((summary, pushed)))) => {
                         // The on-disk vault was merged (safety backup taken):
                         // lock so the next unlock reads the fresh state - but
@@ -581,10 +583,12 @@ impl LilypadApp {
                         if self.active_vault_name().as_deref() == Some(vault.as_str()) {
                             self.sync_status = Some(lilypad_core::SyncStatusView::InSync);
                         }
-                        let suffix = if pushed { "; pushed back" } else { "" };
-                        self.set_status(format!(
-                            "Synced '{vault}': {summary}{suffix} - unlock to open the merged vault"
-                        ));
+                        let key = if pushed {
+                            "status_synced_pushed"
+                        } else {
+                            "status_synced"
+                        };
+                        self.set_status(tf(key, &[("vault", &vault), ("summary", &summary)]));
                     }
                     Err(e) => self.set_status(e),
                 }
@@ -592,7 +596,7 @@ impl LilypadApp {
             }
             Message::SyncRefreshStatus => {
                 let Some(vault) = self.active_vault_name() else {
-                    self.set_status("No vault selected");
+                    self.set_status(t("status_no_vault"));
                     return Task::none();
                 };
                 if self.sync_busy {
@@ -607,13 +611,13 @@ impl LilypadApp {
                                 data_dir,
                                 auto_lock_after: None,
                             })
-                            .map_err(|e| e.to_string())?;
+                            .map_err(|e| e.localized())?;
                             lilypad_core::sync::net::remote_status(&app, &vault)
                                 .map(|s| (vault, s))
-                                .map_err(|e| e.to_string())
+                                .map_err(|e| e.localized())
                         })
                         .await
-                        .unwrap_or_else(|e| Err(format!("background task failed: {e}")))
+                        .unwrap_or_else(|e| Err(tf("error_background", &[("detail", &e)])))
                     },
                     Message::SyncStatusLoaded,
                 )
@@ -634,6 +638,7 @@ impl LilypadApp {
             }
 
             Message::VaultSelected(v) => {
+                self.leave_preferences();
                 self.selected_vault = Some(v);
                 // The last fetched sync status described the previous vault.
                 self.sync_status = None;
@@ -648,11 +653,11 @@ impl LilypadApp {
                 // session mid-flight would hand the user a stale vault whose
                 // edits raced the rewrite.
                 if self.sync_busy {
-                    self.set_status("A sync is running - wait for it to finish before unlocking");
+                    self.set_status(t("status_sync_running"));
                     return Task::none();
                 }
                 let Some(vault) = self.selected_vault.clone() else {
-                    self.set_status("No vault selected");
+                    self.set_status(t("status_no_vault"));
                     return Task::none();
                 };
                 self.pending_vault = vault.clone();
@@ -666,7 +671,7 @@ impl LilypadApp {
                 if self.sync_busy {
                     self.password.zeroize();
                     self.password.clear();
-                    self.set_status("A sync is running - unlock again when it finishes");
+                    self.set_status(t("status_sync_running"));
                     return Task::none();
                 }
                 match result {
@@ -708,7 +713,7 @@ impl LilypadApp {
                                     _ => None,
                                 };
                             }
-                            Err(e) => self.set_status(format!("{e}")),
+                            Err(e) => self.set_status(e.localized()),
                         }
                     }
                     Err(e) => self.set_status(e),
@@ -717,6 +722,7 @@ impl LilypadApp {
             }
 
             Message::ShowCreate => {
+                self.leave_preferences();
                 self.screen = Screen::Create;
                 Task::none()
             }
@@ -735,11 +741,11 @@ impl LilypadApp {
             Message::CreatePressed => {
                 let name = self.new_name.trim().to_string();
                 if name.is_empty() {
-                    self.set_status("Vault name is required");
+                    self.set_status(t("status_vault_name_needed"));
                     return Task::none();
                 }
                 if self.new_password.is_empty() {
-                    self.set_status("Master password is required");
+                    self.set_status(t("status_master_needed"));
                     return Task::none();
                 }
                 self.pending_vault = name.clone();
@@ -748,6 +754,7 @@ impl LilypadApp {
             }
 
             Message::FilterSelected(f) => {
+                self.leave_preferences();
                 self.filter = f;
                 self.selected = None;
                 self.selected_secret = None;
@@ -788,31 +795,31 @@ impl LilypadApp {
                             .iter()
                             .find(|e| e.label == label)
                             .and_then(|e| e.username.clone())
-                            .map(|u| (u, "username")),
+                            .map(|u| (u, "copied_username")),
                         QuickKind::Password => lilypad_core::reveal_secret(session, &label)
                             .ok()
-                            .map(|s| (s.password.clone(), "password")),
+                            .map(|s| (s.password.clone(), "copied_password")),
                         QuickKind::Totp => lilypad_core::reveal_secret(session, &label)
                             .ok()
                             .and_then(|s| s.totp_secret.clone())
                             .and_then(|ts| lilypad_core::totp::code_for_secret(&ts).ok())
-                            .map(|c| ((*c).clone(), "TOTP code")),
+                            .map(|c| ((*c).clone(), "copied_totp")),
                     });
                 match value {
                     Some((v, what)) => self.copy(&v, what),
-                    None => self.set_status("Nothing to copy"),
+                    None => self.set_status(t("status_nothing_to_copy")),
                 }
                 Task::none()
             }
             Message::ClipboardCancel => {
                 let _ = lilypad_core::clipboard::copy_to_clipboard("");
                 self.clipboard_clear_at = None;
-                self.set_status("Clipboard cleared");
+                self.set_status(t("status_clipboard_cleared"));
                 Task::none()
             }
             Message::CopyPassword => {
                 if let Some(pw) = self.selected_secret.as_ref().map(|s| s.password.clone()) {
-                    self.copy(&pw, "password");
+                    self.copy(&pw, "copied_password");
                 }
                 Task::none()
             }
@@ -823,8 +830,8 @@ impl LilypadApp {
                     .and_then(|label| self.entries.iter().find(|e| &e.label == label))
                     .and_then(|e| e.username.clone());
                 match user {
-                    Some(u) => self.copy(&u, "username"),
-                    None => self.set_status("No username on this entry"),
+                    Some(u) => self.copy(&u, "copied_username"),
+                    None => self.set_status(t("status_no_username")),
                 }
                 Task::none()
             }
@@ -835,10 +842,10 @@ impl LilypadApp {
                     .and_then(|s| s.totp_secret.clone());
                 match ts {
                     Some(ts) => match lilypad_core::totp::code_for_secret(&ts) {
-                        Ok(code) => self.copy(&code, "TOTP code"),
-                        Err(e) => self.set_status(format!("{e}")),
+                        Ok(code) => self.copy(&code, "copied_totp"),
+                        Err(e) => self.set_status(e.localized()),
                     },
-                    None => self.set_status("No TOTP secret on this entry"),
+                    None => self.set_status(t("status_no_totp")),
                 }
                 Task::none()
             }
@@ -857,7 +864,7 @@ impl LilypadApp {
                     if let Err(e) =
                         lilypad_core::set_favorite(&self.service, session, &label, new_state)
                     {
-                        self.set_status(format!("{e}"));
+                        self.set_status(e.localized());
                     } else {
                         self.refresh_entries();
                     }
@@ -873,7 +880,7 @@ impl LilypadApp {
             }
             Message::Lock => {
                 self.lock();
-                self.set_status("Locked");
+                self.set_status(t("status_locked"));
                 Task::none()
             }
 
@@ -919,12 +926,12 @@ impl LilypadApp {
                 }
                 Task::none()
             }
-            Message::FormTypeSelected(label) => {
-                self.form.entry_type = Some(entry_type_from_label(&label));
+            Message::FormTypeSelected(entry_type) => {
+                self.form.entry_type = Some(entry_type);
                 Task::none()
             }
-            Message::FormExpirySelected(choice) => {
-                self.form.expiry_days = expiry_days_from_label(&choice);
+            Message::FormExpirySelected(days) => {
+                self.form.expiry_days = days;
                 Task::none()
             }
             Message::FormCancel => {
@@ -959,12 +966,12 @@ impl LilypadApp {
                                     self.selected_secret = None;
                                 }
                                 self.set_status(if is_trashed {
-                                    format!("Permanently deleted '{label}'")
+                                    tf("status_deleted", &[("label", &label)])
                                 } else {
-                                    format!("Moved '{label}' to Trash")
+                                    tf("status_trashed", &[("label", &label)])
                                 });
                             }
-                            Err(e) => self.set_status(format!("{e}")),
+                            Err(e) => self.set_status(e.localized()),
                         }
                     }
                 }
@@ -980,9 +987,9 @@ impl LilypadApp {
                     match lilypad_core::restore(&self.service, session, &label) {
                         Ok(()) => {
                             self.refresh_entries();
-                            self.set_status(format!("Restored '{label}'"));
+                            self.set_status(tf("status_restored", &[("label", &label)]));
                         }
-                        Err(e) => self.set_status(format!("{e}")),
+                        Err(e) => self.set_status(e.localized()),
                     }
                 }
                 Task::none()
@@ -1017,7 +1024,7 @@ impl LilypadApp {
             Message::GenUse => {
                 let r = self.gen_result.clone();
                 if !r.is_empty() {
-                    self.copy(&r, "generated password");
+                    self.copy(&r, "copied_generated");
                 }
                 Task::none()
             }
@@ -1028,9 +1035,29 @@ impl LilypadApp {
         }
     }
 
+    /// Picking a destination in the sidebar while Preferences is open goes
+    /// there: Preferences closes.
+    fn leave_preferences(&mut self) {
+        if self.preferences_open {
+            self.preferences_open = false;
+            self.close_preferences();
+        }
+    }
+
+    /// Leaving Preferences wipes the secrets typed there: the new master
+    /// password and the sync password.
+    fn close_preferences(&mut self) {
+        self.cm_new.zeroize();
+        self.cm_new.clear();
+        self.cm_confirm.zeroize();
+        self.cm_confirm.clear();
+        self.sync_pull_password.zeroize();
+        self.sync_pull_password.clear();
+    }
+
     pub fn save_form(&mut self) {
         if self.form.label.trim().is_empty() {
-            self.set_status("Label is required");
+            self.set_status(t("status_label_needed"));
             return;
         }
         let label = self.form.label.trim().to_string();
@@ -1106,9 +1133,9 @@ impl LilypadApp {
                 self.selected = Some(label.clone());
                 self.reveal = false;
                 self.reveal_selected();
-                self.set_status(format!("Saved '{label}'"));
+                self.set_status(tf("status_saved", &[("label", &label)]));
             }
-            Err(e) => self.set_status(format!("{e}")),
+            Err(e) => self.set_status(e.localized()),
         }
     }
 }
@@ -1119,21 +1146,6 @@ pub fn opt(s: &str) -> Option<String> {
     } else {
         Some(s.to_string())
     }
-}
-
-pub fn entry_type_from_label(label: &str) -> EntryType {
-    ALL_TYPES
-        .iter()
-        .find(|t| type_label(t) == label)
-        .cloned()
-        .unwrap_or(EntryType::Login)
-}
-
-pub fn expiry_days_from_label(label: &str) -> Option<u32> {
-    EXPIRY_CHOICES
-        .iter()
-        .find(|(l, _)| *l == label)
-        .and_then(|(_, v)| *v)
 }
 
 pub fn derive_key_task(
@@ -1148,14 +1160,14 @@ pub fn derive_key_task(
                     data_dir,
                     auto_lock_after: None,
                 })
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| e.localized())?;
                 app.derive_unlock_key(&vault, &password)
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.localized())
             })
             .await
             {
                 Ok(res) => res,
-                Err(e) => Err(format!("background task failed: {e}")),
+                Err(e) => Err(tf("error_background", &[("detail", &e)])),
             }
         },
         Message::KeyDerived,
@@ -1174,16 +1186,16 @@ pub fn create_vault_task(
                     data_dir,
                     auto_lock_after: None,
                 })
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| e.localized())?;
                 let session = app
                     .create_vault(&vault, &password)
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| e.localized())?;
                 Ok::<KeyMaterial, String>(session.key().clone())
             })
             .await
             {
                 Ok(res) => res,
-                Err(e) => Err(format!("background task failed: {e}")),
+                Err(e) => Err(tf("error_background", &[("detail", &e)])),
             }
         },
         Message::KeyDerived,

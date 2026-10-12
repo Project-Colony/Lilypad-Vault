@@ -1,6 +1,8 @@
 //! Messages for the Lilypad desktop application.
 
-use crate::theme::{LilypadTheme, UiVariation};
+use crate::theme::UiVariation;
+use colony_ui::preferences::Change;
+use lilypad_core::i18n::Locale;
 use lilypad_core::sync::net::{DeviceLogin, PullOutcome};
 use lilypad_core::{EntryColor, EntryType, KeyMaterial, SyncStatusView};
 
@@ -48,15 +50,17 @@ pub enum Filter {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    // Appearance
-    ThemeSelected(LilypadTheme),
+    // Preferences: opened and closed by the Lilypad name and by Close.
+    TogglePreferences,
+    PreferencesCategory(usize),
+    /// Opens or closes a collapsible section, by key.
+    ToggleSection(&'static str),
+    /// A Colony standard preference (theme, accent, text size, ...).
+    Preference(Change),
+    SetLanguage(Locale),
     DensitySelected(UiVariation),
-
-    // Settings page (categorized preferences)
-    OpenSettings,
-    CloseSettings,
-    SettingsCategory(usize),
-    SettingsToggleSection(String),
+    /// Dismisses the "Theme applied." toast.
+    DismissNotice,
     SetAutoLock(u64),
     SetClipboardSecs(u64),
     SetDefaultFilter(u8),
@@ -137,10 +141,9 @@ pub enum Message {
     ShowAddForm,
     StartEdit,
     FormChanged(FormField, String),
-    /// Entry-type picker (label from `type_label`).
-    FormTypeSelected(String),
-    /// Expiry picker choice (label from the EXPIRY_CHOICES list).
-    FormExpirySelected(String),
+    FormTypeSelected(EntryType),
+    /// None keeps the entry's current expiry, Some(0) means never.
+    FormExpirySelected(Option<u32>),
     FormSave,
     FormCancel,
 
@@ -161,5 +164,4 @@ pub enum Message {
     // Timers / misc
     Tick,
     Dismiss,
-    Noop,
 }

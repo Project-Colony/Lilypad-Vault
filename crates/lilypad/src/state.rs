@@ -1,9 +1,11 @@
 //! The application state and the helpers that read or reset it.
 
 use crate::message::{Filter, Message};
-use crate::theme::{LilypadTheme, UiVariation};
+use crate::theme::UiVariation;
 use crate::view::strength_level;
+use colony_ui::preferences::StandardPreferences;
 use iced::{Subscription, Task};
+use lilypad_core::i18n::{t, tf};
 use lilypad_core::{
     App as Service, EntryType, EntryView, OpenOptions, PasswordOptions, RevealedSecret, Session,
 };
@@ -58,7 +60,10 @@ pub struct LilypadApp {
     pub service: Service,
     pub data_dir: Option<PathBuf>,
     pub session: Option<Session>,
-    pub theme: LilypadTheme,
+    /// Theme, accent, text sizes, motion: the Colony standard preferences.
+    pub prefs: StandardPreferences,
+    /// The chosen interface language tag; `None` follows the system.
+    pub language: Option<String>,
     pub density: UiVariation,
     pub clipboard_secs: u64,
     pub auto_lock_minutes: u64,
@@ -68,12 +73,14 @@ pub struct LilypadApp {
     pub screen: Screen,
     pub overlay: Overlay,
 
-    /// The full-page settings screen, orthogonal to `screen` (reachable while
-    /// locked or unlocked). When set, it replaces whatever screen is underneath.
-    pub settings_open: bool,
-    pub settings_category: usize,
-    /// Keys of the collapsible settings sections currently expanded.
-    pub settings_sections: HashSet<String>,
+    /// Preferences, orthogonal to `screen` (reachable while locked or
+    /// unlocked). While open it replaces the content area; the sidebar stays.
+    pub preferences_open: bool,
+    pub preferences_category: usize,
+    /// Keys of the collapsible Preferences sections currently open.
+    pub expanded: HashSet<String>,
+    /// A dismissible notice over the content ("Theme applied.").
+    pub notice: Option<&'static str>,
     /// Change-master-password buffers (wiped on drop).
     pub cm_new: String,
     pub cm_confirm: String,
@@ -162,6 +169,10 @@ impl LilypadApp {
         })
         .expect("failed to open Lilypad data directory");
         let settings = bootstrap.load_settings();
+        // Theme, accent, fonts, sizes and motion are process-wide in
+        // colony-ui, and so is the locale: set them before the first view.
+        settings.standard.apply();
+        lilypad_core::i18n::set_locale(settings.locale());
         let auto_lock = settings.auto_lock_duration();
         let service = Service::open(OpenOptions {
             data_dir: data_dir.clone(),
@@ -188,7 +199,8 @@ impl LilypadApp {
             service,
             data_dir,
             session: None,
-            theme: LilypadTheme::default(),
+            prefs: settings.standard.clone(),
+            language: settings.language.clone(),
             density: UiVariation::from_index(settings.density as usize),
             clipboard_secs: settings.clipboard_clear_secs,
             auto_lock_minutes: settings.auto_lock_minutes,
@@ -196,9 +208,10 @@ impl LilypadApp {
             restore_last_vault: settings.restore_last_vault,
             screen,
             overlay: Overlay::None,
-            settings_open: false,
-            settings_category: 0,
-            settings_sections: default_settings_sections(),
+            preferences_open: false,
+            preferences_category: 0,
+            expanded: HashSet::new(),
+            notice: None,
             cm_new: String::new(),
             cm_confirm: String::new(),
             import_path: String::new(),
@@ -319,6 +332,8 @@ impl LilypadApp {
     /// change so a change survives a restart.
     pub fn persist_settings(&self) {
         let mut s = self.service.load_settings();
+        s.standard = self.prefs.clone();
+        s.language = self.language.clone();
         s.density = self.density.to_index() as u32;
         s.active_vault = self.selected_vault.clone();
         s.auto_lock_minutes = self.auto_lock_minutes;
@@ -375,17 +390,18 @@ impl LilypadApp {
         }
     }
 
-    pub fn copy(&mut self, value: &str, what: &str) {
+    /// Copies `value`; `what_key` is the i18n key naming what was copied.
+    pub fn copy(&mut self, value: &str, what_key: &str) {
         match lilypad_core::clipboard::copy_to_clipboard(value) {
             Ok(()) => {
                 self.clipboard_clear_at =
                     Some(Instant::now() + Duration::from_secs(self.clipboard_secs.max(1)));
-                self.set_status(format!(
-                    "Copied {what} · clears in {}s",
-                    self.clipboard_secs
+                self.set_status(tf(
+                    "status_copied",
+                    &[("what", &t(what_key)), ("secs", &self.clipboard_secs)],
                 ));
             }
-            Err(_) => self.set_status("Clipboard unavailable (install wl-copy or xclip)"),
+            Err(_) => self.set_status(t("status_clipboard_unavailable")),
         }
     }
 
@@ -401,7 +417,7 @@ impl LilypadApp {
                 self.gen_result.zeroize();
                 self.gen_result = (*p).clone();
             }
-            Err(e) => self.set_status(format!("{e}")),
+            Err(e) => self.set_status(e.localized()),
         }
     }
 
@@ -410,7 +426,7 @@ impl LilypadApp {
         if let (Some(label), Some(session)) = (self.selected.clone(), self.session.as_ref()) {
             match lilypad_core::reveal_secret(session, &label) {
                 Ok(secret) => self.selected_secret = Some(secret),
-                Err(e) => self.set_status(format!("{e}")),
+                Err(e) => self.set_status(e.localized()),
             }
         }
     }
@@ -448,24 +464,4 @@ impl LilypadApp {
             })
             .collect()
     }
-}
-
-/// The settings sections expanded by default the first time the page opens, so
-/// the most useful controls are visible without a click.
-pub fn default_settings_sections() -> HashSet<String> {
-    [
-        "theme",
-        "density",
-        "autolock",
-        "clipboard",
-        "default_view",
-        "stats",
-        "sync_account",
-        "sync_status",
-        "sync_merge",
-        "sync_transfer",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect()
 }

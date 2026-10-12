@@ -2,6 +2,7 @@
 
 use crate::app::{App, FormData, FormField, Screen};
 use crossterm::event::{self, KeyCode, KeyModifiers};
+use lilypad_core::i18n::{t, tf};
 use lilypad_core::{EntryMetadata, EntrySecret};
 use zeroize::Zeroize;
 
@@ -50,7 +51,7 @@ impl App {
 
     pub fn try_unlock(&mut self) {
         let Some(vault) = self.selected_vault() else {
-            self.set_status("No vault selected");
+            self.set_status(t("status_no_vault"));
             return;
         };
         match self.service.unlock(&vault, &self.master_password) {
@@ -61,13 +62,13 @@ impl App {
                 self.search_query.clear();
                 self.screen = Screen::Unlocked;
                 self.refresh_entries();
-                self.set_status(format!("Unlocked '{vault}'"));
+                self.set_status(tf("tui_unlocked", &[("vault", &vault)]));
             }
             Err(e) => {
                 self.master_password.zeroize();
                 self.master_password.clear();
                 // The vault is NEVER modified on a failed unlock.
-                self.set_status(format!("{e}"));
+                self.set_status(e.localized());
             }
         }
     }
@@ -86,11 +87,11 @@ impl App {
             KeyCode::Tab => self.create_focus_name = !self.create_focus_name,
             KeyCode::Enter => {
                 if self.new_vault_name.trim().is_empty() {
-                    self.set_status("Vault name required");
+                    self.set_status(t("status_vault_name_needed"));
                     return;
                 }
                 if self.new_vault_password.is_empty() {
-                    self.set_status("Master password required");
+                    self.set_status(t("status_master_needed"));
                     return;
                 }
                 match self
@@ -105,9 +106,9 @@ impl App {
                         self.session = Some(session);
                         self.screen = Screen::Unlocked;
                         self.refresh_entries();
-                        self.set_status(format!("Created and unlocked '{name}'"));
+                        self.set_status(tf("tui_created", &[("vault", &name)]));
                     }
-                    Err(e) => self.set_status(format!("{e}")),
+                    Err(e) => self.set_status(e.localized()),
                 }
             }
             KeyCode::Char(c) => {
@@ -159,7 +160,7 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
             KeyCode::Char('l') => {
                 self.lock();
-                self.set_status("Locked");
+                self.set_status(t("status_locked"));
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.move_selection(&mut SelectionTarget::Entry, -1)
@@ -218,12 +219,12 @@ impl App {
                     match result {
                         Some(Ok(())) => {
                             self.refresh_entries();
-                            self.set_status(format!("Restored '{label}'"));
+                            self.set_status(tf("status_restored", &[("label", &label)]));
                             if self.trashed.is_empty() {
                                 self.screen = Screen::Unlocked;
                             }
                         }
-                        Some(Err(e)) => self.set_status(format!("{e}")),
+                        Some(Err(e)) => self.set_status(e.localized()),
                         None => {}
                     }
                 }
@@ -249,9 +250,9 @@ impl App {
                     match result {
                         Some(Ok(())) => {
                             self.refresh_entries();
-                            self.set_status(format!("Permanently deleted '{label}'"));
+                            self.set_status(tf("status_deleted", &[("label", &label)]));
                         }
-                        Some(Err(e)) => self.set_status(format!("{e}")),
+                        Some(Err(e)) => self.set_status(e.localized()),
                         None => {}
                     }
                 }
@@ -280,7 +281,7 @@ impl App {
                 self.view_show_password = false;
                 self.screen = Screen::View;
             }
-            Some(Err(e)) => self.set_status(format!("{e}")),
+            Some(Err(e)) => self.set_status(e.localized()),
             None => {}
         }
     }
@@ -294,7 +295,7 @@ impl App {
             KeyCode::Char('p') => self.view_show_password = !self.view_show_password,
             KeyCode::Char('c') => {
                 if let Some(pw) = self.view_reveal.as_ref().map(|r| r.password.clone()) {
-                    self.copy_to_clipboard(&pw, "password");
+                    self.copy_to_clipboard(&pw, "copied_password");
                 }
             }
             KeyCode::Char('u') => {
@@ -304,7 +305,7 @@ impl App {
                     .find(|e| e.label == self.view_label)
                     .and_then(|e| e.username.clone());
                 if let Some(u) = user {
-                    self.copy_to_clipboard(&u, "username");
+                    self.copy_to_clipboard(&u, "copied_username");
                 }
             }
             KeyCode::Char('t') => self.copy_view_totp(),
@@ -324,9 +325,9 @@ impl App {
                     match result {
                         Some(Ok(())) => {
                             self.refresh_entries();
-                            self.set_status(format!("Moved '{label}' to Trash"));
+                            self.set_status(tf("status_trashed", &[("label", &label)]));
                         }
-                        Some(Err(e)) => self.set_status(format!("{e}")),
+                        Some(Err(e)) => self.set_status(e.localized()),
                         None => {}
                     }
                 }
@@ -351,13 +352,13 @@ impl App {
                         self.gen_result.zeroize();
                         self.gen_result = (*p).clone();
                     }
-                    Err(e) => self.set_status(format!("{e}")),
+                    Err(e) => self.set_status(e.localized()),
                 }
             }
             KeyCode::Char('c') => {
                 let r = self.gen_result.clone();
                 if !r.is_empty() {
-                    self.copy_to_clipboard(&r, "generated password");
+                    self.copy_to_clipboard(&r, "copied_generated");
                 }
             }
             KeyCode::Char('+') | KeyCode::Right => self.gen_length = (self.gen_length + 1).min(128),
@@ -438,7 +439,7 @@ impl App {
 
     pub fn save_form(&mut self) {
         if self.form.label.trim().is_empty() {
-            self.set_status("Label is required");
+            self.set_status(t("status_label_needed"));
             return;
         }
         let label = self.form.label.trim().to_string();
@@ -497,9 +498,9 @@ impl App {
             Ok(()) => {
                 self.screen = Screen::Unlocked;
                 self.refresh_entries();
-                self.set_status(format!("Saved '{label}'"));
+                self.set_status(tf("status_saved", &[("label", &label)]));
             }
-            Err(e) => self.set_status(format!("{e}")),
+            Err(e) => self.set_status(e.localized()),
         }
     }
 
@@ -512,7 +513,7 @@ impl App {
                 .and_then(|s| lilypad_core::reveal_secret(s, &label).ok())
                 .map(|r| r.password.clone());
             if let Some(pw) = pw {
-                self.copy_to_clipboard(&pw, "password");
+                self.copy_to_clipboard(&pw, "copied_password");
             }
         }
     }
@@ -524,9 +525,9 @@ impl App {
             .and_then(|i| self.entries.get(i))
             .and_then(|e| e.username.clone());
         if let Some(u) = user {
-            self.copy_to_clipboard(&u, "username");
+            self.copy_to_clipboard(&u, "copied_username");
         } else {
-            self.set_status("No username on this entry");
+            self.set_status(t("status_no_username"));
         }
     }
 
@@ -553,10 +554,10 @@ impl App {
         let ts = secret.as_ref().and_then(|r| r.totp_secret.clone());
         match ts {
             Some(ts) => match lilypad_core::totp::code_for_secret(&ts) {
-                Ok(code) => self.copy_to_clipboard(&code, "TOTP code"),
-                Err(e) => self.set_status(format!("{e}")),
+                Ok(code) => self.copy_to_clipboard(&code, "copied_totp"),
+                Err(e) => self.set_status(e.localized()),
             },
-            None => self.set_status("No TOTP secret on this entry"),
+            None => self.set_status(t("status_no_totp")),
         }
     }
 

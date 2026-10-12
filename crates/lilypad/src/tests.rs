@@ -2,7 +2,9 @@
 
 use crate::message::{Filter, FormField, Message};
 use crate::state::LilypadApp;
-use crate::theme::{LilypadTheme, UiVariation};
+use crate::theme::UiVariation;
+use colony_ui::preferences::Change;
+use lilypad_core::i18n::Locale;
 use lilypad_core::{EntryMetadata, EntrySecret, EntryType};
 use tempfile::TempDir;
 
@@ -75,15 +77,25 @@ fn favorite_toggle_and_filter() {
 }
 
 #[test]
-fn theme_and_density_persist() {
+fn theme_language_and_density_persist() {
     let dir = TempDir::new().unwrap();
     let mut app = app_in(&dir);
-    let _ = app.update(Message::ThemeSelected(LilypadTheme::Dracula));
+    let _ = app.update(Message::Preference(Change::Theme {
+        family: "dracula",
+        variant: "dark",
+    }));
+    assert!(app.notice.is_some(), "a theme change raises the toast");
+    let _ = app.update(Message::DismissNotice);
+    assert!(app.notice.is_none());
+    let _ = app.update(Message::Preference(Change::HighContrast(true)));
     let _ = app.update(Message::DensitySelected(UiVariation::Compact));
-    // A fresh app reads the persisted settings.
+    let _ = app.update(Message::SetLanguage(Locale::Fr));
+    // A fresh app reads the persisted preferences.
     let app2 = app_in(&dir);
-    assert_eq!(app2.theme, LilypadTheme::Dracula);
+    assert_eq!(app2.prefs.selected_theme, "dracula");
+    assert!(app2.prefs.high_contrast);
     assert_eq!(app2.density, UiVariation::Compact);
+    assert_eq!(app2.language.as_deref(), Some("fr"));
 }
 
 #[test]
@@ -102,22 +114,38 @@ fn settings_changes_persist_across_restart() {
 }
 
 #[test]
-fn settings_page_open_and_section_toggle() {
+fn the_toggle_opens_and_closes_preferences() {
     let dir = TempDir::new().unwrap();
     let mut app = app_in(&dir);
-    assert!(!app.settings_open);
-    let _ = app.update(Message::OpenSettings);
-    assert!(app.settings_open);
-    let _ = app.update(Message::SettingsCategory(2));
-    assert_eq!(app.settings_category, 2);
-    // A section that is collapsed by default toggles on, then off.
-    assert!(!app.settings_sections.contains("master"));
-    let _ = app.update(Message::SettingsToggleSection("master".into()));
-    assert!(app.settings_sections.contains("master"));
-    let _ = app.update(Message::SettingsToggleSection("master".into()));
-    assert!(!app.settings_sections.contains("master"));
-    let _ = app.update(Message::CloseSettings);
-    assert!(!app.settings_open);
+    assert!(!app.preferences_open);
+    let _ = app.update(Message::TogglePreferences);
+    assert!(app.preferences_open);
+    let _ = app.update(Message::PreferencesCategory(3));
+    assert_eq!(app.preferences_category, 3);
+    // Every section arrives closed and toggles open, then closed.
+    assert!(!app.expanded.contains("master"));
+    let _ = app.update(Message::ToggleSection("master"));
+    assert!(app.expanded.contains("master"));
+    let _ = app.update(Message::ToggleSection("master"));
+    assert!(!app.expanded.contains("master"));
+    // The same message closes it, wiping what was typed there, and the next
+    // opening starts on General.
+    app.cm_new = "half-typed".to_string();
+    let _ = app.update(Message::TogglePreferences);
+    assert!(!app.preferences_open);
+    assert!(app.cm_new.is_empty());
+    let _ = app.update(Message::TogglePreferences);
+    assert_eq!(app.preferences_category, 0);
+}
+
+#[test]
+fn choosing_a_sidebar_destination_leaves_preferences() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    let _ = app.update(Message::TogglePreferences);
+    let _ = app.update(Message::FilterSelected(Filter::Favorites));
+    assert!(!app.preferences_open);
+    assert_eq!(app.filter, Filter::Favorites);
 }
 
 #[test]
@@ -135,8 +163,8 @@ fn form_saves_tags_folder_type_and_expiry() {
     let _ = app.update(Message::FormChanged(FormField::Password, "pw2".into()));
     let _ = app.update(Message::FormChanged(FormField::Tags, "money, perso".into()));
     let _ = app.update(Message::FormChanged(FormField::Folder, "Finance".into()));
-    let _ = app.update(Message::FormTypeSelected("Cards".into()));
-    let _ = app.update(Message::FormExpirySelected("90 days".into()));
+    let _ = app.update(Message::FormTypeSelected(EntryType::Card));
+    let _ = app.update(Message::FormExpirySelected(Some(90)));
     let _ = app.update(Message::FormSave);
 
     let view = app.entries.iter().find(|e| e.label == "bank").unwrap();
@@ -308,4 +336,54 @@ fn auto_lock_setting_applies_to_live_session() {
     // A positive value re-arms it.
     let _ = app.update(Message::SetAutoLock(5));
     assert!(app.session.as_ref().unwrap().time_until_lock().is_some());
+}
+
+/// Every `.rs` file of this crate's `src/`, except this one.
+fn sources() -> Vec<(std::path::PathBuf, String)> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<(std::path::PathBuf, String)>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") && !path.ends_with("tests.rs") {
+                out.push((path.clone(), std::fs::read_to_string(&path).unwrap()));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+        &mut out,
+    );
+    out
+}
+
+#[test]
+fn no_colour_is_written_by_hand() {
+    // Colours come from the Colony palette; a literal is right on one theme
+    // at most.
+    for (path, text) in sources() {
+        for (n, line) in text.lines().enumerate() {
+            assert!(
+                !line.contains("Color::from_rgb") && !line.contains("Color { r:"),
+                "{}:{}: {line}",
+                path.display(),
+                n + 1
+            );
+        }
+    }
+}
+
+#[test]
+fn every_text_size_goes_through_sz() {
+    // A raw size ignores both text-size preferences.
+    for (path, text) in sources() {
+        for (n, line) in text.lines().enumerate() {
+            let raw = line
+                .split(".size(")
+                .skip(1)
+                .any(|rest| rest.starts_with(|c: char| c.is_ascii_digit()));
+            assert!(!raw, "{}:{}: {line}", path.display(), n + 1);
+        }
+    }
 }

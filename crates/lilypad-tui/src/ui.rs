@@ -1,6 +1,7 @@
 //! Rendering of every screen.
 
 use crate::app::{App, FormField, Screen};
+use lilypad_core::i18n::{t, tf};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -57,19 +58,19 @@ impl App {
     }
 
     pub fn draw_status(&self, frame: &mut Frame, area: Rect) {
-        let hint = match self.screen {
-            Screen::Locked => "type password · ↑↓ vault · Enter unlock · ^N new vault · Esc quit",
-            Screen::CreateVault => "Tab switch field · Enter create · Esc back",
-            Screen::Unlocked if self.searching => "type to filter · Enter done · Esc clear",
-            Screen::Unlocked => "a add · e edit · d del · Enter view · c/u/t copy · / search · g gen · T trash · l lock · ? help · q quit",
-            Screen::View => "p show/hide · c copy pw · u copy user · t copy totp · Esc back",
-            Screen::Form => "Tab next · Ctrl+Enter save · Esc cancel",
-            Screen::Generate => "r regen · +/- length · U/L/D/S toggle sets · c copy · Esc back",
-            Screen::Help => "Esc close",
-            Screen::ConfirmDelete => "y confirm · any other key cancel",
-            Screen::Trash => "r restore · x delete forever · ↑↓ move · Esc back",
-            Screen::ConfirmPurge => "y delete FOREVER · any other key cancel",
-        };
+        let hint = t(match self.screen {
+            Screen::Locked => "tui_hint_locked",
+            Screen::CreateVault => "tui_hint_create",
+            Screen::Unlocked if self.searching => "tui_hint_search",
+            Screen::Unlocked => "tui_hint_list",
+            Screen::View => "tui_hint_view",
+            Screen::Form => "tui_hint_form",
+            Screen::Generate => "tui_hint_generate",
+            Screen::Help => "tui_hint_help",
+            Screen::ConfirmDelete => "tui_hint_confirm",
+            Screen::Trash => "tui_hint_trash",
+            Screen::ConfirmPurge => "tui_hint_confirm_purge",
+        });
         let text = self.status.clone().unwrap_or_else(|| hint.to_string());
         frame.render_widget(
             Paragraph::new(text).style(Style::default().fg(Color::DarkGray)),
@@ -89,14 +90,25 @@ impl App {
             .map(|v| ListItem::new(v.clone()))
             .collect();
         let list = List::new(items)
-            .block(Block::default().borders(Borders::ALL).title(" Vaults "))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!(" {} ", t("sidebar_vaults"))),
+            )
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
             .highlight_symbol("> ");
         frame.render_stateful_widget(list, cols[0], &mut self.vault_list);
 
         let masked: String = "•".repeat(self.master_password.chars().count());
-        let pw = Paragraph::new(format!("\n  Master password:\n  {masked}"))
-            .block(Block::default().borders(Borders::ALL).title(" Unlock "));
+        let pw = Paragraph::new(format!(
+            "\n  {}:\n  {masked}",
+            t("unlock_password_placeholder")
+        ))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(format!(" {} ", t("unlock_button"))),
+        );
         frame.render_widget(pw, cols[1]);
     }
 
@@ -105,15 +117,18 @@ impl App {
         let name_marker = if self.create_focus_name { "> " } else { "  " };
         let pw_marker = if self.create_focus_name { "  " } else { "> " };
         let body = format!(
-            "\n {name_marker}Vault name:      {}\n\n {pw_marker}Master password: {masked}\n\n  Tab to switch field, Enter to create.",
-            self.new_vault_name
+            "\n {name_marker}{}: {}\n\n {pw_marker}{}: {masked}\n\n  {}",
+            t("create_name_placeholder"),
+            self.new_vault_name,
+            t("unlock_password_placeholder"),
+            t("tui_create_help"),
         );
         frame.render_widget(
             Paragraph::new(body)
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(" Create vault "),
+                        .title(format!(" {} ", t("create_title"))),
                 )
                 .wrap(Wrap { trim: false }),
             area,
@@ -122,9 +137,15 @@ impl App {
 
     pub fn draw_list(&mut self, frame: &mut Frame, area: Rect) {
         let title = if self.search_query.is_empty() {
-            format!(" Entries ({}) ", self.entries.len())
+            tf("tui_entries", &[("count", &self.entries.len())])
         } else {
-            format!(" Search: {} ({}) ", self.search_query, self.entries.len())
+            tf(
+                "tui_search",
+                &[
+                    ("query", &self.search_query),
+                    ("count", &self.entries.len()),
+                ],
+            )
         };
         let items: Vec<ListItem> = self
             .entries
@@ -148,10 +169,10 @@ impl App {
     }
 
     pub fn draw_trash(&mut self, frame: &mut Frame, area: Rect) {
-        let title = format!(" Trash ({}) ", self.trashed.len());
+        let title = tf("tui_trash", &[("count", &self.trashed.len())]);
         let items: Vec<ListItem> = if self.trashed.is_empty() {
             vec![ListItem::new(Line::from(Span::styled(
-                "  (empty)",
+                t("tui_empty"),
                 Style::default().fg(Color::DarkGray),
             )))]
         } else {
@@ -187,13 +208,13 @@ impl App {
         lines.push(Line::from(""));
         if let Some(v) = view {
             if let Some(u) = &v.username {
-                lines.push(Line::from(format!("Username: {u}")));
+                lines.push(field_line("field_username", u));
             }
             if let Some(u) = &v.url {
-                lines.push(Line::from(format!("URL:      {u}")));
+                lines.push(field_line("field_url", u));
             }
             if !v.tags.is_empty() {
-                lines.push(Line::from(format!("Tags:     {}", v.tags.join(", "))));
+                lines.push(field_line("field_tags", &v.tags.join(", ")));
             }
         }
         if let Some(secret) = &self.view_reveal {
@@ -202,23 +223,27 @@ impl App {
             } else {
                 "•".repeat(secret.password.chars().count().max(8))
             };
-            lines.push(Line::from(format!("Password: {pw}")));
+            lines.push(field_line("field_password", &pw));
             if let Some(n) = &secret.notes {
-                lines.push(Line::from(format!("Notes:    {n}")));
+                lines.push(field_line("field_notes", n));
             }
             if secret.totp_secret.is_some() {
-                lines.push(Line::from("TOTP:     configured (t to copy)"));
+                lines.push(field_line("field_totp", t("tui_totp_configured")));
             }
             if !secret.attachments.is_empty() {
-                lines.push(Line::from(format!(
-                    "Attachments: {}",
-                    secret.attachments.len()
-                )));
+                lines.push(field_line(
+                    "tui_attachments",
+                    &secret.attachments.len().to_string(),
+                ));
             }
         }
         frame.render_widget(
             Paragraph::new(lines)
-                .block(Block::default().borders(Borders::ALL).title(" Entry "))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(format!(" {} ", t("tui_entry"))),
+                )
                 .wrap(Wrap { trim: false }),
             area,
         );
@@ -245,15 +270,18 @@ impl App {
                 Style::default()
             };
             lines.push(Line::from(Span::styled(
-                format!("{marker}{:<13} {value}", format!("{}:", field.label())),
+                format!("{marker}{:<20} {value}", format!("{}:", field.label())),
                 style,
             )));
         }
-        let title = if self.form.editing_original.is_some() {
-            " Edit entry "
-        } else {
-            " Add entry "
-        };
+        let title = format!(
+            " {} ",
+            if self.form.editing_original.is_some() {
+                t("form_edit_title")
+            } else {
+                t("form_new_title")
+            }
+        );
         frame.render_widget(
             Paragraph::new(lines)
                 .block(Block::default().borders(Borders::ALL).title(title))
@@ -267,16 +295,25 @@ impl App {
         frame.render_widget(Clear, area);
         let toggle = |b: bool| if b { "[x]" } else { "[ ]" };
         let body = format!(
-            "\n Length: {}\n\n {} Upper (U)   {} Lower (L)\n {} Digits (D)  {} Symbols (S)\n\n Result:\n  {}\n",
-            self.gen_length,
+            "\n {}\n\n {} A-Z (U)   {} a-z (L)\n {} 0-9 (D)   {} !@# (S)\n\n {}:\n  {}\n",
+            tf("generator_length", &[("length", &self.gen_length)]),
             toggle(self.gen_upper),
             toggle(self.gen_lower),
             toggle(self.gen_digits),
             toggle(self.gen_symbols),
-            if self.gen_result.is_empty() { "(press r)" } else { &self.gen_result },
+            t("tui_result"),
+            if self.gen_result.is_empty() {
+                t("tui_press_r")
+            } else {
+                &self.gen_result
+            },
         );
         frame.render_widget(
-            Paragraph::new(body).block(Block::default().borders(Borders::ALL).title(" Generate ")),
+            Paragraph::new(body).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!(" {} ", t("generator_title"))),
+            ),
             area,
         );
     }
@@ -287,9 +324,15 @@ impl App {
         let label = self.selected_entry_label().unwrap_or_default();
         frame.render_widget(
             Paragraph::new(format!(
-                "\n Delete entry '{label}'?\n\n y = yes, any other key = no"
+                "\n {}\n\n {}",
+                tf("confirm_trash_body", &[("label", &label)]),
+                t("tui_yes_no")
             ))
-            .block(Block::default().borders(Borders::ALL).title(" Confirm ")),
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!(" {} ", t("confirm_trash_title"))),
+            ),
             area,
         );
     }
@@ -300,12 +343,15 @@ impl App {
         let label = self.selected_trash_label().unwrap_or_default();
         frame.render_widget(
             Paragraph::new(format!(
-                "\n Permanently delete '{label}'?\n This cannot be undone.\n\n y = yes, any other key = no"
+                "\n {}\n\n {}",
+                tf("confirm_delete_body", &[("label", &label)]),
+                t("tui_yes_no")
             ))
+            .wrap(Wrap { trim: false })
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(" Delete forever "),
+                    .title(format!(" {} ", t("confirm_delete_title"))),
             ),
             area,
         );
@@ -314,12 +360,20 @@ impl App {
     pub fn draw_help(&self, frame: &mut Frame) {
         let area = centered_rect(60, 70, frame.area());
         frame.render_widget(Clear, area);
-        let body = "\n Navigation\n  j/k or ↑/↓   move\n  Enter or v   view entry\n  /            search\n\n Actions\n  a  add entry     e  edit entry\n  d  to Trash      T  open Trash\n  g  generate      l  lock vault\n  c  copy password u  copy username\n  t  copy TOTP\n\n Trash\n  r  restore       x  delete forever\n\n  q / Esc  quit\n";
         frame.render_widget(
-            Paragraph::new(body).block(Block::default().borders(Borders::ALL).title(" Help ")),
+            Paragraph::new(t("tui_help")).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!(" {} ", t("tui_help_title"))),
+            ),
             area,
         );
     }
+}
+
+/// One `Label: value` line of the entry view.
+fn field_line(key: &str, value: &str) -> Line<'static> {
+    Line::from(format!("{:<20} {value}", format!("{}:", t(key))))
 }
 
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

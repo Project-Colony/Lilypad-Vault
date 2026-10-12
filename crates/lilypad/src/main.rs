@@ -1,19 +1,13 @@
-//! Lilypad Desktop Application
-//!
-//! A beautiful, secure password manager built with Iced.
-//!
-//! This is the main entry point for the Lilypad desktop application.
+//! Lilypad, the desktop app: a password manager built with iced on the
+//! Colony design system.
 
 // A GUI program: on Windows, without this, launching it from Colony or
 // Explorer also opens an empty console window beside the app.
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
-// The theme and font modules deliberately carry a full palette of styles,
-// colors and icons; not every one is wired into the current lean UI.
-#![allow(dead_code)]
 
-mod fonts;
+mod icons;
 mod message;
-mod settings;
+mod preferences;
 mod state;
 #[cfg(test)]
 mod tests;
@@ -24,7 +18,6 @@ mod view;
 use iced::Size;
 use state::LilypadApp;
 
-/// Application entry point
 fn main() -> iced::Result {
     // Answered before any window or GPU setup, so release CI can smoke-test
     // the binary on a runner with no display.
@@ -33,7 +26,7 @@ fn main() -> iced::Result {
         return Ok(());
     }
 
-    // Initialize logging: suppress noisy warnings from GPU and font subsystems
+    // Logging: quiet the GPU and font subsystems.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
@@ -45,16 +38,19 @@ fn main() -> iced::Result {
         )
         .init();
 
-    // Run the application with custom fonts
-    iced::application(LilypadApp::new, LilypadApp::update, LilypadApp::view)
+    // The Colony fonts (JetBrainsMono Nerd Font, OpenDyslexic, Font Awesome)
+    // ship inside colony-ui. `ui_font()` follows the dyslexia-font
+    // preference, which LilypadApp::new applies before the first frame.
+    colony_ui::fonts::BYTES
+        .into_iter()
+        .fold(
+            iced::application(LilypadApp::new, LilypadApp::update, LilypadApp::view),
+            |app, font| app.font(font),
+        )
         .title("Lilypad")
         .subscription(LilypadApp::subscription)
+        .theme(|_: &LilypadApp| theme::iced_theme())
         .window_size(Size::new(1200.0, 800.0))
-        .font(fonts::JETBRAINS_MONO_REGULAR)
-        .font(fonts::JETBRAINS_MONO_BOLD)
-        .font(fonts::JETBRAINS_MONO_SEMIBOLD)
-        .font(fonts::JETBRAINS_MONO_MEDIUM)
-        .font(fonts::JETBRAINS_MONO_LIGHT)
-        .default_font(fonts::FONT_REGULAR)
+        .default_font(colony_ui::ui_font())
         .run()
 }
