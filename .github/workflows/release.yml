@@ -2,13 +2,15 @@
 #
 # Built from templates/sign-and-publish-caller.yml in Project-Colony-Resources.
 # Each platform ships three binaries. The desktop app is the one Colony
-# installs, so colony.json names it explicitly (auto-detection would look for
-# lilypad-vault-<platform>, after the repository name):
+# installs, and it follows the Colony naming convention (<repo>-<platform>,
+# after the repository name), so Colony auto-detects it and colony.json only
+# needs a name and a category. The CLI and TUI carry their own names, which
+# auto-detection ignores:
 #
-#   lilypad-linux      lilypad-cli-linux      lilypad-tui-linux
-#   lilypad-windows.exe lilypad-cli-windows.exe lilypad-tui-windows.exe
-#   lilypad-macos      lilypad-cli-macos      lilypad-tui-macos
-#   lilypad-macos-x86  lilypad-cli-macos-x86  lilypad-tui-macos-x86
+#   lilypad-vault-linux        lilypad-cli-linux        lilypad-tui-linux
+#   lilypad-vault-windows.exe  lilypad-cli-windows.exe  lilypad-tui-windows.exe
+#   lilypad-vault-macos        lilypad-cli-macos        lilypad-tui-macos
+#   lilypad-vault-macos-x86    lilypad-cli-macos-x86    lilypad-tui-macos-x86
 #
 # The build legs only build, check and upload artifacts; they never see a key.
 # Authenticode (SignPath, once approved), the ed25519 .sig/.meta/.meta.sig,
@@ -160,7 +162,7 @@ jobs:
           EXT: ${{ matrix.ext }}
         run: |
           mkdir dist
-          cp "$DIR/lilypad-desktop$EXT" "dist/lilypad-$P$EXT"
+          cp "$DIR/lilypad-desktop$EXT" "dist/lilypad-vault-$P$EXT"
           cp "$DIR/lilypad-cli$EXT" "dist/lilypad-cli-$P$EXT"
           cp "$DIR/lilypad-tui$EXT" "dist/lilypad-tui-$P$EXT"
           ls -l dist
@@ -168,9 +170,17 @@ jobs:
       # A manifest can PARSE perfectly and still leave the program listed in
       # Colony with no Download button, because none of its files exist in the
       # release. `colony validate-manifest` given the asset names catches
-      # exactly that. Linux only: one check per release is enough. No key is
-      # on this runner: signing happens in sign-and-publish. Colony's binary
-      # RUNS here, so its signature and signed .meta are checked first.
+      # exactly that. Linux only: one check per release is enough. The names
+      # are the same list as `assets` in the sign-and-publish job below.
+      #
+      # `./colony.json`, not `colony.json`: the validator matches assets
+      # against the name of the directory holding the manifest, which is the
+      # repository name in a checkout. Given a bare file name it falls back to
+      # the manifest's "name" (Lilypad) and would expect lilypad-<platform>.
+      #
+      # No key is on this runner: signing happens in sign-and-publish.
+      # Colony's binary RUNS here, so its signature and signed .meta are
+      # checked first.
       - name: Validate colony.json
         if: runner.os == 'Linux'
         env:
@@ -196,8 +206,11 @@ jobs:
             && grep -qx "sha256=$digest" "$d/colony-linux.meta" \
             || { echo "::error::colony-linux.meta does not describe the downloaded colony-linux"; exit 1; }
           chmod +x "$d/colony-linux"
-          "$d/colony-linux" validate-manifest colony.json \
-            lilypad-linux lilypad-windows.exe lilypad-macos lilypad-macos-x86
+          "$d/colony-linux" validate-manifest ./colony.json \
+            lilypad-vault-linux lilypad-cli-linux lilypad-tui-linux \
+            lilypad-vault-windows.exe lilypad-cli-windows.exe lilypad-tui-windows.exe \
+            lilypad-vault-macos lilypad-cli-macos lilypad-tui-macos \
+            lilypad-vault-macos-x86 lilypad-cli-macos-x86 lilypad-tui-macos-x86
           rm -rf "$d"
 
       # The signature proves provenance and says nothing about whether the
@@ -212,7 +225,7 @@ jobs:
           P: ${{ matrix.platform }}
           EXT: ${{ matrix.ext }}
         run: |
-          for bin in lilypad lilypad-cli lilypad-tui; do
+          for bin in lilypad-vault lilypad-cli lilypad-tui; do
             "./dist/$bin-$P$EXT" --version
           done
 
@@ -228,7 +241,7 @@ jobs:
         run: |
           $version = $env:TAG -replace '^v', ''
           $failed = $false
-          foreach ($asset in 'lilypad-windows.exe', 'lilypad-cli-windows.exe', 'lilypad-tui-windows.exe') {
+          foreach ($asset in 'lilypad-vault-windows.exe', 'lilypad-cli-windows.exe', 'lilypad-tui-windows.exe') {
             $info = (Get-Item "dist\$asset").VersionInfo
             "$asset ProductName='$($info.ProductName)' ProductVersion='$($info.ProductVersion)' FileVersion='$($info.FileVersion)' FileDescription='$($info.FileDescription)'"
             if ($info.ProductName -cne 'Lilypad' -or $info.ProductVersion -cne $version) {
@@ -273,10 +286,10 @@ jobs:
     with:
       tag: ${{ needs.release-please.outputs.tag_name || inputs.tag }}
       assets: >-
-        lilypad-linux lilypad-cli-linux lilypad-tui-linux
-        lilypad-windows.exe lilypad-cli-windows.exe lilypad-tui-windows.exe
-        lilypad-macos lilypad-cli-macos lilypad-tui-macos
-        lilypad-macos-x86 lilypad-cli-macos-x86 lilypad-tui-macos-x86
+        lilypad-vault-linux lilypad-cli-linux lilypad-tui-linux
+        lilypad-vault-windows.exe lilypad-cli-windows.exe lilypad-tui-windows.exe
+        lilypad-vault-macos lilypad-cli-macos lilypad-tui-macos
+        lilypad-vault-macos-x86 lilypad-cli-macos-x86 lilypad-tui-macos-x86
       artifact-pattern: build-*
       # Uncomment once SignPath has approved this project and its project
       # exists in the Project-Colony SignPath organisation:

@@ -2,12 +2,5 @@
   "$schema": "https://raw.githubusercontent.com/Project-Colony/Project-Colony-Resources/main/generated/colony.schema.json",
   "name": "Lilypad",
   "category": "security",
-  "platforms": ["windows", "linux", "macos", "macos-x86"],
-  "releaseFiles": {
-    "windows": { "tag": "latest", "file": "lilypad-windows.exe" },
-    "linux": { "tag": "latest", "file": "lilypad-linux" },
-    "macos": { "tag": "latest", "file": "lilypad-macos" },
-    "macos-x86": { "tag": "latest", "file": "lilypad-macos-x86" }
-  },
   "signed": true
 }

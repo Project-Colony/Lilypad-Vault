@@ -34,10 +34,10 @@ app store, or from the [releases page](https://github.com/Project-Colony/Lilypad
 
 | Platform | Desktop app | CLI | TUI |
 | --- | --- | --- | --- |
-| Linux (x86_64) | `lilypad-linux` | `lilypad-cli-linux` | `lilypad-tui-linux` |
-| Windows (x86_64) | `lilypad-windows.exe` | `lilypad-cli-windows.exe` | `lilypad-tui-windows.exe` |
-| macOS (Apple Silicon) | `lilypad-macos` | `lilypad-cli-macos` | `lilypad-tui-macos` |
-| macOS (Intel) | `lilypad-macos-x86` | `lilypad-cli-macos-x86` | `lilypad-tui-macos-x86` |
+| Linux (x86_64) | `lilypad-vault-linux` | `lilypad-cli-linux` | `lilypad-tui-linux` |
+| Windows (x86_64) | `lilypad-vault-windows.exe` | `lilypad-cli-windows.exe` | `lilypad-tui-windows.exe` |
+| macOS (Apple Silicon) | `lilypad-vault-macos` | `lilypad-cli-macos` | `lilypad-tui-macos` |
+| macOS (Intel) | `lilypad-vault-macos-x86` | `lilypad-cli-macos-x86` | `lilypad-tui-macos-x86` |
 
 Every file has a detached ed25519 signature (`.sig`) and a signed metadata
 sidecar (`.meta`, `.meta.sig`) made with the Project Colony release key, which
