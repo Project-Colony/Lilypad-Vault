@@ -2836,27 +2836,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "lilypad-app"
+name = "lilypad"
 version = "0.2.0"
 dependencies = [
- "anyhow",
- "csv",
- "directories",
- "fs2",
- "lilypad-common",
+ "iced",
  "lilypad-core",
- "lilypad-oauth",
- "lilypad-storage",
- "rand 0.10.3",
- "reqwest",
- "serde",
- "serde_json",
- "sha1 0.11.0",
- "sha2 0.11.0",
  "tempfile",
- "thiserror 2.0.21",
- "totp-rs",
- "unicode-normalization",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "webbrowser",
+ "winresource",
  "zeroize",
 ]
 
@@ -2869,8 +2859,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "clap_complete",
- "lilypad-app",
- "lilypad-common",
+ "lilypad-core",
  "predicates",
  "rpassword",
  "serde_json",
@@ -2880,85 +2869,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "lilypad-common"
+name = "lilypad-core"
 version = "0.2.0"
 dependencies = [
  "anyhow",
  "arboard",
- "chrono",
- "lilypad-core",
- "serde",
- "serde_json",
- "tempfile",
- "zeroize",
-]
-
-[[package]]
-name = "lilypad-core"
-version = "0.2.0"
-dependencies = [
  "argon2",
- "chacha20poly1305",
- "criterion",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "lilypad-desktop"
-version = "0.2.0"
-dependencies = [
- "iced",
- "lilypad-app",
- "lilypad-common",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "webbrowser",
- "winresource",
- "zeroize",
-]
-
-[[package]]
-name = "lilypad-oauth"
-version = "0.2.0"
-dependencies = [
- "anyhow",
  "base64 0.22.1",
  "chacha20poly1305",
  "chrono",
+ "criterion",
+ "csv",
  "directories",
+ "fs2",
  "hex",
  "hostname",
  "rand 0.10.3",
  "reqwest",
  "serde",
  "serde_json",
+ "sha1 0.11.0",
  "sha2 0.11.0",
+ "subtle",
  "tempfile",
+ "thiserror 2.0.21",
+ "totp-rs",
+ "unicode-normalization",
  "whoami",
  "zeroize",
-]
-
-[[package]]
-name = "lilypad-storage"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "chrono",
- "fs2",
- "hex",
- "lilypad-common",
- "lilypad-core",
- "rand 0.10.3",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
 ]
 
 [[package]]
@@ -2967,8 +2905,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "crossterm",
- "lilypad-app",
- "lilypad-common",
+ "lilypad-core",
  "ratatui",
  "tempfile",
  "winresource",

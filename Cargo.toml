@@ -1,14 +1,5 @@
 [workspace]
-members = [
-    "lilypad-app",
-    "lilypad-cli",
-    "lilypad-common",
-    "lilypad-core",
-    "lilypad-oauth",
-    "lilypad-storage",
-    "ui/desktop",
-    "ui/tui",
-]
+members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
@@ -32,6 +23,8 @@ codegen-units = 1
 strip = "symbols"
 
 [workspace.dependencies]
+lilypad-core = { path = "crates/lilypad-core" }
+
 anyhow = "1.0.104"
 argon2 = "0.6.0"
 arboard = "3.6.1"
