@@ -62,11 +62,11 @@ jobs:
       - run: cargo test --workspace
 
       # Release builds compile an OAuth client ID in and the run above has
-      # none, so it only tests the "no client id" path. Run the OAuth tests
-      # again with one compiled in.
-      - name: Test lilypad-oauth with a compiled-in client ID
+      # none, so it only tests the "no client id" path. Run the lilypad-core
+      # tests (OAuth and sync included) again with one compiled in.
+      - name: Test lilypad-core with a compiled-in client ID
         if: runner.os == 'Linux'
-        run: cargo test -p lilypad-oauth
+        run: cargo test -p lilypad-core
         env:
           LILYPAD_GITHUB_CLIENT_ID: ci-test-client-id
 
@@ -78,11 +78,11 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          cargo build -p lilypad-desktop -p lilypad-cli -p lilypad-tui
+          cargo build -p lilypad -p lilypad-cli -p lilypad-tui
           $version = (cargo metadata --no-deps --format-version 1 | ConvertFrom-Json).packages |
-            Where-Object name -eq 'lilypad-desktop' | ForEach-Object version
+            Where-Object name -eq 'lilypad' | ForEach-Object version
           $failed = $false
-          foreach ($exe in 'lilypad-desktop.exe', 'lilypad-cli.exe', 'lilypad-tui.exe') {
+          foreach ($exe in 'lilypad.exe', 'lilypad-cli.exe', 'lilypad-tui.exe') {
             $info = (Get-Item "target\debug\$exe").VersionInfo
             "$exe ProductName='$($info.ProductName)' ProductVersion='$($info.ProductVersion)' FileDescription='$($info.FileDescription)'"
             if ($info.ProductName -cne 'Lilypad' -or $info.ProductVersion -cne $version) {

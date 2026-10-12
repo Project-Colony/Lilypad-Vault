@@ -1,0 +1,50 @@
+[package]
+name = "lilypad-core"
+description = "Vault model, cryptography, storage, GitHub sync and the service layer shared by the Lilypad desktop app, CLI and TUI"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+argon2.workspace = true
+arboard.workspace = true
+base64.workspace = true
+chacha20poly1305.workspace = true
+chrono.workspace = true
+colony-ui.workspace = true
+# CSV parsing/writing for the importer (LastPass, Bitwarden, KeePassXC, ...)
+# and the native export.
+csv.workspace = true
+dirs.workspace = true
+fs2.workspace = true
+hex.workspace = true
+hostname.workspace = true
+rand.workspace = true
+reqwest = { workspace = true, features = ["blocking", "json"] }
+serde.workspace = true
+serde_json.workspace = true
+# HIBP k-anonymity breach check: SHA-1 range queries (the password never
+# leaves the machine; only the first 5 hex chars of its hash are sent).
+sha1.workspace = true
+sha2.workspace = true
+subtle.workspace = true
+sys-locale.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+totp-rs.workspace = true
+# Pure-Rust Unicode NFC for the master-password choke point, so composed vs
+# decomposed accents (NFC on Linux, NFD on macOS) derive the same key.
+unicode-normalization.workspace = true
+whoami.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "crypto"
+harness = false
