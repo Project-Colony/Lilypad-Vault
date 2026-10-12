@@ -867,6 +867,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "colony-ui"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31984ffb00f64c0fd0b998103ef11e1f4255e8f26c784a3776caf4b9ea28d60b"
+dependencies = [
+ "dirs",
+ "iced",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1339,10 +1351,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "directories"
+name = "dirs"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16f5094c54661b38d03bd7e50df373292118db60b585c08a411c6d840017fe7d"
+checksum = "c3e8aa94d75141228480295a7d0e7feb620b1a5ad9f12bc40be62411e38cce4e"
 dependencies = [
  "dirs-sys",
 ]
@@ -1482,7 +1494,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2254,7 +2266,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.58.0",
+ "windows-core 0.62.2",
 ]
 
 [[package]]
@@ -2836,27 +2848,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "lilypad-app"
+name = "lilypad"
 version = "0.2.0"
 dependencies = [
- "anyhow",
- "csv",
- "directories",
- "fs2",
- "lilypad-common",
+ "colony-ui",
+ "iced",
  "lilypad-core",
- "lilypad-oauth",
- "lilypad-storage",
- "rand 0.10.3",
- "reqwest",
- "serde",
- "serde_json",
- "sha1 0.11.0",
- "sha2 0.11.0",
  "tempfile",
- "thiserror 2.0.21",
- "totp-rs",
- "unicode-normalization",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "webbrowser",
+ "winresource",
  "zeroize",
 ]
 
@@ -2869,8 +2872,7 @@ dependencies = [
  "base64 0.22.1",
  "clap",
  "clap_complete",
- "lilypad-app",
- "lilypad-common",
+ "lilypad-core",
  "predicates",
  "rpassword",
  "serde_json",
@@ -2880,85 +2882,36 @@ dependencies = [
 ]
 
 [[package]]
-name = "lilypad-common"
+name = "lilypad-core"
 version = "0.2.0"
 dependencies = [
  "anyhow",
  "arboard",
- "chrono",
- "lilypad-core",
- "serde",
- "serde_json",
- "tempfile",
- "zeroize",
-]
-
-[[package]]
-name = "lilypad-core"
-version = "0.2.0"
-dependencies = [
  "argon2",
- "chacha20poly1305",
- "criterion",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "subtle",
- "zeroize",
-]
-
-[[package]]
-name = "lilypad-desktop"
-version = "0.2.0"
-dependencies = [
- "iced",
- "lilypad-app",
- "lilypad-common",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "webbrowser",
- "winresource",
- "zeroize",
-]
-
-[[package]]
-name = "lilypad-oauth"
-version = "0.2.0"
-dependencies = [
- "anyhow",
  "base64 0.22.1",
  "chacha20poly1305",
  "chrono",
- "directories",
+ "colony-ui",
+ "criterion",
+ "csv",
+ "dirs",
+ "fs2",
  "hex",
  "hostname",
  "rand 0.10.3",
  "reqwest",
  "serde",
  "serde_json",
+ "sha1 0.11.0",
  "sha2 0.11.0",
+ "subtle",
+ "sys-locale",
  "tempfile",
+ "thiserror 2.0.21",
+ "totp-rs",
+ "unicode-normalization",
  "whoami",
  "zeroize",
-]
-
-[[package]]
-name = "lilypad-storage"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "chrono",
- "fs2",
- "hex",
- "lilypad-common",
- "lilypad-core",
- "rand 0.10.3",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
 ]
 
 [[package]]
@@ -2967,8 +2920,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "crossterm",
- "lilypad-app",
- "lilypad-common",
+ "lilypad-core",
  "ratatui",
  "tempfile",
  "winresource",
@@ -4759,7 +4711,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4921,6 +4873,7 @@ version = "1.0.151"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c841b55ecdae098c80dcae9cf767f6f8a0c2cdb3416bbef72181df4d0fe73f14"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "serde",
@@ -5380,10 +5333,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6579,7 +6532,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

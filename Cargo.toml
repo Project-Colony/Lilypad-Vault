@@ -1,14 +1,5 @@
 [workspace]
-members = [
-    "lilypad-app",
-    "lilypad-cli",
-    "lilypad-common",
-    "lilypad-core",
-    "lilypad-oauth",
-    "lilypad-storage",
-    "ui/desktop",
-    "ui/tui",
-]
+members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
@@ -32,6 +23,8 @@ codegen-units = 1
 strip = "symbols"
 
 [workspace.dependencies]
+lilypad-core = { path = "crates/lilypad-core" }
+
 anyhow = "1.0.104"
 argon2 = "0.6.0"
 arboard = "3.6.1"
@@ -41,10 +34,15 @@ chacha20poly1305 = "0.11.0"
 chrono = { version = "0.4.45", features = ["serde"] }
 clap = { version = "4.5.60", features = ["derive"] }
 clap_complete = "4.6.9"
+# The Colony design system: paths, themes, fonts, labels and the preferences
+# kit. Fonts are embedded only where the desktop app turns the feature on.
+colony-ui = { version = "0.1.6", default-features = false }
 criterion = { version = "0.8.2", features = ["html_reports"] }
 crossterm = "0.29.0"
 csv = "1.4.0"
-directories = "6.0.0"
+# Only to find where releases up to 0.2 kept their files (see
+# lilypad-core paths.rs); every current path comes from colony-ui.
+dirs = "6.0.0"
 fs2 = "0.4.3"
 hex = "0.4.3"
 hostname = "0.4.2"
@@ -59,6 +57,8 @@ serde_json = "1.0.151"
 sha1 = "0.11.0"
 sha2 = "0.11.0"
 subtle = "2.6.1"
+# The system language, the default interface locale.
+sys-locale = "0.3.2"
 tempfile = "3.27.0"
 thiserror = "2.0.21"
 tokio = "1.50.0"

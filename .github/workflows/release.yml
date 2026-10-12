@@ -124,7 +124,7 @@ jobs:
 
     env:
       # The GitHub OAuth App client ID that GitHub sync uses, compiled in by
-      # lilypad-oauth (option_env!). A client ID is public, so it is a variable,
+      # lilypad-core (option_env!). A client ID is public, so it is a variable,
       # not a secret. Unset, the release still works, and sync explains that no
       # client ID was compiled in.
       LILYPAD_GITHUB_CLIENT_ID: ${{ vars.LILYPAD_GITHUB_CLIENT_ID }}
@@ -152,7 +152,7 @@ jobs:
       # release-please-config.json), so a tag whose lock disagrees with its
       # manifest fails here instead of resolving something new.
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }} -p lilypad-desktop -p lilypad-cli -p lilypad-tui
+        run: cargo build --release --locked --target ${{ matrix.target }} -p lilypad -p lilypad-cli -p lilypad-tui
 
       - name: Name the artifacts
         shell: bash
@@ -162,7 +162,7 @@ jobs:
           EXT: ${{ matrix.ext }}
         run: |
           mkdir dist
-          cp "$DIR/lilypad-desktop$EXT" "dist/lilypad-vault-$P$EXT"
+          cp "$DIR/lilypad$EXT" "dist/lilypad-vault-$P$EXT"
           cp "$DIR/lilypad-cli$EXT" "dist/lilypad-cli-$P$EXT"
           cp "$DIR/lilypad-tui$EXT" "dist/lilypad-tui-$P$EXT"
           ls -l dist

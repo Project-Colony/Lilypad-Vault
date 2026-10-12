@@ -4,7 +4,7 @@ Lilypad is a local-first password manager written in Rust, part of
 [Project Colony](https://github.com/Project-Colony). It comes as three programs
 that share one service layer, so they read and write vaults the same way:
 
-- **Lilypad** (`lilypad-desktop`), the desktop app, built with iced;
+- **Lilypad** (`lilypad`), the desktop app, built with iced;
 - **Lilypad TUI** (`lilypad-tui`), a keyboard-driven terminal interface;
 - **Lilypad CLI** (`lilypad-cli`), for scripts and the shell.
 
@@ -26,6 +26,10 @@ that share one service layer, so they read and write vaults the same way:
 - Safety backups before deleting a vault, changing a master password,
   restoring a backup and applying a synced copy; auto-lock; a clipboard that
   clears itself.
+- The desktop app and the TUI in English and French. The desktop app uses the
+  Project Colony themes and accent colours, and honours text size, high
+  contrast, a dyslexia-friendly font and reduced motion; click the Lilypad
+  name in its sidebar, or press Ctrl+, (Cmd+, on macOS), to open Preferences.
 
 ## Install
 
@@ -45,12 +49,23 @@ Colony checks before installing.
 
 ## Where your data lives
 
-Vaults, settings and the GitHub sign-in token live in one directory:
-`~/.config/Colony/Lilypad` on Linux, `~/Library/Application Support/Colony/Lilypad`
-on macOS and `%APPDATA%\Colony\Lilypad\config` on Windows. The
-`LILYPAD_DATA_DIR` environment variable (all three programs) or `--data-dir`
-(CLI) moves the vaults and settings elsewhere; the GitHub token stays in the
-platform directory.
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Preferences and GitHub sign-in (`preferences.json`, `oauth_tokens.json`) | `~/.config/Colony/Lilypad` | `%LOCALAPPDATA%\Colony\Lilypad` | `~/Library/Application Support/Colony/Lilypad` |
+| Vaults, backups and sync state (`vaults/`, `backups/`, `sync/`) | `~/.local/share/Colony/Lilypad` | `%LOCALAPPDATA%\Colony\Lilypad` | `~/Library/Application Support/Colony/Lilypad` |
+
+The `LILYPAD_DATA_DIR` environment variable (all three programs) or
+`--data-dir` (CLI) keeps the whole profile in another directory instead,
+GitHub sign-in included.
+
+Releases up to 0.2 kept everything in `~/.config/Colony/Lilypad` on Linux,
+`%APPDATA%\Colony\Lilypad\config` on Windows and
+`~/Library/Application Support/Colony/Lilypad` on macOS. The first start of a
+newer release moves those files to the directories above and turns
+`settings.json` into `preferences.json`. The old directory stays; if the move
+fails, Lilypad keeps using it and tries again at the next start. Vaults made
+by older CLI builds in `./.lilypad` are not moved: open them with
+`--data-dir .lilypad`.
 
 A vault file is encrypted as a whole with a key derived from its master
 password (Argon2id, then XChaCha20-Poly1305), and each entry's secrets
@@ -69,7 +84,7 @@ Ubuntu, `openssl` on Arch, `openssl-devel` on Fedora): HTTPS goes through the
 system OpenSSL.
 
 ```bash
-cargo build --release -p lilypad-desktop -p lilypad-cli -p lilypad-tui
+cargo build --release -p lilypad -p lilypad-cli -p lilypad-tui
 cargo test --workspace
 ```
 
@@ -80,12 +95,11 @@ no client ID was compiled in.
 
 ## Development
 
-The workspace has eight crates: `lilypad-core` (cryptography and models),
-`lilypad-storage` (vault files, backups, locking), `lilypad-common`
-(validation, health checks, search), `lilypad-oauth` (GitHub sign-in and the
-GitHub API), `lilypad-app` (the service layer the three programs share),
-`lilypad-cli`, `ui/tui` and `ui/desktop`. See [`docs/doc.md`](docs/doc.md) for
-the architecture.
+The workspace has four crates under `crates/`: `lilypad` (the desktop app),
+`lilypad-tui`, `lilypad-cli`, and `lilypad-core`, the library the three share
+(models, cryptography, storage, GitHub sync and the service layer). See
+[`docs/internals/architecture.md`](docs/internals/architecture.md) for the
+architecture.
 
 Code, comments, documentation and commit messages are in English. Commits
 follow [Conventional Commits](https://www.conventionalcommits.org/): releases,
@@ -113,13 +127,13 @@ Team roles and members:
 Lilypad has no telemetry, no analytics, no account of its own and no update
 check. It contacts two networked services, each only when you ask it to.
 
-- **GitHub, for sync.** Signing in (`lilypad-cli login`, or Settings > Sync in
+- **GitHub, for sync.** Signing in (`lilypad-cli login`, or Preferences > Sync in
   the desktop app) uses GitHub's OAuth device flow: Lilypad shows a code, you
   approve it on github.com, and GitHub returns a token with the `repo` and
   `read:user` scopes. `repo` grants access to all your repositories, because
   GitHub OAuth Apps have no narrower scope for a single private repository;
   Lilypad only uses it on its own vault repository. The token is stored
-  in `oauth_tokens.json` in the platform directory above, readable only by
+  in `oauth_tokens.json` in the preferences directory above, readable only by
   your account on Linux and macOS. It is scrambled with a key derived from the
   machine's host name and your user name, not from a master password, so
   treat that file as you would the token itself. On push, pull,
@@ -131,8 +145,8 @@ check. It contacts two networked services, each only when you ask it to.
   [Where your data lives](#where-your-data-lives)).
   Nothing is sent to GitHub until you sign in, and nothing after `logout`.
 - **Have I Been Pwned, for the breach check.** Only when you run it
-  (`lilypad-cli breach-check`, or the button in the desktop app's vault health
-  settings). Lilypad hashes each password with SHA-1 on your machine and sends
+  (`lilypad-cli breach-check`, or the button in Preferences > Vault > Health in
+  the desktop app). Lilypad hashes each password with SHA-1 on your machine and sends
   only the first five characters of each hash to
   `https://api.pwnedpasswords.com/range/`, with padding enabled. The service
   never receives a password or a full hash, and the answer is compared
@@ -150,8 +164,9 @@ your option) any later version** (`GPL-3.0-or-later`). The full text is in
 Contributions are accepted under the same terms: by submitting a patch you
 agree that it may be distributed under GPL-3.0-or-later.
 
-The JetBrains Mono Nerd Font files in `ui/desktop/assets/fonts/` are
-third-party assets under the SIL Open Font License 1.1, with icon glyphs under
-their own licences, and are not covered by the GPL. See
-[`OFL.txt`](ui/desktop/assets/fonts/OFL.txt) and
-[`NERD-FONTS-NOTICE.md`](ui/desktop/assets/fonts/NERD-FONTS-NOTICE.md).
+The desktop app embeds the Project Colony fonts (JetBrains Mono Nerd Font,
+OpenDyslexic and Font Awesome 6 Free) through the
+[`colony-ui`](https://crates.io/crates/colony-ui) crate. They are third-party
+assets under their own licences (the SIL Open Font License 1.1 for the
+typefaces), shipped with their licence texts in that crate, and are not
+covered by the GPL.

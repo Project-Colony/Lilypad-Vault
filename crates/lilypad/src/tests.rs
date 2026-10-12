@@ -1,0 +1,473 @@
+//! State-machine tests of the desktop app.
+
+use crate::message::{Filter, FormField, Message};
+use crate::state::LilypadApp;
+use crate::theme::UiVariation;
+use colony_ui::preferences::Change;
+use lilypad_core::i18n::Locale;
+use lilypad_core::{EntryMetadata, EntrySecret, EntryType};
+use tempfile::TempDir;
+
+fn app_in(dir: &TempDir) -> LilypadApp {
+    LilypadApp::with_data_dir(Some(dir.path().to_path_buf())).0
+}
+
+fn seed(app: &LilypadApp, name: &str, password: &str, entry: &str) {
+    let mut session = app.service.create_vault(name, password).unwrap();
+    let secret = EntrySecret::new(entry.to_string());
+    lilypad_core::add_entry(
+        &app.service,
+        &mut session,
+        entry,
+        EntryMetadata::default(),
+        &secret,
+    )
+    .unwrap();
+}
+
+#[test]
+fn key_derived_opens_vault_and_lists_entries() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "v", "pw", "gh");
+    let key = app.service.derive_unlock_key("v", "pw").unwrap();
+    app.pending_vault = "v".to_string();
+    let _ = app.update(Message::KeyDerived(Ok(key)));
+    assert!(app.session.is_some());
+    assert_eq!(app.entries.len(), 1);
+}
+
+#[test]
+fn wrong_key_does_not_open_or_destroy_vault() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "v", "right", "gh");
+    let wrong = app.service.derive_unlock_key("v", "wrong").unwrap();
+    app.pending_vault = "v".to_string();
+    let _ = app.update(Message::KeyDerived(Ok(wrong)));
+    assert!(app.session.is_none());
+    let right = app.service.derive_unlock_key("v", "right").unwrap();
+    let _ = app.update(Message::KeyDerived(Ok(right)));
+    assert!(app.session.is_some());
+    assert_eq!(app.entries.len(), 1);
+}
+
+#[test]
+fn favorite_toggle_and_filter() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "v", "pw", "gh");
+    let key = app.service.derive_unlock_key("v", "pw").unwrap();
+    app.pending_vault = "v".to_string();
+    let _ = app.update(Message::KeyDerived(Ok(key)));
+
+    let _ = app.update(Message::ToggleFavorite("gh".to_string()));
+    assert!(
+        app.entries
+            .iter()
+            .find(|e| e.label == "gh")
+            .unwrap()
+            .is_favorite
+    );
+
+    app.filter = Filter::Favorites;
+    assert_eq!(app.visible().len(), 1);
+    app.filter = Filter::Type(EntryType::Card);
+    assert_eq!(app.visible().len(), 0);
+}
+
+#[test]
+fn theme_language_and_density_persist() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    let _ = app.update(Message::Preference(Change::Theme {
+        family: "dracula",
+        variant: "dark",
+    }));
+    assert!(app.notice.is_some(), "a theme change raises the toast");
+    let _ = app.update(Message::DismissNotice);
+    assert!(app.notice.is_none());
+    let _ = app.update(Message::Preference(Change::HighContrast(true)));
+    let _ = app.update(Message::DensitySelected(UiVariation::Compact));
+    let _ = app.update(Message::SetLanguage(Locale::Fr));
+    // A fresh app reads the persisted preferences.
+    let app2 = app_in(&dir);
+    assert_eq!(app2.prefs.selected_theme, "dracula");
+    assert!(app2.prefs.high_contrast);
+    assert_eq!(app2.density, UiVariation::Compact);
+    assert_eq!(app2.language.as_deref(), Some("fr"));
+}
+
+#[test]
+fn settings_changes_persist_across_restart() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    let _ = app.update(Message::SetAutoLock(15));
+    let _ = app.update(Message::SetClipboardSecs(45));
+    let _ = app.update(Message::SetDefaultFilter(1));
+    let _ = app.update(Message::ToggleRestoreLastVault); // true -> false
+    let app2 = app_in(&dir);
+    assert_eq!(app2.auto_lock_minutes, 15);
+    assert_eq!(app2.clipboard_secs, 45);
+    assert_eq!(app2.default_filter, 1);
+    assert!(!app2.restore_last_vault);
+}
+
+#[test]
+fn the_toggle_opens_and_closes_preferences() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    assert!(!app.preferences_open);
+    let _ = app.update(Message::TogglePreferences);
+    assert!(app.preferences_open);
+    let _ = app.update(Message::PreferencesCategory(3));
+    assert_eq!(app.preferences_category, 3);
+    // Every section arrives closed and toggles open, then closed.
+    assert!(!app.expanded.contains("master"));
+    let _ = app.update(Message::ToggleSection("master"));
+    assert!(app.expanded.contains("master"));
+    let _ = app.update(Message::ToggleSection("master"));
+    assert!(!app.expanded.contains("master"));
+    // The same message closes it, wiping what was typed there, and the next
+    // opening starts on General with every section closed.
+    let _ = app.update(Message::ToggleSection("master"));
+    app.cm_new = "half-typed".to_string();
+    let _ = app.update(Message::TogglePreferences);
+    assert!(!app.preferences_open);
+    assert!(app.cm_new.is_empty());
+    let _ = app.update(Message::TogglePreferences);
+    assert_eq!(app.preferences_category, 0);
+    assert!(app.expanded.is_empty());
+}
+
+#[test]
+fn picking_a_vault_in_the_sidebar_shows_its_unlock_card() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "v", "pw", "gh");
+    let _ = app.update(Message::ShowCreate);
+    let _ = app.update(Message::VaultSelected("v".to_string()));
+    assert!(app.screen == crate::state::Screen::Unlock);
+    assert_eq!(app.selected_vault.as_deref(), Some("v"));
+}
+
+#[test]
+fn choosing_a_sidebar_destination_leaves_preferences() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    let _ = app.update(Message::TogglePreferences);
+    let _ = app.update(Message::FilterSelected(Filter::Favorites));
+    assert!(!app.preferences_open);
+    assert_eq!(app.filter, Filter::Favorites);
+}
+
+#[test]
+fn form_saves_tags_folder_type_and_expiry() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "v", "pw", "gh");
+    let key = app.service.derive_unlock_key("v", "pw").unwrap();
+    app.pending_vault = "v".to_string();
+    let _ = app.update(Message::KeyDerived(Ok(key)));
+
+    // New entry with every form field set.
+    let _ = app.update(Message::ShowAddForm);
+    let _ = app.update(Message::FormChanged(FormField::Label, "bank".into()));
+    let _ = app.update(Message::FormChanged(FormField::Password, "pw2".into()));
+    let _ = app.update(Message::FormChanged(FormField::Tags, "money, perso".into()));
+    let _ = app.update(Message::FormChanged(FormField::Folder, "Finance".into()));
+    let _ = app.update(Message::FormTypeSelected(EntryType::Card));
+    let _ = app.update(Message::FormExpirySelected(Some(90)));
+    let _ = app.update(Message::FormSave);
+
+    let view = app.entries.iter().find(|e| e.label == "bank").unwrap();
+    assert_eq!(view.tags, vec!["money".to_string(), "perso".to_string()]);
+    assert_eq!(view.folder.as_deref(), Some("Finance"));
+    assert_eq!(view.entry_type, EntryType::Card);
+    assert!(view.password_expires_at > 0, "expiry must be set");
+
+    // Editing with cleared tags persists the clearing.
+    app.selected = Some("bank".to_string());
+    app.reveal_selected();
+    let _ = app.update(Message::StartEdit);
+    assert_eq!(app.form.tags, "money, perso");
+    let _ = app.update(Message::FormChanged(FormField::Tags, "".into()));
+    let _ = app.update(Message::FormSave);
+    let view = app.entries.iter().find(|e| e.label == "bank").unwrap();
+    assert!(view.tags.is_empty());
+    assert_eq!(view.folder.as_deref(), Some("Finance"), "folder untouched");
+}
+
+#[test]
+fn sync_login_done_records_the_username() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    app.sync_busy = true;
+    let _ = app.update(Message::SyncLoginDone(Ok("lin".to_string())));
+    assert_eq!(app.authed.as_deref(), Some("lin"));
+    assert!(!app.sync_busy);
+
+    let _ = app.update(Message::SyncLoginDone(Err("denied".to_string())));
+    // A failed login clears the pending flow but keeps prior auth state.
+    assert!(app.sync_login.is_none());
+}
+
+#[test]
+fn pull_locks_the_session_before_the_transfer_starts() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "v", "pw", "gh");
+    let key = app.service.derive_unlock_key("v", "pw").unwrap();
+    app.pending_vault = "v".to_string();
+    let _ = app.update(Message::KeyDerived(Ok(key)));
+    assert!(app.session.is_some());
+
+    // Dispatching SyncPull must lock IMMEDIATELY (before the network task
+    // runs), closing the window where an edit could race the file swap.
+    app.sync_pull_password = "pw".to_string();
+    let _task = app.update(Message::SyncPull);
+    assert!(app.session.is_none(), "must lock before the pull transfer");
+    assert!(app.sync_busy);
+    assert!(app.sync_pull_password.is_empty());
+}
+
+#[test]
+fn successful_pull_locks_the_session_and_wipes_the_password() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "v", "pw", "gh");
+    let key = app.service.derive_unlock_key("v", "pw").unwrap();
+    app.pending_vault = "v".to_string();
+    let _ = app.update(Message::KeyDerived(Ok(key)));
+    assert!(app.session.is_some());
+
+    app.sync_pull_password = "pw".to_string();
+    let _ = app.update(Message::SyncPullDone(Ok(
+        lilypad_core::sync::net::PullOutcome::Applied,
+    )));
+    // The on-disk vault may have been re-keyed: the session must be locked
+    // and the pull password wiped.
+    assert!(app.session.is_none());
+    assert!(app.sync_pull_password.is_empty());
+    assert_eq!(app.sync_status, Some(lilypad_core::SyncStatusView::InSync));
+}
+
+#[test]
+fn sync_merge_locks_before_running_and_lands_in_sync() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "v", "pw", "gh");
+    let key = app.service.derive_unlock_key("v", "pw").unwrap();
+    app.pending_vault = "v".to_string();
+    let _ = app.update(Message::KeyDerived(Ok(key)));
+    assert!(app.session.is_some());
+
+    // Dispatching SyncMerge must lock IMMEDIATELY (before the network task
+    // runs): the merge rewrites the vault file, and an edit landing in
+    // that window would be silently clobbered.
+    app.sync_pull_password = "pw".to_string();
+    let _task = app.update(Message::SyncMerge);
+    assert!(app.session.is_none(), "must lock before the merge runs");
+    assert!(app.sync_busy);
+    assert!(app.sync_pull_password.is_empty());
+
+    // A successful merge for the active vault lands on InSync.
+    let _ = app.update(Message::SyncMergeDone(Ok((
+        "v".to_string(),
+        Some(("1 added from remote".to_string(), true)),
+    ))));
+    assert!(!app.sync_busy);
+    assert_eq!(app.sync_status, Some(lilypad_core::SyncStatusView::InSync));
+
+    // A stale completion for a DIFFERENT vault must not touch the status.
+    app.sync_status = None;
+    let _ = app.update(Message::SyncMergeDone(Ok((
+        "other".to_string(),
+        Some(("1 added from remote".to_string(), false)),
+    ))));
+    assert_eq!(app.sync_status, None);
+}
+
+#[test]
+fn unlock_is_blocked_while_a_sync_runs() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "v", "pw", "gh");
+    app.selected_vault = Some("v".to_string());
+    app.sync_busy = true;
+
+    // The unlock button is inert during a sync: the file is being
+    // rewritten and a fresh session would race it.
+    app.password = "pw".to_string();
+    let _ = app.update(Message::UnlockPressed);
+    assert!(!app.unlocking, "unlock must not start during a sync");
+    assert!(app.session.is_none());
+
+    // A key whose derivation was already in flight when the sync started
+    // is discarded rather than opening a stale session.
+    let key = app.service.derive_unlock_key("v", "pw").unwrap();
+    app.pending_vault = "v".to_string();
+    let _ = app.update(Message::KeyDerived(Ok(key)));
+    assert!(app.session.is_none());
+    assert!(app.password.is_empty());
+}
+
+#[test]
+fn merge_completion_for_another_vault_leaves_session_alone() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "w", "pw", "gh");
+    let key = app.service.derive_unlock_key("w", "pw").unwrap();
+    app.pending_vault = "w".to_string();
+    let _ = app.update(Message::KeyDerived(Ok(key)));
+    assert!(app.session.is_some());
+
+    // A merge that finished for vault "v" must not lock the session that
+    // is open on vault "w" - the merge never touched that file.
+    let _ = app.update(Message::SyncMergeDone(Ok((
+        "v".to_string(),
+        Some(("1 added from remote".to_string(), false)),
+    ))));
+    assert!(
+        app.session.is_some(),
+        "a session on an untouched vault must not be locked"
+    );
+}
+
+#[test]
+fn auto_lock_setting_applies_to_live_session() {
+    let dir = TempDir::new().unwrap();
+    let mut app = app_in(&dir);
+    seed(&app, "v", "pw", "gh");
+    let key = app.service.derive_unlock_key("v", "pw").unwrap();
+    app.pending_vault = "v".to_string();
+    let _ = app.update(Message::KeyDerived(Ok(key)));
+    assert!(app.session.is_some());
+    // Disabling auto-lock clears the live session's deadline immediately.
+    let _ = app.update(Message::SetAutoLock(0));
+    assert!(app.session.as_ref().unwrap().time_until_lock().is_none());
+    // A positive value re-arms it.
+    let _ = app.update(Message::SetAutoLock(5));
+    assert!(app.session.as_ref().unwrap().time_until_lock().is_some());
+}
+
+/// Every `.rs` file of this crate's `src/`, except this one.
+fn sources() -> Vec<(std::path::PathBuf, String)> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<(std::path::PathBuf, String)>) {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") && !path.ends_with("tests.rs") {
+                out.push((path.clone(), std::fs::read_to_string(&path).unwrap()));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+        &mut out,
+    );
+    out
+}
+
+#[test]
+fn no_colour_is_written_by_hand() {
+    // Colours come from the Colony palette; a literal is right on one theme
+    // at most.
+    for (path, text) in sources() {
+        for (n, line) in text.lines().enumerate() {
+            assert!(
+                !line.contains("Color::from_rgb") && !line.contains("Color { r:"),
+                "{}:{}: {line}",
+                path.display(),
+                n + 1
+            );
+        }
+    }
+}
+
+#[test]
+fn every_text_size_goes_through_sz() {
+    // A raw size ignores both text-size preferences.
+    for (path, text) in sources() {
+        for (n, line) in text.lines().enumerate() {
+            let raw = line
+                .split(".size(")
+                .skip(1)
+                .any(|rest| rest.starts_with(|c: char| c.is_ascii_digit()));
+            assert!(!raw, "{}:{}: {line}", path.display(), n + 1);
+        }
+    }
+}
+
+/// The index of the `)` closing the `(` at `open`, skipping string literals.
+fn closing_paren(src: &str, open: usize) -> usize {
+    let (mut depth, mut in_str, mut escaped) = (0, false, false);
+    for (i, c) in src[open..].char_indices() {
+        match c {
+            _ if escaped => escaped = false,
+            '\\' if in_str => escaped = true,
+            '"' => in_str = !in_str,
+            '(' if !in_str => depth += 1,
+            ')' if !in_str => {
+                depth -= 1;
+                if depth == 0 {
+                    return open + i;
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("unbalanced parentheses after byte {open}");
+}
+
+#[test]
+fn every_text_names_its_font() {
+    // iced fixes its default font when the window opens, before the
+    // preferences are read: a text left on it ignores the dyslexia font.
+    for (path, src) in sources() {
+        for call in ["text(", "text_input("] {
+            for (at, _) in src.match_indices(call) {
+                let before = src[..at].chars().next_back().unwrap_or(' ');
+                let line = src[..at].rsplit('\n').next().unwrap_or("");
+                if before.is_alphanumeric() || "_.:".contains(before) || line.contains("//") {
+                    continue;
+                }
+                // Walk the method chain after the call, looking for `.font(`.
+                let mut end = closing_paren(&src, at + call.len() - 1) + 1;
+                let mut has_font = false;
+                while let Some(rest) = src[end..].trim_start().strip_prefix('.') {
+                    let Some(paren) = rest.find('(') else { break };
+                    let name = &rest[..paren];
+                    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                        break;
+                    }
+                    has_font |= name == "font";
+                    end = closing_paren(&src, src.len() - rest.len() + paren) + 1;
+                }
+                let line_no = src[..at].lines().count();
+                assert!(has_font, "{}:{line_no}: no .font(..)", path.display());
+            }
+        }
+    }
+}
+
+#[test]
+fn ctrl_comma_toggles_preferences() {
+    use iced::keyboard::{key, Event, Key, Location, Modifiers};
+    let press = |modifiers| Event::KeyPressed {
+        key: Key::Character(",".into()),
+        modified_key: Key::Character(",".into()),
+        physical_key: key::Physical::Code(key::Code::Comma),
+        location: Location::Standard,
+        modifiers,
+        text: None,
+        repeat: false,
+    };
+    assert!(matches!(
+        crate::state::shortcut(press(Modifiers::COMMAND)),
+        Some(Message::TogglePreferences)
+    ));
+    assert!(crate::state::shortcut(press(Modifiers::empty())).is_none());
+}
