@@ -19,9 +19,6 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 use zeroize::Zeroize;
 
-/// Token storage filename.
-const TOKEN_FILENAME: &str = "oauth_tokens.json";
-
 /// Magic header for encrypted token stores (8 bytes).
 const ENCRYPTED_HEADER: &[u8; 8] = b"LPTOK\x00\x01\x00";
 
@@ -160,26 +157,9 @@ pub struct TokenStoreManager {
 }
 
 impl TokenStoreManager {
-    /// Creates a new TokenStoreManager with the default path.
-    pub fn new() -> Result<Self> {
-        let path = Self::default_path()?;
-        Ok(Self { path })
-    }
-
-    /// Creates a TokenStoreManager with a custom path.
+    /// Creates a TokenStoreManager for the token file at `path`.
     pub fn with_path(path: PathBuf) -> Self {
         Self { path }
-    }
-
-    /// Returns the default token store path.
-    pub fn default_path() -> Result<PathBuf> {
-        let project_dirs =
-            directories::ProjectDirs::from_path(std::path::PathBuf::from("Colony/Lilypad"))
-                .ok_or_else(|| {
-                    OAuthError::TokenStoreError("could not determine config directory".to_string())
-                })?;
-
-        Ok(project_dirs.config_dir().join(TOKEN_FILENAME))
     }
 
     /// Saves a token for a provider.

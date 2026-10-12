@@ -102,9 +102,8 @@ pub struct GitHubSyncBackend {
 }
 
 impl GitHubSyncBackend {
-    /// Creates a new GitHub sync backend from stored credentials.
-    pub fn from_stored_token() -> Result<Self> {
-        let token_store = TokenStoreManager::new()?;
+    /// Creates a new GitHub sync backend from the credentials in `token_store`.
+    pub fn from_stored_token(token_store: TokenStoreManager) -> Result<Self> {
         let mut token = token_store
             .load_token(OAuthProvider::GitHub)?
             .ok_or(OAuthError::InvalidToken)?;
@@ -210,14 +209,12 @@ impl GitHubSyncBackend {
     }
 
     /// Checks if there is a stored valid token.
-    pub fn has_valid_token() -> Result<bool> {
-        let token_store = TokenStoreManager::new()?;
+    pub fn has_valid_token(token_store: &TokenStoreManager) -> Result<bool> {
         token_store.has_valid_token(OAuthProvider::GitHub)
     }
 
     /// Logs out and removes stored credentials.
-    pub fn logout() -> Result<()> {
-        let token_store = TokenStoreManager::new()?;
+    pub fn logout(token_store: &TokenStoreManager) -> Result<()> {
         token_store.remove_token(OAuthProvider::GitHub)
     }
 

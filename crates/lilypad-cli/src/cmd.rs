@@ -848,26 +848,26 @@ pub fn prune_backups(app: &App, vault: &str, keep: usize) -> Result<()> {
 // Sync / OAuth
 // ----------------------------------------------------------------------------
 
-pub fn login() -> Result<()> {
+pub fn login(app: &App) -> Result<()> {
     let login = net::begin_login()?;
     println!(
         "To authorize Lilypad, open:\n  {}\nand enter the code: {}",
         login.verification_uri, login.user_code
     );
     println!("Waiting for authorization...");
-    let username = net::complete_login(&login)?;
+    let username = net::complete_login(&app.token_file(), &login)?;
     println!("Logged in as {username}.");
     Ok(())
 }
 
-pub fn logout() -> Result<()> {
-    net::logout()?;
+pub fn logout(app: &App) -> Result<()> {
+    net::logout(&app.token_file())?;
     println!("Logged out of GitHub.");
     Ok(())
 }
 
-pub fn auth_status() -> Result<()> {
-    match net::auth_status()? {
+pub fn auth_status(app: &App) -> Result<()> {
+    match net::auth_status(&app.token_file())? {
         AuthState::Authenticated { username } => {
             println!("Authenticated with GitHub as {username}.")
         }

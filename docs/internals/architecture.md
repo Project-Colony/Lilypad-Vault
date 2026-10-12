@@ -66,8 +66,28 @@ programs working on the same vault cannot lose each other's changes.
 | `validation` | vault names, entry sizes, password strength |
 | `generator`, `totp` | the password generator and TOTP codes |
 | `keyfile`, `clipboard`, `time` | the legacy `key.json` key file, the clipboard, timestamp formatting |
-| `paths` | resolving the data directory |
-| `settings` | the settings file every frontend shares |
+| `paths` | the config and data directories, and the one-time move from where earlier releases kept their files |
+| `settings` | `preferences.json`: the Colony standard preferences plus Lilypad's own, shared by every frontend |
+
+### Where files live
+
+`paths` resolves two roots with `colony_ui::paths`: the config root holds
+`preferences.json` and `oauth_tokens.json`; the data root holds `vaults/`,
+`backups/`, `sync/`, `locks/` and the legacy `key.json`. They are the same
+directory on Windows and macOS, so no file name is used in both.
+`--data-dir` or `LILYPAD_DATA_DIR` replaces both roots with one directory.
+
+Releases up to 0.2 wrote everything to
+`ProjectDirs::from_path("Colony/Lilypad").config_dir()`, the Roaming profile
+on Windows. The first `App::open` of a process moves what it finds there:
+each entry is renamed (or copied and checked byte for byte across volumes)
+only if its destination is absent, `settings.json` is converted to
+`preferences.json` (the old theme index maps to a Colony theme), and a
+`.migrated` marker in the data root makes later starts skip the check. An
+exclusive lock on `locks/migrate.lock` keeps the desktop app, the CLI and the
+TUI from migrating at the same time. On any error every step is undone and
+that run uses the old directory, so nobody starts on an empty profile. The
+old directory is never deleted.
 
 ### The vault file
 

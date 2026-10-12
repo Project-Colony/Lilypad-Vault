@@ -16,6 +16,7 @@ use crate::oauth::{
     TokenStoreManager,
 };
 use crate::vault::App;
+use std::path::Path;
 
 use super::state::SyncState;
 use super::SyncStatusView;
@@ -71,8 +72,8 @@ fn github_config() -> Result<OAuthConfig> {
 
 /// Current authentication state (reads the local token store; the
 /// not-authenticated case needs no network).
-pub fn auth_status() -> Result<AuthState> {
-    let store = TokenStoreManager::new().map_err(map_oauth)?;
+pub fn auth_status(token_file: &Path) -> Result<AuthState> {
+    let store = TokenStoreManager::with_path(token_file.to_path_buf());
     if !store
         .has_valid_token(OAuthProvider::GitHub)
         .map_err(map_oauth)?
@@ -88,8 +89,9 @@ pub fn auth_status() -> Result<AuthState> {
 }
 
 /// Removes stored credentials.
-pub fn logout() -> Result<()> {
-    GitHubSyncBackend::logout().map_err(map_oauth)
+pub fn logout(token_file: &Path) -> Result<()> {
+    GitHubSyncBackend::logout(&TokenStoreManager::with_path(token_file.to_path_buf()))
+        .map_err(map_oauth)
 }
 
 /// Begins a GitHub device-flow login; the returned code/URL are shown to the
@@ -107,7 +109,7 @@ pub fn begin_login() -> Result<DeviceLogin> {
 
 /// Completes a device-flow login by polling for the token, then persists it.
 /// Returns the authenticated GitHub username.
-pub fn complete_login(login: &DeviceLogin) -> Result<String> {
+pub fn complete_login(token_file: &Path, login: &DeviceLogin) -> Result<String> {
     let flow = DeviceFlowAuth::new(github_config()?).map_err(map_oauth)?;
     let result = flow
         .poll_for_token(&login.device_code, login.interval)
@@ -115,8 +117,7 @@ pub fn complete_login(login: &DeviceLogin) -> Result<String> {
     let client = GitHubClient::new(&result.access_token).map_err(map_oauth)?;
     let user = client.get_user().map_err(map_oauth)?;
     let token = result.to_token_info().with_username(user.login.clone());
-    TokenStoreManager::new()
-        .map_err(map_oauth)?
+    TokenStoreManager::with_path(token_file.to_path_buf())
         .save_token(OAuthProvider::GitHub, token)
         .map_err(map_oauth)?;
     Ok(user.login)
@@ -132,7 +133,9 @@ pub fn push(app: &App, vault: &str, force: bool) -> Result<()> {
     if !app.vault_exists(vault)? {
         return Err(AppError::VaultNotFound(vault.to_string()));
     }
-    let mut backend = GitHubSyncBackend::from_stored_token().map_err(map_oauth)?;
+    let mut backend =
+        GitHubSyncBackend::from_stored_token(TokenStoreManager::with_path(app.token_file()))
+            .map_err(map_oauth)?;
     backend.ensure_repo().map_err(map_oauth)?;
     let payload = app.store().sync_payload(vault).map_err(AppError::from)?;
 
@@ -181,7 +184,9 @@ pub fn push(app: &App, vault: &str, force: bool) -> Result<()> {
 /// then records the baseline. Validation and the safety backup happen in
 /// [`super::apply_remote`].
 pub fn pull(app: &App, vault: &str, master_password: &str) -> Result<PullOutcome> {
-    let mut backend = GitHubSyncBackend::from_stored_token().map_err(map_oauth)?;
+    let mut backend =
+        GitHubSyncBackend::from_stored_token(TokenStoreManager::with_path(app.token_file()))
+            .map_err(map_oauth)?;
     let sync_dir = app.sync_dir();
     match backend.pull_named(vault).map_err(map_oauth)? {
         Some((bytes, sha)) => {
@@ -204,7 +209,9 @@ pub fn sync_merge(app: &App, vault: &str, master_password: &str) -> Result<Merge
     if !app.vault_exists(vault)? {
         return Err(AppError::VaultNotFound(vault.to_string()));
     }
-    let mut backend = GitHubSyncBackend::from_stored_token().map_err(map_oauth)?;
+    let mut backend =
+        GitHubSyncBackend::from_stored_token(TokenStoreManager::with_path(app.token_file()))
+            .map_err(map_oauth)?;
     let sync_dir = app.sync_dir();
     let Some((bytes, sha)) = backend.pull_named(vault).map_err(map_oauth)? else {
         return Ok(MergeOutcome::NoRemote);
@@ -247,7 +254,9 @@ pub fn sync_merge(app: &App, vault: &str, master_password: &str) -> Result<Merge
 
 /// Computes the sync status against the remote, using the persisted baseline.
 pub fn remote_status(app: &App, vault: &str) -> Result<SyncStatusView> {
-    let mut backend = GitHubSyncBackend::from_stored_token().map_err(map_oauth)?;
+    let mut backend =
+        GitHubSyncBackend::from_stored_token(TokenStoreManager::with_path(app.token_file()))
+            .map_err(map_oauth)?;
     let remote_sha = backend.remote_sha_named(vault).map_err(map_oauth)?;
     let local = super::local_checksum(app, vault)?;
     let state = SyncState::load_or_init(&app.sync_dir(), vault, backend.device_id())?;

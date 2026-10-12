@@ -188,7 +188,7 @@ impl LilypadApp {
             service,
             data_dir,
             session: None,
-            theme: LilypadTheme::from_index(settings.theme as usize),
+            theme: LilypadTheme::default(),
             density: UiVariation::from_index(settings.density as usize),
             clipboard_secs: settings.clipboard_clear_secs,
             auto_lock_minutes: settings.auto_lock_minutes,
@@ -319,7 +319,6 @@ impl LilypadApp {
     /// change so a change survives a restart.
     pub fn persist_settings(&self) {
         let mut s = self.service.load_settings();
-        s.theme = self.theme.to_index() as u32;
         s.density = self.density.to_index() as u32;
         s.active_vault = self.selected_vault.clone();
         s.auto_lock_minutes = self.auto_lock_minutes;

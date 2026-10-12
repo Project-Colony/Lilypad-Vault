@@ -60,12 +60,13 @@ impl LilypadApp {
                 // (fast disk read, no network) so the Sync tab is correct even
                 // before the first unlock.
                 if self.authed.is_none() {
-                    self.authed = match lilypad_core::sync::net::auth_status() {
-                        Ok(lilypad_core::sync::net::AuthState::Authenticated { username }) => {
-                            Some(username)
-                        }
-                        _ => None,
-                    };
+                    self.authed =
+                        match lilypad_core::sync::net::auth_status(&self.service.token_file()) {
+                            Ok(lilypad_core::sync::net::AuthState::Authenticated { username }) => {
+                                Some(username)
+                            }
+                            _ => None,
+                        };
                 }
                 Task::none()
             }
@@ -343,10 +344,11 @@ impl LilypadApp {
                     // poll in the background until the user authorizes.
                     let _ = webbrowser::open(&login.verification_uri);
                     self.sync_login = Some(login.clone());
+                    let token_file = self.service.token_file();
                     Task::perform(
                         async move {
                             tokio::task::spawn_blocking(move || {
-                                lilypad_core::sync::net::complete_login(&login)
+                                lilypad_core::sync::net::complete_login(&token_file, &login)
                                     .map_err(|e| e.to_string())
                             })
                             .await
@@ -389,7 +391,7 @@ impl LilypadApp {
                     return Task::none();
                 }
                 // Local token removal only; no network round-trip.
-                match lilypad_core::sync::net::logout() {
+                match lilypad_core::sync::net::logout(&self.service.token_file()) {
                     Ok(()) => {
                         self.authed = None;
                         self.sync_status = None;
@@ -697,7 +699,9 @@ impl LilypadApp {
                                 }
                                 self.refresh_entries();
                                 self.persist_settings();
-                                self.authed = match lilypad_core::sync::net::auth_status() {
+                                self.authed = match lilypad_core::sync::net::auth_status(
+                                    &self.service.token_file(),
+                                ) {
                                     Ok(lilypad_core::sync::net::AuthState::Authenticated {
                                         username,
                                     }) => Some(username),

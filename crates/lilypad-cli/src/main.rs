@@ -186,9 +186,9 @@ fn main() -> Result<()> {
             Ok(())
         }
 
-        Commands::Login => cmd::login(),
-        Commands::Logout => cmd::logout(),
-        Commands::AuthStatus => cmd::auth_status(),
+        Commands::Login => cmd::login(&app),
+        Commands::Logout => cmd::logout(&app),
+        Commands::AuthStatus => cmd::auth_status(&app),
         Commands::Sync(sync) => match sync {
             SyncCommands::Push { vault, force } => cmd::sync_push(&app, &vault, force),
             SyncCommands::Pull { vault } => cmd::sync_pull(&app, &vault, mp),

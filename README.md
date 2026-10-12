@@ -45,12 +45,23 @@ Colony checks before installing.
 
 ## Where your data lives
 
-Vaults, settings and the GitHub sign-in token live in one directory:
-`~/.config/Colony/Lilypad` on Linux, `~/Library/Application Support/Colony/Lilypad`
-on macOS and `%APPDATA%\Colony\Lilypad\config` on Windows. The
-`LILYPAD_DATA_DIR` environment variable (all three programs) or `--data-dir`
-(CLI) moves the vaults and settings elsewhere; the GitHub token stays in the
-platform directory.
+| | Linux | Windows | macOS |
+| --- | --- | --- | --- |
+| Preferences and GitHub sign-in (`preferences.json`, `oauth_tokens.json`) | `~/.config/Colony/Lilypad` | `%LOCALAPPDATA%\Colony\Lilypad` | `~/Library/Application Support/Colony/Lilypad` |
+| Vaults, backups and sync state (`vaults/`, `backups/`, `sync/`) | `~/.local/share/Colony/Lilypad` | `%LOCALAPPDATA%\Colony\Lilypad` | `~/Library/Application Support/Colony/Lilypad` |
+
+The `LILYPAD_DATA_DIR` environment variable (all three programs) or
+`--data-dir` (CLI) keeps the whole profile in another directory instead,
+GitHub sign-in included.
+
+Releases up to 0.2 kept everything in `~/.config/Colony/Lilypad` on Linux,
+`%APPDATA%\Colony\Lilypad\config` on Windows and
+`~/Library/Application Support/Colony/Lilypad` on macOS. The first start of a
+newer release moves those files to the directories above and turns
+`settings.json` into `preferences.json`. The old directory stays; if the move
+fails, Lilypad keeps using it and tries again at the next start. Vaults made
+by older CLI builds in `./.lilypad` are not moved: open them with
+`--data-dir .lilypad`.
 
 A vault file is encrypted as a whole with a key derived from its master
 password (Argon2id, then XChaCha20-Poly1305), and each entry's secrets
@@ -118,7 +129,7 @@ check. It contacts two networked services, each only when you ask it to.
   `read:user` scopes. `repo` grants access to all your repositories, because
   GitHub OAuth Apps have no narrower scope for a single private repository;
   Lilypad only uses it on its own vault repository. The token is stored
-  in `oauth_tokens.json` in the platform directory above, readable only by
+  in `oauth_tokens.json` in the preferences directory above, readable only by
   your account on Linux and macOS. It is scrambled with a key derived from the
   machine's host name and your user name, not from a master password, so
   treat that file as you would the token itself. On push, pull,

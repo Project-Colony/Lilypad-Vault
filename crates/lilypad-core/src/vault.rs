@@ -24,7 +24,8 @@ use std::time::Duration;
 /// Options for opening the application.
 #[derive(Debug, Default, Clone)]
 pub struct OpenOptions {
-    /// Explicit data-directory override (e.g. from a `--data-dir` flag).
+    /// Explicit profile directory (e.g. from a `--data-dir` flag): holds the
+    /// vaults and the preferences instead of the platform directories.
     pub data_dir: Option<PathBuf>,
     /// Idle auto-lock policy applied to sessions this app hands out.
     pub auto_lock_after: Option<Duration>,
@@ -34,13 +35,17 @@ pub struct OpenOptions {
 pub struct App {
     store: LocalStore,
     data_dir: PathBuf,
+    config_dir: PathBuf,
     auto_lock_after: Option<Duration>,
 }
 
 impl App {
     /// Opens the local store rooted at the canonical data directory.
     pub fn open(opts: OpenOptions) -> Result<Self> {
-        let data_dir = crate::paths::resolve_data_dir(opts.data_dir)?;
+        let crate::paths::Dirs {
+            config: config_dir,
+            data: data_dir,
+        } = crate::paths::resolve(opts.data_dir)?;
         let config = AppConfig {
             data_dir: data_dir.to_string_lossy().into_owned(),
             ..default_config()
@@ -49,6 +54,7 @@ impl App {
         Ok(Self {
             store,
             data_dir,
+            config_dir,
             auto_lock_after: opts.auto_lock_after,
         })
     }
@@ -62,6 +68,11 @@ impl App {
         self.data_dir.join("locks")
     }
 
+    /// The GitHub token store of this profile, in its config root.
+    pub fn token_file(&self) -> PathBuf {
+        self.config_dir.join(crate::paths::TOKEN_FILE)
+    }
+
     pub(crate) fn data_dir(&self) -> &std::path::Path {
         &self.data_dir
     }
@@ -72,12 +83,12 @@ impl App {
 
     /// Loads persisted user settings (defaults if none/unreadable).
     pub fn load_settings(&self) -> crate::settings::Settings {
-        crate::settings::Settings::load(&self.data_dir)
+        crate::settings::Settings::load(&self.config_dir)
     }
 
     /// Persists user settings.
     pub fn save_settings(&self, settings: &crate::settings::Settings) -> Result<()> {
-        settings.save(&self.data_dir)
+        settings.save(&self.config_dir)
     }
 
     /// Lists the names of every vault in the store.

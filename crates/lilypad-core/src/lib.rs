@@ -515,14 +515,14 @@ mod tests {
         assert_eq!(s.clipboard_clear_secs, 20);
 
         let mut s = s;
-        s.theme = 7;
+        s.standard.selected_theme = "nord".to_string();
         s.density = 2;
         s.auto_lock_minutes = 15;
         s.active_vault = Some("v".to_string());
         app.save_settings(&s).unwrap();
 
         let loaded = app.load_settings();
-        assert_eq!(loaded.theme, 7);
+        assert_eq!(loaded.standard.selected_theme, "nord");
         assert_eq!(loaded.density, 2);
         assert_eq!(loaded.auto_lock_minutes, 15);
         assert_eq!(loaded.active_vault.as_deref(), Some("v"));
