@@ -11,8 +11,8 @@ use base64::Engine as _;
 use std::path::PathBuf;
 use zeroize::Zeroizing;
 
+use crate::args::OutputFormat;
 use crate::io;
-use crate::OutputFormat;
 use lilypad_core::sync::net::{self, AuthState, PullOutcome};
 use lilypad_core::{App, Attachment, EntryMetadata, EntrySecret, EntryType, Session};
 

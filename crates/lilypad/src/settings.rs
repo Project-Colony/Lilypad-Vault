@@ -1,13 +1,24 @@
-// Categorized settings page for LilypadApp, included from app.rs (same module).
-//
-// A full-screen preferences surface modeled on Colony's settings menu: a left
-// category rail and a right pane of collapsible sections. Every control here is
-// wired to a real `lilypad-core` setting (theme, density, auto-lock, clipboard,
-// default view, master password) so the page is genuinely functional, not
-// decorative.
+//! Categorized settings page.
+//!
+//! A full-screen preferences surface modeled on Colony's settings menu: a left
+//! category rail and a right pane of collapsible sections. Every control here is
+//! wired to a real `lilypad-core` setting (theme, density, auto-lock, clipboard,
+//! default view, master password) so the page is genuinely functional, not
+//! decorative.
+
+use crate::fonts;
+use crate::message::Message;
+use crate::state::LilypadApp;
+use crate::theme::{self, LilypadTheme, UiVariation};
+use crate::view::{boxed_btn, grade_display, grade_letter, hfill, hgap, vgap, BtnStyle};
+use iced::widget::overlay::menu as overlay_menu;
+use iced::widget::{
+    button, column, container, pick_list, row, scrollable, text, text_input, Space,
+};
+use iced::{Alignment, Background, Color, Element, Length};
 
 /// The settings categories: (icon glyph, title, one-line description).
-fn settings_categories() -> [(&'static str, &'static str, &'static str); 6] {
+pub fn settings_categories() -> [(&'static str, &'static str, &'static str); 6] {
     use fonts::icons::*;
     [
         (COG, "General", "How Lilypad behaves day to day."),
@@ -22,14 +33,17 @@ fn settings_categories() -> [(&'static str, &'static str, &'static str); 6] {
 impl LilypadApp {
     // -- Page shell ----------------------------------------------------------
 
-    fn view_settings(&self) -> Element<'_, Message> {
+    pub fn view_settings(&self) -> Element<'_, Message> {
         let p = self.theme.palette();
         let (t, d) = (self.theme, self.density);
 
         let header = row![
             self.icon(fonts::icons::COG, 18.0, p.primary),
             hgap(10.0),
-            text("Settings").size(22).font(fonts::FONT_BOLD).color(p.text_primary),
+            text("Settings")
+                .size(22)
+                .font(fonts::FONT_BOLD)
+                .color(p.text_primary),
             hfill(),
             button(
                 row![
@@ -84,14 +98,12 @@ impl LilypadApp {
             _ => self.settings_about(),
         };
         let content_area = container(
-            scrollable(
-                container(content).padding(iced::Padding {
-                    top: 0.0,
-                    right: 24.0,
-                    bottom: 24.0,
-                    left: 0.0,
-                }),
-            )
+            scrollable(container(content).padding(iced::Padding {
+                top: 0.0,
+                right: 24.0,
+                bottom: 24.0,
+                left: 0.0,
+            }))
             .height(Length::Fill),
         )
         .width(Length::Fill)
@@ -115,11 +127,18 @@ impl LilypadApp {
 
     // -- Categories ----------------------------------------------------------
 
-    fn settings_general(&self) -> Element<'static, Message> {
+    pub fn settings_general(&self) -> Element<'static, Message> {
         let default_pick = self.s_pick(
             "On unlock, show",
-            vec![("all".into(), "All items".into()), ("fav".into(), "Favorites".into())],
-            if self.default_filter == 1 { "fav" } else { "all" },
+            vec![
+                ("all".into(), "All items".into()),
+                ("fav".into(), "Favorites".into()),
+            ],
+            if self.default_filter == 1 {
+                "fav"
+            } else {
+                "all"
+            },
             |k| Message::SetDefaultFilter(if k == "fav" { 1 } else { 0 }),
         );
 
@@ -148,7 +167,7 @@ impl LilypadApp {
         .into()
     }
 
-    fn settings_appearance(&self) -> Element<'static, Message> {
+    pub fn settings_appearance(&self) -> Element<'static, Message> {
         column![
             self.s_header("Appearance", "Make Lilypad yours."),
             self.s_section("theme", "Theme", self.theme_grid()),
@@ -160,7 +179,7 @@ impl LilypadApp {
         .into()
     }
 
-    fn settings_security(&self) -> Element<'static, Message> {
+    pub fn settings_security(&self) -> Element<'static, Message> {
         let auto = self.s_pick(
             "Lock after",
             vec![
@@ -216,7 +235,7 @@ impl LilypadApp {
         .into()
     }
 
-    fn settings_vault(&self) -> Element<'static, Message> {
+    pub fn settings_vault(&self) -> Element<'static, Message> {
         let p = self.theme.palette();
         let (t, d) = (self.theme, self.density);
         let mut col = column![self.s_header("Vault", "What is inside and where it lives.")];
@@ -226,7 +245,11 @@ impl LilypadApp {
             let tags = session.vault().list_tags().len();
             let favs = self.entries.iter().filter(|e| e.is_favorite).count();
             let stats = column![
-                self.s_info_row(fonts::icons::VAULT, "Entries", self.entries.len().to_string()),
+                self.s_info_row(
+                    fonts::icons::VAULT,
+                    "Entries",
+                    self.entries.len().to_string()
+                ),
                 self.s_divider(),
                 self.s_info_row(fonts::icons::FOLDER, "Folders", folders.to_string()),
                 self.s_divider(),
@@ -234,13 +257,24 @@ impl LilypadApp {
                 self.s_divider(),
                 self.s_info_row(fonts::icons::STAR, "Favorites", favs.to_string()),
                 self.s_divider(),
-                self.s_info_row(fonts::icons::TRASH, "In Trash", self.trashed.len().to_string()),
+                self.s_info_row(
+                    fonts::icons::TRASH,
+                    "In Trash",
+                    self.trashed.len().to_string()
+                ),
             ];
-            col = col.push(self.s_section(
-                "stats",
-                "Contents",
-                column![self.s_desc(&format!("Vault '{}'.", session.name())), vgap(8.0), stats].into(),
-            ));
+            col = col.push(
+                self.s_section(
+                    "stats",
+                    "Contents",
+                    column![
+                        self.s_desc(&format!("Vault '{}'.", session.name())),
+                        vgap(8.0),
+                        stats
+                    ]
+                    .into(),
+                ),
+            );
             col = col.push(vgap(6.0));
 
             if let Some(report) = &self.health {
@@ -249,18 +283,28 @@ impl LilypadApp {
                 let gc = theme::health_grade_color(letter, &p);
                 let badge = row![
                     container(
-                        text(display).size(14).font(fonts::FONT_BOLD).color(p.background),
+                        text(display)
+                            .size(14)
+                            .font(fonts::FONT_BOLD)
+                            .color(p.background),
                     )
                     .padding([2, 9])
                     .style(move |_| container::Style {
                         background: Some(Background::Color(gc)),
-                        border: iced::Border { radius: 6.0.into(), ..Default::default() },
+                        border: iced::Border {
+                            radius: 6.0.into(),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     }),
                     hgap(10.0),
-                    text(format!("{}/100 - {} issue(s)", report.score.score, report.issues.len()))
-                        .size(13)
-                        .color(p.text_secondary),
+                    text(format!(
+                        "{}/100 - {} issue(s)",
+                        report.score.score,
+                        report.issues.len()
+                    ))
+                    .size(13)
+                    .color(p.text_secondary),
                 ]
                 .align_y(Alignment::Center);
                 let mut hbody = column![badge].spacing(6);
@@ -339,21 +383,23 @@ impl LilypadApp {
             .as_ref()
             .map(|d| d.display().to_string())
             .unwrap_or_else(|| "Default Colony/Lilypad directory".to_string());
-        col = col.push(self.s_section(
-            "location",
-            "Storage",
-            column![
-                self.s_desc("Vault files and settings are stored here, with 0600 permissions."),
-                vgap(8.0),
-                self.s_info_row(fonts::icons::FOLDER, "Location", location),
-            ]
-            .into(),
-        ));
+        col = col.push(
+            self.s_section(
+                "location",
+                "Storage",
+                column![
+                    self.s_desc("Vault files and settings are stored here, with 0600 permissions."),
+                    vgap(8.0),
+                    self.s_info_row(fonts::icons::FOLDER, "Location", location),
+                ]
+                .into(),
+            ),
+        );
 
         col.into()
     }
 
-    fn import_export_body(&self) -> Element<'static, Message> {
+    pub fn import_export_body(&self) -> Element<'static, Message> {
         let (t, d) = (self.theme, self.density);
         let p = self.theme.palette();
         column![
@@ -414,7 +460,7 @@ impl LilypadApp {
         .into()
     }
 
-    fn settings_sync(&self) -> Element<'static, Message> {
+    pub fn settings_sync(&self) -> Element<'static, Message> {
         let p = self.theme.palette();
         let (t, d) = (self.theme, self.density);
         let vault = self.active_vault_name();
@@ -520,16 +566,26 @@ impl LilypadApp {
                 row![
                     self.icon(fonts::icons::CIRCLE, 9.0, status_color),
                     hgap(8.0),
-                    text(status_text).size(13).font(fonts::FONT_SEMIBOLD).color(p.text_primary),
+                    text(status_text)
+                        .size(13)
+                        .font(fonts::FONT_SEMIBOLD)
+                        .color(p.text_primary),
                     hgap(10.0),
-                    text(format!("vault '{vault_label}'")).size(12).color(p.text_muted),
+                    text(format!("vault '{vault_label}'"))
+                        .size(12)
+                        .color(p.text_muted),
                 ]
                 .align_y(Alignment::Center),
                 vgap(4.0),
                 self.s_desc(status_hint),
                 vgap(10.0),
                 button(
-                    text(if self.sync_busy { "Checking..." } else { "Check status" }).size(12),
+                    text(if self.sync_busy {
+                        "Checking..."
+                    } else {
+                        "Check status"
+                    })
+                    .size(12),
                 )
                 .on_press_maybe((!self.sync_busy).then_some(Message::SyncRefreshStatus))
                 .padding([6, 12])
@@ -606,7 +662,7 @@ impl LilypadApp {
         col.into()
     }
 
-    fn settings_about(&self) -> Element<'static, Message> {
+    pub fn settings_about(&self) -> Element<'static, Message> {
         let sync = self
             .authed
             .clone()
@@ -614,9 +670,17 @@ impl LilypadApp {
             .unwrap_or_else(|| "Not connected".to_string());
 
         let version = column![
-            self.s_info_row(fonts::icons::LEAF, "Lilypad", format!("v{}", env!("CARGO_PKG_VERSION"))),
+            self.s_info_row(
+                fonts::icons::LEAF,
+                "Lilypad",
+                format!("v{}", env!("CARGO_PKG_VERSION"))
+            ),
             self.s_divider(),
-            self.s_info_row(fonts::icons::GITHUB, "Repository", "Project-Colony/Lilypad-Vault".to_string()),
+            self.s_info_row(
+                fonts::icons::GITHUB,
+                "Repository",
+                "Project-Colony/Lilypad-Vault".to_string()
+            ),
             self.s_divider(),
             self.s_info_row(fonts::icons::SYNC, "GitHub sync", sync),
         ];
@@ -631,7 +695,11 @@ impl LilypadApp {
         for tip in tips {
             tipcol = tipcol.push(
                 row![
-                    self.icon(fonts::icons::CIRCLE_CHECK, 11.0, self.theme.palette().primary),
+                    self.icon(
+                        fonts::icons::CIRCLE_CHECK,
+                        11.0,
+                        self.theme.palette().primary
+                    ),
                     hgap(8.0),
                     text(tip).size(12).color(self.theme.palette().text_muted),
                 ]
@@ -640,7 +708,10 @@ impl LilypadApp {
         }
 
         column![
-            self.s_header("About", "Lilypad is a thin client over the lilypad-core service layer."),
+            self.s_header(
+                "About",
+                "Lilypad is a thin client over the lilypad-core service layer."
+            ),
             self.s_section("version", "Version", version.into()),
             vgap(6.0),
             self.s_section("tips", "Tips & gestures", tipcol.into()),
@@ -651,7 +722,7 @@ impl LilypadApp {
     // -- Appearance building blocks -----------------------------------------
 
     /// A 3-column grid of theme preview cards.
-    fn theme_grid(&self) -> Element<'static, Message> {
+    pub fn theme_grid(&self) -> Element<'static, Message> {
         let mut grid = column![].spacing(8);
         for chunk in LilypadTheme::ALL.chunks(3) {
             let mut r = row![].spacing(8);
@@ -667,7 +738,7 @@ impl LilypadApp {
     }
 
     /// A single theme card: a mini preview painted in that theme's own colors.
-    fn theme_card(&self, th: LilypadTheme) -> Element<'static, Message> {
+    pub fn theme_card(&self, th: LilypadTheme) -> Element<'static, Message> {
         let p = self.theme.palette();
         let pal = th.palette();
         let selected = th == self.theme;
@@ -677,7 +748,10 @@ impl LilypadApp {
             .height(Length::Fixed(14.0))
             .style(move |_| container::Style {
                 background: Some(Background::Color(pal.primary)),
-                border: iced::Border { radius: 7.0.into(), ..Default::default() },
+                border: iced::Border {
+                    radius: 7.0.into(),
+                    ..Default::default()
+                },
                 ..Default::default()
             });
         let bar1 = container(Space::new())
@@ -685,7 +759,10 @@ impl LilypadApp {
             .height(Length::Fixed(5.0))
             .style(move |_| container::Style {
                 background: Some(Background::Color(pal.text_secondary)),
-                border: iced::Border { radius: 2.5.into(), ..Default::default() },
+                border: iced::Border {
+                    radius: 2.5.into(),
+                    ..Default::default()
+                },
                 ..Default::default()
             });
         let bar2 = container(Space::new())
@@ -693,7 +770,10 @@ impl LilypadApp {
             .height(Length::Fixed(5.0))
             .style(move |_| container::Style {
                 background: Some(Background::Color(pal.surface_variant)),
-                border: iced::Border { radius: 2.5.into(), ..Default::default() },
+                border: iced::Border {
+                    radius: 2.5.into(),
+                    ..Default::default()
+                },
                 ..Default::default()
             });
         let preview = container(
@@ -704,7 +784,11 @@ impl LilypadApp {
         .padding(10)
         .style(move |_| container::Style {
             background: Some(Background::Color(pal.background)),
-            border: iced::Border { radius: 8.0.into(), color: pal.border, width: 1.0 },
+            border: iced::Border {
+                radius: 8.0.into(),
+                color: pal.border,
+                width: 1.0,
+            },
             ..Default::default()
         });
 
@@ -714,7 +798,11 @@ impl LilypadApp {
             Space::new().into()
         };
         let name_row = row![
-            text(th.name()).size(11).color(if selected { p.text_primary } else { p.text_muted }),
+            text(th.name()).size(11).color(if selected {
+                p.text_primary
+            } else {
+                p.text_muted
+            }),
             hfill(),
             check,
         ]
@@ -747,7 +835,7 @@ impl LilypadApp {
             .into()
     }
 
-    fn density_list(&self) -> Element<'static, Message> {
+    pub fn density_list(&self) -> Element<'static, Message> {
         let mut col = column![].spacing(8);
         for v in UiVariation::ALL {
             col = col.push(self.density_card(v));
@@ -755,7 +843,7 @@ impl LilypadApp {
         col.into()
     }
 
-    fn density_card(&self, v: UiVariation) -> Element<'static, Message> {
+    pub fn density_card(&self, v: UiVariation) -> Element<'static, Message> {
         let p = self.theme.palette();
         let selected = v == self.density;
         let check: Element<Message> = if selected {
@@ -769,7 +857,11 @@ impl LilypadApp {
                     text(v.name())
                         .size(13)
                         .font(fonts::FONT_SEMIBOLD)
-                        .color(if selected { p.text_primary } else { p.text_secondary }),
+                        .color(if selected {
+                            p.text_primary
+                        } else {
+                            p.text_secondary
+                        }),
                     text(v.description()).size(11).color(p.text_muted),
                 ]
                 .spacing(2),
@@ -805,7 +897,7 @@ impl LilypadApp {
     }
 
     /// A live sample entry rendered in the current theme, so tweaks are visible.
-    fn appearance_preview(&self) -> Element<'static, Message> {
+    pub fn appearance_preview(&self) -> Element<'static, Message> {
         let p = self.theme.palette();
         let (t, d) = (self.theme, self.density);
         let sample = container(
@@ -815,7 +907,10 @@ impl LilypadApp {
                     .style(move |_| theme::icon_badge_container(t, d)),
                 hgap(10.0),
                 column![
-                    text("Example entry").size(14).font(fonts::FONT_SEMIBOLD).color(p.text_primary),
+                    text("Example entry")
+                        .size(14)
+                        .font(fonts::FONT_SEMIBOLD)
+                        .color(p.text_primary),
                     text("user@example.com").size(12).color(p.text_muted),
                 ]
                 .spacing(2),
@@ -841,7 +936,7 @@ impl LilypadApp {
 
     // -- Security building blocks -------------------------------------------
 
-    fn change_master_body(&self) -> Element<'static, Message> {
+    pub fn change_master_body(&self) -> Element<'static, Message> {
         let (t, d) = (self.theme, self.density);
         if self.session.is_none() {
             return column![self.s_desc("Unlock a vault to change its master password.")].into();
@@ -872,10 +967,13 @@ impl LilypadApp {
 
     // -- Shared building blocks ---------------------------------------------
 
-    fn s_header(&self, title: &str, desc: &str) -> Element<'static, Message> {
+    pub fn s_header(&self, title: &str, desc: &str) -> Element<'static, Message> {
         let p = self.theme.palette();
         column![
-            text(title.to_string()).size(18).font(fonts::FONT_BOLD).color(p.text_primary),
+            text(title.to_string())
+                .size(18)
+                .font(fonts::FONT_BOLD)
+                .color(p.text_primary),
             vgap(4.0),
             text(desc.to_string()).size(12).color(p.text_muted),
             vgap(18.0),
@@ -883,11 +981,14 @@ impl LilypadApp {
         .into()
     }
 
-    fn s_desc(&self, s: &str) -> Element<'static, Message> {
-        text(s.to_string()).size(12).color(self.theme.palette().text_muted).into()
+    pub fn s_desc(&self, s: &str) -> Element<'static, Message> {
+        text(s.to_string())
+            .size(12)
+            .color(self.theme.palette().text_muted)
+            .into()
     }
 
-    fn s_divider(&self) -> Element<'static, Message> {
+    pub fn s_divider(&self) -> Element<'static, Message> {
         let c = theme::with_alpha(self.theme.palette().border, 0.7);
         container(Space::new())
             .width(Length::Fill)
@@ -900,7 +1001,7 @@ impl LilypadApp {
     }
 
     /// A collapsible section: a header that toggles its body's visibility.
-    fn s_section<'a>(
+    pub fn s_section<'a>(
         &self,
         key: &str,
         title: &str,
@@ -917,7 +1018,10 @@ impl LilypadApp {
         let key_owned = key.to_string();
         let header = button(
             row![
-                text(title.to_string()).size(15).font(fonts::FONT_SEMIBOLD).color(p.text_primary),
+                text(title.to_string())
+                    .size(15)
+                    .font(fonts::FONT_SEMIBOLD)
+                    .color(p.text_primary),
                 hfill(),
                 self.icon(chevron, 9.0, p.text_muted),
             ]
@@ -940,7 +1044,12 @@ impl LilypadApp {
                 header,
                 self.s_divider(),
                 container(content)
-                    .padding(iced::Padding { top: 12.0, right: 6.0, bottom: 6.0, left: 6.0 })
+                    .padding(iced::Padding {
+                        top: 12.0,
+                        right: 6.0,
+                        bottom: 6.0,
+                        left: 6.0
+                    })
                     .width(Length::Fill),
             ]
             .spacing(0)
@@ -951,7 +1060,13 @@ impl LilypadApp {
     }
 
     /// A labeled on/off row with a custom-drawn toggle switch.
-    fn s_toggle(&self, title: &str, desc: &str, on: bool, msg: Message) -> Element<'static, Message> {
+    pub fn s_toggle(
+        &self,
+        title: &str,
+        desc: &str,
+        on: bool,
+        msg: Message,
+    ) -> Element<'static, Message> {
         let p = self.theme.palette();
         let (t, d) = (self.theme, self.density);
         let track = if on { p.primary } else { p.surface_variant };
@@ -961,22 +1076,26 @@ impl LilypadApp {
             .height(Length::Fixed(14.0))
             .style(move |_| container::Style {
                 background: Some(Background::Color(Color::WHITE)),
-                border: iced::Border { radius: 7.0.into(), ..Default::default() },
+                border: iced::Border {
+                    radius: 7.0.into(),
+                    ..Default::default()
+                },
                 ..Default::default()
             });
-        let switch = container(
-            container(knob).padding(iced::Padding {
-                top: 1.0,
-                right: 0.0,
-                bottom: 0.0,
-                left: knob_offset,
-            }),
-        )
+        let switch = container(container(knob).padding(iced::Padding {
+            top: 1.0,
+            right: 0.0,
+            bottom: 0.0,
+            left: knob_offset,
+        }))
         .width(Length::Fixed(34.0))
         .height(Length::Fixed(18.0))
         .style(move |_| container::Style {
             background: Some(Background::Color(track)),
-            border: iced::Border { radius: 9.0.into(), ..Default::default() },
+            border: iced::Border {
+                radius: 9.0.into(),
+                ..Default::default()
+            },
             ..Default::default()
         });
 
@@ -1002,7 +1121,7 @@ impl LilypadApp {
 
     /// A labeled dropdown row. `options` are (key, display-label) pairs; the
     /// selection callback receives the chosen key.
-    fn s_pick(
+    pub fn s_pick(
         &self,
         title: &str,
         options: Vec<(String, String)>,
@@ -1035,12 +1154,20 @@ impl LilypadApp {
                 placeholder_color: p.text_muted,
                 handle_color: p.text_muted,
                 background: Background::Color(bg),
-                border: iced::Border { color: p.border, width: 1.0, radius: 8.0.into() },
+                border: iced::Border {
+                    color: p.border,
+                    width: 1.0,
+                    radius: 8.0.into(),
+                },
             }
         })
         .menu_style(move |_| overlay_menu::Style {
             background: Background::Color(p.surface),
-            border: iced::Border { color: p.border, width: 1.0, radius: 8.0.into() },
+            border: iced::Border {
+                color: p.border,
+                width: 1.0,
+                radius: 8.0.into(),
+            },
             text_color: p.text_primary,
             selected_text_color: p.text_primary,
             selected_background: Background::Color(p.primary),
@@ -1057,7 +1184,7 @@ impl LilypadApp {
         .into()
     }
 
-    fn s_info_row(&self, icon: &str, label: &str, value: String) -> Element<'static, Message> {
+    pub fn s_info_row(&self, icon: &str, label: &str, value: String) -> Element<'static, Message> {
         let p = self.theme.palette();
         row![
             self.icon(icon, 13.0, p.primary),

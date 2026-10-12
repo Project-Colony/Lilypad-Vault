@@ -11,12 +11,18 @@
 // colors and icons; not every one is wired into the current lean UI.
 #![allow(dead_code)]
 
-mod app;
 mod fonts;
 mod message;
+mod settings;
+mod state;
+#[cfg(test)]
+mod tests;
 mod theme;
+mod update;
+mod view;
 
-use iced::{Size, Task};
+use iced::Size;
+use state::LilypadApp;
 
 /// Application entry point
 fn main() -> iced::Result {
@@ -51,26 +57,4 @@ fn main() -> iced::Result {
         .font(fonts::JETBRAINS_MONO_LIGHT)
         .default_font(fonts::FONT_REGULAR)
         .run()
-}
-
-/// Wrapper struct for the Iced application
-struct LilypadApp(app::LilypadApp);
-
-impl LilypadApp {
-    fn new() -> (Self, Task<message::Message>) {
-        let (app, task) = app::LilypadApp::new();
-        (Self(app), task)
-    }
-
-    fn update(&mut self, message: message::Message) -> Task<message::Message> {
-        self.0.update(message)
-    }
-
-    fn view(&self) -> iced::Element<'_, message::Message> {
-        self.0.view()
-    }
-
-    fn subscription(&self) -> iced::Subscription<message::Message> {
-        self.0.subscription()
-    }
 }
