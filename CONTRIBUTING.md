@@ -11,9 +11,10 @@ privately as described in [`SECURITY.md`](SECURITY.md).
 
 ## Build and test
 
-The toolchain and system packages are listed under
-[Build from source](README.md#build-from-source) in the README. From the
-repository root:
+The toolchain is listed under
+[Build from source](README.md#build-from-source) in the README, and the
+details are in [docs/internals/development.md](docs/internals/development.md).
+From the repository root:
 
 ```bash
 cargo build --workspace
