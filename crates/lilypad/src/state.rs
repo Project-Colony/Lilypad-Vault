@@ -15,6 +15,27 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use zeroize::Zeroize;
 
+/// The modifier of [`shortcut`] as the sidebar hint names it.
+pub const SHORTCUT_MODIFIER: &str = if cfg!(target_os = "macos") {
+    "Cmd"
+} else {
+    "Ctrl"
+};
+
+/// Ctrl+, (Cmd+, on macOS) opens and closes Preferences, like the Lilypad
+/// name. Matched on the character, so it is the key that types a comma on
+/// any layout.
+pub fn shortcut(event: iced::keyboard::Event) -> Option<Message> {
+    match event {
+        iced::keyboard::Event::KeyPressed { key, modifiers, .. }
+            if modifiers.command() && key.as_ref() == iced::keyboard::Key::Character(",") =>
+        {
+            Some(Message::TogglePreferences)
+        }
+        _ => None,
+    }
+}
+
 #[derive(PartialEq)]
 pub enum Screen {
     Unlock,
@@ -259,7 +280,10 @@ impl LilypadApp {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick)
+        Subscription::batch([
+            iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick),
+            iced::keyboard::listen().filter_map(shortcut),
+        ])
     }
 
     pub fn set_status(&mut self, msg: impl Into<String>) {

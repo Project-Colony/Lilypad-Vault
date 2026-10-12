@@ -6,7 +6,7 @@ use crate::message::{Filter, Message, QuickKind};
 use crate::state::LilypadApp;
 use crate::theme;
 use colony_ui::theme::Palette;
-use colony_ui::{sz, ui_font_bold};
+use colony_ui::{sz, ui_font, ui_font_bold};
 use iced::widget::{
     button, column, container, mouse_area, row, scrollable, text, text_input, Space,
 };
@@ -35,6 +35,7 @@ impl LilypadApp {
         let d = self.density;
         let visible = self.visible();
         let search = text_input(t("list_search_placeholder"), &self.search)
+            .font(ui_font())
             .on_input(Message::SearchChanged)
             .size(sz(13))
             .padding(9)
@@ -63,6 +64,7 @@ impl LilypadApp {
         let list: Element<Message> = if visible.is_empty() {
             container(
                 text(t("list_empty"))
+                    .font(ui_font())
                     .size(sz(13))
                     .color(Palette::TEXT_MUTED()),
             )
@@ -111,7 +113,7 @@ impl LilypadApp {
         let mut trailing = row![].spacing(5).align_y(Alignment::Center);
         if in_trash {
             trailing = trailing.push(
-                button(text(t("list_restore")).size(sz(11)))
+                button(text(t("list_restore")).font(ui_font()).size(sz(11)))
                     .on_press(Message::RestoreEntry(label.clone()))
                     .padding([2, 8])
                     .style(theme::secondary_style(d)),
@@ -172,7 +174,10 @@ impl LilypadApp {
                     .size(sz(14))
                     .font(ui_font_bold())
                     .color(Palette::TEXT_PRIMARY()),
-                text(subtitle).size(sz(12)).color(Palette::TEXT_MUTED()),
+                text(subtitle)
+                    .font(ui_font())
+                    .size(sz(12))
+                    .color(Palette::TEXT_MUTED()),
             ]
             .spacing(2)
             .width(Length::Fill),

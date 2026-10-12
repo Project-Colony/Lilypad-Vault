@@ -132,10 +132,12 @@ The app is built on `colony-ui`, the Project Colony design system: every
 colour comes from the active Colony palette (theme, accent, high contrast),
 every font from its accessors (OpenDyslexic when the dyslexia font is on),
 every text size through `sz()` (font size times reading size), and Appearance
-and Accessibility are the kit's own sections. The Lilypad name at the top of
-the sidebar opens and closes Preferences, which replaces the content area
-while the sidebar stays. Tests reject a hand-written colour or a raw text size
-in `src/`.
+and Accessibility are the kit's own sections. iced fixes its default font
+when the window opens, so every text names its font, which is how the
+dyslexia font reaches all of it without a restart. The Lilypad name at the top
+of the sidebar, or Ctrl+, (Cmd+, on macOS), opens and closes Preferences,
+which replaces the content area while the sidebar stays. Tests reject a
+hand-written colour, a raw text size or a text without a font in `src/`.
 
 Argon2 and every network call run off the UI thread (`Task` plus
 `spawn_blocking`). Buffers holding secrets (form fields, master-password

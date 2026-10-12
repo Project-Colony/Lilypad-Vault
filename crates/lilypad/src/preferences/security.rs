@@ -4,7 +4,7 @@ use super::LilypadApp;
 use crate::message::Message;
 use crate::theme;
 use crate::view::vgap;
-use colony_ui::{sz, widgets, Typography};
+use colony_ui::{sz, ui_font, widgets, Typography};
 use iced::widget::{button, column, text, text_input, Column};
 use iced::Element;
 use lilypad_core::i18n::{t, tf};
@@ -67,6 +67,7 @@ impl LilypadApp {
         column![
             widgets::section_description(typo, t("preferences_master_desc")),
             text_input(t("preferences_new_master"), &self.cm_new)
+                .font(ui_font())
                 .on_input(Message::CmNewChanged)
                 .secure(true)
                 .size(sz(13))
@@ -74,6 +75,7 @@ impl LilypadApp {
                 .style(theme::text_input_style(d)),
             vgap(6.0),
             text_input(t("preferences_confirm_master"), &self.cm_confirm)
+                .font(ui_font())
                 .on_input(Message::CmConfirmChanged)
                 .on_submit(Message::ChangeMasterSubmit)
                 .secure(true)
@@ -81,10 +83,14 @@ impl LilypadApp {
                 .padding(10)
                 .style(theme::text_input_style(d)),
             vgap(8.0),
-            button(text(t("preferences_change_master")).size(sz(13)))
-                .on_press(Message::ChangeMasterSubmit)
-                .padding([8, 14])
-                .style(theme::primary_style(d)),
+            button(
+                text(t("preferences_change_master"))
+                    .font(ui_font())
+                    .size(sz(13))
+            )
+            .on_press(Message::ChangeMasterSubmit)
+            .padding([8, 14])
+            .style(theme::primary_style(d)),
         ]
         .into()
     }

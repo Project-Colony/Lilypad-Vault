@@ -8,7 +8,7 @@ use crate::message::{CharSet, FormField, Message};
 use crate::state::LilypadApp;
 use crate::theme;
 use colony_ui::theme::Palette;
-use colony_ui::{sz, ui_font_bold, ui_font_medium, widgets, Typography};
+use colony_ui::{sz, ui_font, ui_font_bold, ui_font_medium, widgets, Typography};
 use iced::widget::{
     button, column, container, mouse_area, row, scrollable, slider, text, text_input, Canvas, Space,
 };
@@ -29,6 +29,7 @@ impl LilypadApp {
                     icons::icon(icons::VAULT, 40, Palette::TEXT_MUTED()),
                     vgap(10.0),
                     text(t("detail_select_entry"))
+                        .font(ui_font())
                         .size(sz(16))
                         .color(Palette::TEXT_MUTED()),
                 ]
@@ -82,7 +83,7 @@ impl LilypadApp {
                 row![
                     icons::icon(icons::EDIT, 13, Palette::ACCENT()),
                     hgap(6.0),
-                    text(t("detail_edit")).size(sz(13))
+                    text(t("detail_edit")).font(ui_font()).size(sz(13))
                 ]
                 .align_y(Alignment::Center)
             )
@@ -119,9 +120,14 @@ impl LilypadApp {
             } else {
                 "•".repeat(secret.password.chars().count().max(8))
             };
-            let pw_area = mouse_area(text(shown).size(sz(14)).color(Palette::TEXT_PRIMARY()))
-                .on_press(Message::RevealHold(true))
-                .on_release(Message::RevealHold(false));
+            let pw_area = mouse_area(
+                text(shown)
+                    .font(ui_font())
+                    .size(sz(14))
+                    .color(Palette::TEXT_PRIMARY()),
+            )
+            .on_press(Message::RevealHold(true))
+            .on_release(Message::RevealHold(false));
             body = body.push(
                 self.field_row(
                     t("field_password"),
@@ -129,6 +135,7 @@ impl LilypadApp {
                         pw_area,
                         hgap(10.0),
                         text(t("detail_hold_to_reveal"))
+                            .font(ui_font())
                             .size(sz(11))
                             .color(Palette::TEXT_MUTED()),
                     ]
@@ -141,6 +148,7 @@ impl LilypadApp {
                             } else {
                                 t("detail_show")
                             })
+                            .font(ui_font())
                             .size(sz(12))
                         )
                         .on_press(Message::ToggleReveal)
@@ -188,6 +196,7 @@ impl LilypadApp {
                                 .color(Palette::TEXT_PRIMARY()),
                             hgap(8.0),
                             text(tf("detail_totp_seconds", &[("secs", &self.totp_left)]))
+                                .font(ui_font())
                                 .size(sz(12))
                                 .color(Palette::TEXT_MUTED()),
                         ]
@@ -210,6 +219,7 @@ impl LilypadApp {
                     r.push(
                         container(
                             text(tag.clone())
+                                .font(ui_font())
                                 .size(sz(11))
                                 .color(Palette::TEXT_SECONDARY()),
                         )
@@ -250,7 +260,7 @@ impl LilypadApp {
             }
             if v.color.is_some() {
                 dots = dots.push(
-                    button(text(t("detail_color_clear")).size(sz(11)))
+                    button(text(t("detail_color_clear")).font(ui_font()).size(sz(11)))
                         .on_press(Message::SetColor(label.to_string(), None))
                         .padding([2, 6])
                         .style(theme::ghost_style(d)),
@@ -294,6 +304,7 @@ impl LilypadApp {
                                 icons::icon(icons::TRIANGLE_EXCLAMATION, 13, sev),
                                 hgap(8.0),
                                 text(issue.localized_title().to_string())
+                                    .font(ui_font())
                                     .size(sz(12))
                                     .color(Palette::TEXT_PRIMARY()),
                             ]
@@ -366,6 +377,7 @@ impl LilypadApp {
         self.field_row(
             label,
             text(value.to_string())
+                .font(ui_font())
                 .size(sz(14))
                 .color(Palette::TEXT_PRIMARY())
                 .into(),
@@ -401,6 +413,7 @@ impl LilypadApp {
         };
         let inp = |placeholder: &str, value: &str, field: FormField, secure: bool| {
             text_input(placeholder, value)
+                .font(ui_font())
                 .on_input(move |v| Message::FormChanged(field, v))
                 .secure(secure)
                 .size(sz(13))
@@ -478,10 +491,10 @@ impl LilypadApp {
             ),
             vgap(4.0),
             row![
-                button(text(t("form_save")).size(sz(14)))
+                button(text(t("form_save")).font(ui_font()).size(sz(14)))
                     .on_press(Message::FormSave)
                     .style(theme::primary_style(d)),
-                button(text(t("form_cancel")).size(sz(14)))
+                button(text(t("form_cancel")).font(ui_font()).size(sz(14)))
                     .on_press(Message::FormCancel)
                     .style(theme::ghost_style(d)),
             ]
@@ -509,14 +522,15 @@ impl LilypadApp {
                 .font(ui_font_bold())
                 .color(Palette::ERROR()),
             text(tf(body, &[("label", &label)]))
+                .font(ui_font())
                 .size(sz(14))
                 .color(Palette::TEXT_SECONDARY()),
             vgap(8.0),
             row![
-                button(text(t("confirm_delete")).size(sz(14)))
+                button(text(t("confirm_delete")).font(ui_font()).size(sz(14)))
                     .on_press(Message::DeleteConfirmed)
                     .style(theme::danger_style(d)),
-                button(text(t("form_cancel")).size(sz(14)))
+                button(text(t("form_cancel")).font(ui_font()).size(sz(14)))
                     .on_press(Message::DeleteCancelled)
                     .style(theme::ghost_style(d)),
             ]
@@ -550,7 +564,7 @@ impl LilypadApp {
                         13,
                         ink
                     ),
-                    text(label).size(sz(13)),
+                    text(label).font(ui_font()).size(sz(13)),
                 ]
                 .spacing(4)
                 .align_y(Alignment::Center),
@@ -569,6 +583,7 @@ impl LilypadApp {
                 .font(ui_font_bold()),
             row![
                 text(tf("generator_length", &[("length", &self.gen_length)]))
+                    .font(ui_font())
                     .size(sz(13))
                     .color(Palette::TEXT_SECONDARY()),
                 slider(4.0..=64.0, self.gen_length as f32, Message::GenLength),
@@ -583,14 +598,14 @@ impl LilypadApp {
             ]
             .spacing(6),
             row![
-                button(text(t("generator_regenerate")).size(sz(13)))
+                button(text(t("generator_regenerate")).font(ui_font()).size(sz(13)))
                     .on_press(Message::GenRegenerate)
                     .style(theme::secondary_style(d)),
-                button(text(t("generator_copy")).size(sz(13)))
+                button(text(t("generator_copy")).font(ui_font()).size(sz(13)))
                     .on_press(Message::GenUse)
                     .style(theme::primary_style(d)),
                 hfill(),
-                button(text(t("generator_close")).size(sz(13)))
+                button(text(t("generator_close")).font(ui_font()).size(sz(13)))
                     .on_press(Message::CloseGenerator)
                     .style(theme::ghost_style(d)),
             ]

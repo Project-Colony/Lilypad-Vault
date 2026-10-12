@@ -16,7 +16,7 @@ use crate::theme::{self, UiVariation};
 use crate::view::{hfill, hgap, vgap};
 use colony_ui::theme::Palette;
 use colony_ui::widgets::{self, PreferencesView, ABOUT_CATEGORY, STANDARD_CATEGORIES};
-use colony_ui::{sz, Typography};
+use colony_ui::{sz, ui_font, Typography};
 use iced::widget::{column, container, row, text, Column, Space};
 use iced::{Alignment, Element, Length};
 use lilypad_core::i18n::{self, t, tf, Locale};
@@ -193,6 +193,7 @@ impl LilypadApp {
                         .font(colony_ui::ui_font_bold())
                         .color(Palette::TEXT_PRIMARY()),
                     text("user@example.com")
+                        .font(ui_font())
                         .size(sz(12))
                         .color(Palette::TEXT_MUTED()),
                 ]
@@ -242,7 +243,10 @@ impl LilypadApp {
                 row![
                     icons::icon(icons::CIRCLE_CHECK, 11, Palette::ACCENT()),
                     hgap(8.0),
-                    text(t(tip)).size(sz(12)).color(Palette::TEXT_MUTED()),
+                    text(t(tip))
+                        .font(ui_font())
+                        .size(sz(12))
+                        .color(Palette::TEXT_MUTED()),
                 ]
                 .align_y(Alignment::Center),
             )
@@ -259,10 +263,14 @@ fn info_row(glyph: &str, label: &str, value: String) -> Element<'static, Message
         icons::icon(glyph, 13, Palette::ACCENT()),
         hgap(10.0),
         text(label.to_string())
+            .font(ui_font())
             .size(sz(13))
             .color(Palette::TEXT_MUTED()),
         hfill(),
-        text(value).size(sz(13)).color(Palette::TEXT_PRIMARY()),
+        text(value)
+            .font(ui_font())
+            .size(sz(13))
+            .color(Palette::TEXT_PRIMARY()),
     ]
     .align_y(Alignment::Center)
     .padding([6, 0])

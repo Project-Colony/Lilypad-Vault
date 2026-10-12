@@ -39,8 +39,9 @@ fn main() -> iced::Result {
         .init();
 
     // The Colony fonts (JetBrainsMono Nerd Font, OpenDyslexic, Font Awesome)
-    // ship inside colony-ui. `ui_font()` follows the dyslexia-font
-    // preference, which LilypadApp::new applies before the first frame.
+    // ship inside colony-ui. iced fixes its default font here, before the
+    // preferences are read, so every text names its font through
+    // `ui_font()` and friends, which follow the dyslexia-font toggle live.
     colony_ui::fonts::BYTES
         .into_iter()
         .fold(

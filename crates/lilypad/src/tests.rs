@@ -129,13 +129,15 @@ fn the_toggle_opens_and_closes_preferences() {
     let _ = app.update(Message::ToggleSection("master"));
     assert!(!app.expanded.contains("master"));
     // The same message closes it, wiping what was typed there, and the next
-    // opening starts on General.
+    // opening starts on General with every section closed.
+    let _ = app.update(Message::ToggleSection("master"));
     app.cm_new = "half-typed".to_string();
     let _ = app.update(Message::TogglePreferences);
     assert!(!app.preferences_open);
     assert!(app.cm_new.is_empty());
     let _ = app.update(Message::TogglePreferences);
     assert_eq!(app.preferences_category, 0);
+    assert!(app.expanded.is_empty());
 }
 
 #[test]
@@ -397,4 +399,75 @@ fn every_text_size_goes_through_sz() {
             assert!(!raw, "{}:{}: {line}", path.display(), n + 1);
         }
     }
+}
+
+/// The index of the `)` closing the `(` at `open`, skipping string literals.
+fn closing_paren(src: &str, open: usize) -> usize {
+    let (mut depth, mut in_str, mut escaped) = (0, false, false);
+    for (i, c) in src[open..].char_indices() {
+        match c {
+            _ if escaped => escaped = false,
+            '\\' if in_str => escaped = true,
+            '"' => in_str = !in_str,
+            '(' if !in_str => depth += 1,
+            ')' if !in_str => {
+                depth -= 1;
+                if depth == 0 {
+                    return open + i;
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("unbalanced parentheses after byte {open}");
+}
+
+#[test]
+fn every_text_names_its_font() {
+    // iced fixes its default font when the window opens, before the
+    // preferences are read: a text left on it ignores the dyslexia font.
+    for (path, src) in sources() {
+        for call in ["text(", "text_input("] {
+            for (at, _) in src.match_indices(call) {
+                let before = src[..at].chars().next_back().unwrap_or(' ');
+                let line = src[..at].rsplit('\n').next().unwrap_or("");
+                if before.is_alphanumeric() || "_.:".contains(before) || line.contains("//") {
+                    continue;
+                }
+                // Walk the method chain after the call, looking for `.font(`.
+                let mut end = closing_paren(&src, at + call.len() - 1) + 1;
+                let mut has_font = false;
+                while let Some(rest) = src[end..].trim_start().strip_prefix('.') {
+                    let Some(paren) = rest.find('(') else { break };
+                    let name = &rest[..paren];
+                    if !name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                        break;
+                    }
+                    has_font |= name == "font";
+                    end = closing_paren(&src, src.len() - rest.len() + paren) + 1;
+                }
+                let line_no = src[..at].lines().count();
+                assert!(has_font, "{}:{line_no}: no .font(..)", path.display());
+            }
+        }
+    }
+}
+
+#[test]
+fn ctrl_comma_toggles_preferences() {
+    use iced::keyboard::{key, Event, Key, Location, Modifiers};
+    let press = |modifiers| Event::KeyPressed {
+        key: Key::Character(",".into()),
+        modified_key: Key::Character(",".into()),
+        physical_key: key::Physical::Code(key::Code::Comma),
+        location: Location::Standard,
+        modifiers,
+        text: None,
+        repeat: false,
+    };
+    assert!(matches!(
+        crate::state::shortcut(press(Modifiers::COMMAND)),
+        Some(Message::TogglePreferences)
+    ));
+    assert!(crate::state::shortcut(press(Modifiers::empty())).is_none());
 }

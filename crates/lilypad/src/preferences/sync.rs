@@ -7,7 +7,7 @@ use crate::message::Message;
 use crate::theme;
 use crate::view::{hfill, hgap, vgap};
 use colony_ui::theme::{contrast_on, Palette};
-use colony_ui::{sz, ui_font_bold, widgets, Typography};
+use colony_ui::{sz, ui_font, ui_font_bold, widgets, Typography};
 use iced::widget::{button, column, container, row, text, text_input, Column};
 use iced::{Alignment, Color, Element};
 use lilypad_core::i18n::{t, tf};
@@ -63,15 +63,17 @@ impl LilypadApp {
                 .style(move |_| theme::elevated_container(d)),
                 vgap(8.0),
                 text(login.verification_uri.clone())
+                    .font(ui_font())
                     .size(sz(12))
                     .color(Palette::TEXT_MUTED()),
                 vgap(8.0),
                 row![
                     text(t("preferences_github_waiting"))
+                        .font(ui_font())
                         .size(sz(12))
                         .color(Palette::TEXT_SECONDARY()),
                     hgap(12.0),
-                    button(text(t("form_cancel")).size(sz(12)))
+                    button(text(t("form_cancel")).font(ui_font()).size(sz(12)))
                         .on_press(Message::SyncLoginCancel)
                         .padding([4, 10])
                         .style(theme::ghost_style(d)),
@@ -83,10 +85,11 @@ impl LilypadApp {
                 icons::icon(icons::CIRCLE_CHECK, 13, Palette::SUCCESS()),
                 hgap(8.0),
                 text(tf("preferences_connected_as", &[("user", user)]))
+                    .font(ui_font())
                     .size(sz(13))
                     .color(Palette::TEXT_PRIMARY()),
                 hfill(),
-                button(text(t("preferences_sign_out")).size(sz(12)))
+                button(text(t("preferences_sign_out")).font(ui_font()).size(sz(12)))
                     .on_press_maybe((!self.sync_busy).then_some(Message::SyncLogout))
                     .padding([5, 10])
                     .style(theme::ghost_style(d)),
@@ -106,6 +109,7 @@ impl LilypadApp {
                             } else {
                                 t("preferences_github_sign_in")
                             })
+                            .font(ui_font())
                             .size(sz(13)),
                         ]
                         .align_y(Alignment::Center),
@@ -135,6 +139,7 @@ impl LilypadApp {
                     .color(Palette::TEXT_PRIMARY()),
                 hgap(10.0),
                 text(tf("preferences_sync_vault", &[("vault", &vault)]))
+                    .font(ui_font())
                     .size(sz(12))
                     .color(Palette::TEXT_MUTED()),
             ]
@@ -147,6 +152,7 @@ impl LilypadApp {
                 } else {
                     t("preferences_sync_check")
                 })
+                .font(ui_font())
                 .size(sz(12)),
             )
             .on_press_maybe((!self.sync_busy).then_some(Message::SyncRefreshStatus))
@@ -165,6 +171,7 @@ impl LilypadApp {
             // can replace data, so an accidental Enter must fire neither. The
             // buttons are the only triggers.
             text_input(t("preferences_sync_password"), &self.sync_pull_password)
+                .font(ui_font())
                 .on_input(Message::SyncPullPasswordChanged)
                 .secure(true)
                 .size(sz(13))
@@ -180,6 +187,7 @@ impl LilypadApp {
                     } else {
                         t("preferences_sync_now")
                     })
+                    .font(ui_font())
                     .size(sz(13)),
                 ]
                 .align_y(Alignment::Center),
@@ -206,7 +214,7 @@ impl LilypadApp {
                 row![
                     icons::icon(icons::UPLOAD, 12, Palette::ACCENT()),
                     hgap(8.0),
-                    text(busy("preferences_push")).size(sz(13)),
+                    text(busy("preferences_push")).font(ui_font()).size(sz(13)),
                 ]
                 .align_y(Alignment::Center),
             )
@@ -219,7 +227,7 @@ impl LilypadApp {
                 row![
                     icons::icon(icons::DOWNLOAD, 12, Palette::ACCENT()),
                     hgap(8.0),
-                    text(busy("preferences_pull")).size(sz(13)),
+                    text(busy("preferences_pull")).font(ui_font()).size(sz(13)),
                 ]
                 .align_y(Alignment::Center),
             )

@@ -1049,9 +1049,11 @@ impl LilypadApp {
         }
     }
 
-    /// Leaving Preferences wipes the secrets typed there: the new master
-    /// password and the sync password.
+    /// Leaving Preferences wipes the secrets typed there (the new master
+    /// password and the sync password) and folds every section back: the
+    /// open sections are remembered only while the page is open.
     fn close_preferences(&mut self) {
+        self.expanded.clear();
         self.cm_new.zeroize();
         self.cm_new.clear();
         self.cm_confirm.zeroize();

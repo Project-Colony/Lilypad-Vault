@@ -6,7 +6,7 @@ use crate::message::Message;
 use crate::state::LilypadApp;
 use crate::theme;
 use colony_ui::theme::Palette;
-use colony_ui::{sz, ui_font_bold};
+use colony_ui::{sz, ui_font, ui_font_bold};
 use iced::widget::{button, column, row, text, text_input};
 use iced::{Element, Length};
 use lilypad_core::i18n::{t, tf};
@@ -16,11 +16,11 @@ impl LilypadApp {
         let d = self.density;
         let vault = self.selected_vault.clone().unwrap_or_default();
         let unlock_btn = if self.unlocking {
-            button(text(t("unlock_busy")).size(sz(15)))
+            button(text(t("unlock_busy")).font(ui_font()).size(sz(15)))
                 .padding(12)
                 .width(Length::Fill)
         } else {
-            button(text(t("unlock_button")).size(sz(15)))
+            button(text(t("unlock_button")).font(ui_font()).size(sz(15)))
                 .on_press(Message::UnlockPressed)
                 .padding(12)
                 .width(Length::Fill)
@@ -32,10 +32,12 @@ impl LilypadApp {
                 .font(ui_font_bold())
                 .color(Palette::TEXT_PRIMARY()),
             text(t("unlock_subtitle"))
+                .font(ui_font())
                 .size(sz(13))
                 .color(Palette::TEXT_MUTED()),
             vgap(8.0),
             text_input(t("unlock_password_placeholder"), &self.password)
+                .font(ui_font())
                 .on_input(Message::PasswordChanged)
                 .on_submit(Message::UnlockPressed)
                 .secure(true)
@@ -44,7 +46,7 @@ impl LilypadApp {
                 .style(theme::text_input_style(d)),
             unlock_btn,
             row![
-                button(text(t("unlock_create_link")).size(sz(13)))
+                button(text(t("unlock_create_link")).font(ui_font()).size(sz(13)))
                     .on_press(Message::ShowCreate)
                     .style(theme::ghost_style(d)),
                 hfill(),
@@ -62,15 +64,18 @@ impl LilypadApp {
                 .font(ui_font_bold())
                 .color(Palette::TEXT_PRIMARY()),
             text(t("create_subtitle"))
+                .font(ui_font())
                 .size(sz(13))
                 .color(Palette::TEXT_MUTED()),
             vgap(8.0),
             text_input(t("create_name_placeholder"), &self.new_name)
+                .font(ui_font())
                 .on_input(Message::NewNameChanged)
                 .size(sz(14))
                 .padding(12)
                 .style(theme::text_input_style(d)),
             text_input(t("unlock_password_placeholder"), &self.new_password)
+                .font(ui_font())
                 .on_input(Message::NewPasswordChanged)
                 .on_submit(Message::CreatePressed)
                 .secure(true)
@@ -83,6 +88,7 @@ impl LilypadApp {
                 } else {
                     t("create_button")
                 })
+                .font(ui_font())
                 .size(sz(15))
             )
             .on_press(Message::CreatePressed)
@@ -93,7 +99,7 @@ impl LilypadApp {
         .spacing(12);
         if !self.vaults.is_empty() {
             card = card.push(
-                button(text(t("create_back")).size(sz(13)))
+                button(text(t("create_back")).font(ui_font()).size(sz(13)))
                     .on_press(Message::ShowUnlock)
                     .style(theme::ghost_style(d)),
             );

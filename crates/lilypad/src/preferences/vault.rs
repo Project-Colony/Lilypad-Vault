@@ -7,7 +7,7 @@ use crate::message::Message;
 use crate::theme;
 use crate::view::{grade_badge, hgap, severity_color, vgap};
 use colony_ui::theme::{contrast_on, Palette};
-use colony_ui::{sz, widgets, Typography};
+use colony_ui::{sz, ui_font, widgets, Typography};
 use iced::widget::{button, column, row, text, text_input, Column};
 use iced::{Alignment, Element};
 use lilypad_core::i18n::{t, tf};
@@ -106,6 +106,7 @@ impl LilypadApp {
                     ("issues", &report.issues.len())
                 ]
             ))
+            .font(ui_font())
             .size(sz(13))
             .color(Palette::TEXT_SECONDARY()),
         ]
@@ -117,6 +118,7 @@ impl LilypadApp {
                     icons::icon(icons::CIRCLE, 7, severity_color(issue.severity)),
                     hgap(8.0),
                     text(issue.localized_title().to_string())
+                        .font(ui_font())
                         .size(sz(12))
                         .color(Palette::TEXT_MUTED()),
                 ]
@@ -139,6 +141,7 @@ impl LilypadApp {
                         } else {
                             t("preferences_breach_button")
                         })
+                        .font(ui_font())
                         .size(sz(13)),
                     ]
                     .align_y(Alignment::Center),
@@ -157,6 +160,7 @@ impl LilypadApp {
             widgets::section_description(typo, t("preferences_import_desc")),
             row![
                 text_input(t("preferences_import_placeholder"), &self.import_path)
+                    .font(ui_font())
                     .on_input(Message::ImportPathChanged)
                     .on_submit(Message::ImportRun)
                     .size(sz(13))
@@ -167,7 +171,9 @@ impl LilypadApp {
                     row![
                         icons::icon(icons::DOWNLOAD, 12, ink),
                         hgap(8.0),
-                        text(t("preferences_import_button")).size(sz(13)),
+                        text(t("preferences_import_button"))
+                            .font(ui_font())
+                            .size(sz(13)),
                     ]
                     .align_y(Alignment::Center),
                 )
@@ -180,6 +186,7 @@ impl LilypadApp {
             widgets::section_description(typo, t("preferences_export_desc")),
             row![
                 text_input(t("preferences_export_placeholder"), &self.export_path)
+                    .font(ui_font())
                     .on_input(Message::ExportPathChanged)
                     .on_submit(Message::ExportRun)
                     .size(sz(13))
@@ -190,7 +197,9 @@ impl LilypadApp {
                     row![
                         icons::icon(icons::UPLOAD, 12, Palette::ACCENT()),
                         hgap(8.0),
-                        text(t("preferences_export_button")).size(sz(13)),
+                        text(t("preferences_export_button"))
+                            .font(ui_font())
+                            .size(sz(13)),
                     ]
                     .align_y(Alignment::Center),
                 )

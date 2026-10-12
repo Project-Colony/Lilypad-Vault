@@ -195,7 +195,7 @@
   "preferences_vaults_locked": "Déverrouillez un coffre pour voir son contenu et sa santé.",
   "sidebar_folders": "Dossiers",
   "sidebar_github_user": "GitHub · {user}",
-  "sidebar_hint": "Cliquez sur Lilypad pour ouvrir les Préférences",
+  "sidebar_hint": "{key}+, ouvre et ferme les Préférences",
   "sidebar_items": "Éléments",
   "sidebar_locks_in": "Verrouillage dans {time}",
   "sidebar_tags": "Étiquettes",

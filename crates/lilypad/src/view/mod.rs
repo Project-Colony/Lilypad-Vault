@@ -15,7 +15,7 @@ use crate::message::Message;
 use crate::state::{LilypadApp, Overlay, Screen};
 use crate::theme;
 use colony_ui::theme::Palette;
-use colony_ui::{sz, widgets, Typography};
+use colony_ui::{sz, ui_font, widgets, Typography};
 use iced::widget::{button, canvas, column, container, row, stack, text, Space};
 use iced::{Alignment, Color, Element, Length, Radians};
 use lilypad_core::i18n::{t, tf};
@@ -92,6 +92,7 @@ impl LilypadApp {
         button(
             row![
                 text(status.to_string())
+                    .font(ui_font())
                     .size(sz(13))
                     .color(Palette::TEXT_PRIMARY()),
                 hgap(10.0),
@@ -124,10 +125,11 @@ impl LilypadApp {
                 icons::icon(icons::CIRCLE_CHECK, 13, Palette::SUCCESS()),
                 hgap(8.0),
                 text(tf("copy_toast", &[("secs", &left)]))
+                    .font(ui_font())
                     .size(sz(12))
                     .color(Palette::TEXT_SECONDARY()),
                 hgap(10.0),
-                button(text(t("copy_toast_undo")).size(sz(12)))
+                button(text(t("copy_toast_undo")).font(ui_font()).size(sz(12)))
                     .on_press(Message::ClipboardCancel)
                     .style(theme::ghost_style(d)),
             ]

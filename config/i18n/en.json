@@ -195,7 +195,7 @@
   "preferences_vaults_locked": "Unlock a vault to see its contents and health.",
   "sidebar_folders": "Folders",
   "sidebar_github_user": "GitHub · {user}",
-  "sidebar_hint": "Click Lilypad to open Preferences",
+  "sidebar_hint": "{key}+, opens and closes Preferences",
   "sidebar_items": "Items",
   "sidebar_locks_in": "Locks in {time}",
   "sidebar_tags": "Tags",

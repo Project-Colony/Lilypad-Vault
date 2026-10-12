@@ -7,7 +7,7 @@ use crate::message::{Filter, Message};
 use crate::state::LilypadApp;
 use crate::theme;
 use colony_ui::theme::{contrast_on, Palette};
-use colony_ui::{sz, widgets, Typography};
+use colony_ui::{sz, ui_font, widgets, Typography};
 use iced::widget::{button, column, container, row, scrollable, text, Column};
 use iced::{Alignment, Element, Length};
 use lilypad_core::i18n::{t, tf};
@@ -163,6 +163,7 @@ impl LilypadApp {
                         grade_badge(report, 11),
                         hgap(8.0),
                         text(t("sidebar_vault_health"))
+                            .font(ui_font())
                             .size(sz(11))
                             .color(Palette::TEXT_MUTED()),
                     ]
@@ -195,7 +196,10 @@ impl LilypadApp {
                 row![
                     icons::icon(icons::CIRCLE, 8, Palette::SUCCESS()),
                     hgap(8.0),
-                    text(lock_line).size(sz(11)).color(Palette::TEXT_MUTED())
+                    text(lock_line)
+                        .font(ui_font())
+                        .size(sz(11))
+                        .color(Palette::TEXT_MUTED())
                 ]
                 .align_y(Alignment::Center),
             );
@@ -206,17 +210,22 @@ impl LilypadApp {
                     icons::icon(icons::SYNC, 10, Palette::ACCENT()),
                     hgap(8.0),
                     text(tf("sidebar_github_user", &[("user", user)]))
+                        .font(ui_font())
                         .size(sz(11))
                         .color(Palette::TEXT_MUTED())
                 ]
                 .align_y(Alignment::Center),
             );
         }
-        footer.push(widgets::nav_hint(typo, t("sidebar_hint")))
+        footer.push(widgets::nav_hint(
+            typo,
+            &tf("sidebar_hint", &[("key", &crate::state::SHORTCUT_MODIFIER)]),
+        ))
     }
 
     /// A sidebar section: glyph, label and an optional count. Selected is
-    /// the accent fill with legible ink on it (the Colony selection style).
+    /// the accent fill with legible ink on it, idle is muted ink on nothing
+    /// (the Colony selection style).
     fn nav_row(
         &self,
         glyph: &str,
@@ -228,12 +237,15 @@ impl LilypadApp {
         let ink = if active {
             contrast_on(Palette::ACCENT())
         } else {
-            Palette::TEXT_SECONDARY()
+            Palette::TEXT_MUTED()
         };
         let mut r = row![
             icons::icon(glyph, 13, ink),
             hgap(9.0),
-            text(label.to_string()).size(sz(13)).color(ink),
+            text(label.to_string())
+                .font(ui_font())
+                .size(sz(13))
+                .color(ink),
             hfill(),
         ]
         .align_y(Alignment::Center);
@@ -241,6 +253,7 @@ impl LilypadApp {
             r = r.push(
                 container(
                     text(c.to_string())
+                        .font(ui_font())
                         .size(sz(11))
                         .color(Palette::TEXT_MUTED()),
                 )

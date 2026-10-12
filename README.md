@@ -29,7 +29,7 @@ that share one service layer, so they read and write vaults the same way:
 - The desktop app and the TUI in English and French. The desktop app uses the
   Project Colony themes and accent colours, and honours text size, high
   contrast, a dyslexia-friendly font and reduced motion; click the Lilypad
-  name in its sidebar to open Preferences.
+  name in its sidebar, or press Ctrl+, (Cmd+, on macOS), to open Preferences.
 
 ## Install
 
