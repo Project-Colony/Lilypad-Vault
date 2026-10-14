@@ -27,12 +27,11 @@ Lilypad. GitHub then hands Lilypad a token with two scopes:
 The token is saved in `oauth_tokens.json` in the preferences folder, or in
 the folder given with `--data-dir` or `LILYPAD_DATA_DIR`, so each profile
 signs in on its own (see [data-location.md](data-location.md)). On Linux and
-macOS the file is
-readable only by your account. Its content is scrambled with a key derived
-from the machine's host name and your user name, not from a master password:
-anyone who can read your files can recover the token, so treat the file as
-you would the token itself. When GitHub expires the token, Lilypad refreshes
-it with the same client ID.
+macOS the file is readable only by your account. Its content is scrambled
+with a key derived from the machine's host name and your user name, not from
+a master password: anyone who can read your files can recover the token, so
+treat the file as you would the token itself. When GitHub expires the token,
+Lilypad refreshes it with the same client ID.
 
 `lilypad-cli auth-status` shows whether you are signed in. Signing out
 (`lilypad-cli logout`, or **Sign out** in the desktop app) removes the token
