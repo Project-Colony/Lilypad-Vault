@@ -1,8 +1,8 @@
 # The command line
 
 `lilypad-cli` does everything the desktop app does with vaults, from a shell
-or a script. It reads and writes the same data folder as the desktop app and
-the TUI (see [data-location.md](data-location.md)).
+or a script. It reads and writes the same profile as the desktop app and the
+TUI (see [data-location.md](data-location.md)).
 
 `lilypad-cli --help` lists every command, and `lilypad-cli <command> --help`
 every option of one command.
@@ -28,7 +28,7 @@ it is read from piped standard input or prompted for hidden.
 
 | Option | Effect |
 |---|---|
-| `--data-dir <DIR>` | use another data folder (wins over `LILYPAD_DATA_DIR`) |
+| `--data-dir <DIR>` | keep the whole profile, GitHub sign-in included, in `<DIR>` (wins over `LILYPAD_DATA_DIR`) |
 | `--master-password <PASSWORD>` | see above |
 | `--output-format text\|json` | JSON output for `vaults`, `list`, `search`, `history`, `trash`, `audit`, `audit-log` and `breach-check` |
 

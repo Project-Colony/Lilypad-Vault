@@ -6,7 +6,7 @@ Sorted by who is reading, not by subject.
 
 | | |
 |---|---|
-| [guide/data-location.md](guide/data-location.md) | where vaults, backups, settings and the sign-in token live, and how to move them |
+| [guide/data-location.md](guide/data-location.md) | where vaults, backups, preferences and the GitHub sign-in live, how files from releases up to 0.2 move there, and how to keep a profile elsewhere |
 | [guide/sync.md](guide/sync.md) | how GitHub sync works, what it sends where, and what push, pull and merge do |
 | [guide/cli.md](guide/cli.md) | every CLI command, how it gets master passwords, and shell completions |
 

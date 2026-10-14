@@ -30,7 +30,7 @@ request merges only when all of it is green.
 To run a program during development:
 
 ```bash
-cargo run -p lilypad-desktop
+cargo run -p lilypad
 cargo run -p lilypad-tui
 cargo run -p lilypad-cli -- --help
 ```
@@ -49,6 +49,9 @@ Never commit a real vault, password or token, including in test fixtures.
   writes both.
 - Code, comments, documentation, commit messages and pull requests are in
   English.
+- A string the desktop app or the TUI shows goes through `i18n::t`, with its
+  key in both `config/i18n/en.json` and `config/i18n/fr.json` (French with
+  vouvoiement). The CLI stays English.
 - Add tests for new logic, and update the README or `docs/` in the same pull
   request when behaviour, paths or commands change.
 

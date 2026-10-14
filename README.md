@@ -20,7 +20,9 @@ machine unless you ask for it.
 > **Status:** releases are signed and published for Linux, Windows and macOS
 > (Apple Silicon and Intel), and CI builds and tests every change on all three
 > systems. Vaults written by earlier releases are kept as test fixtures and
-> must keep opening byte for byte. GitHub sync works in the released builds,
+> must keep opening byte for byte. The one-time move of your files from the
+> folder of releases up to 0.2 is tested on all three systems, including the
+> rollback when a step fails. GitHub sync works in the released builds,
 > which carry Lilypad's GitHub client ID; a build from source has no sync
 > until you compile in a client ID of your own. Sync is covered by unit tests
 > for its safety checks, while the network round trip itself is only tested
@@ -46,6 +48,9 @@ machine unless you ask for it.
 
 ## What it does
 
+- Three programs over one library: **Lilypad** (`lilypad`), the desktop app;
+  **Lilypad TUI** (`lilypad-tui`), a keyboard-driven terminal interface; and
+  **Lilypad CLI** (`lilypad-cli`), for scripts and the shell.
 - Several vaults, each with its own master password.
 - Logins, notes, cards and other entry types, with tags, folders, favourites,
   colour labels, password expiry, change history and a Trash.
@@ -60,6 +65,10 @@ machine unless you ask for it.
 - Safety backups before deleting a vault, changing a master password,
   restoring a backup and applying a synced copy; auto-lock; a clipboard that
   clears itself.
+- The desktop app and the TUI in English and French. The desktop app uses the
+  Project Colony themes and accent colours, and honours text size, high
+  contrast, a dyslexia-friendly font and reduced motion; click the Lilypad
+  name in its sidebar, or press Ctrl+, (Cmd+, on macOS), to open Preferences.
 
 ## Installation
 
@@ -166,12 +175,21 @@ of its own and never checks for updates.
 
 | Data | Stored or sent | Where, and why |
 |---|---|---|
-| Vaults, backups, sync state | stored | the data folder ([data location](docs/guide/data-location.md)); vaults and backups are encrypted with the master password, and each vault carries its own audit log inside the encryption |
-| Settings | stored | `settings.json` in the same folder |
-| GitHub sign-in token | stored | `oauth_tokens.json` in the same folder, readable only by your account on Linux and macOS; scrambled with a key derived from the machine's host name and your user name, not from a master password, so treat the file as you would the token |
+| Vaults, backups, sync state | stored | `vaults/`, `backups/` and `sync/` in the data folder; vaults and backups are encrypted with the master password, and each vault carries its own audit log inside the encryption |
+| Preferences | stored | `preferences.json` in the preferences folder |
+| GitHub sign-in token | stored | `oauth_tokens.json` in the preferences folder, readable only by your account on Linux and macOS; scrambled with a key derived from the machine's host name and your user name, not from a master password, so treat the file as you would the token |
 | Device code and token requests | sent, when you sign in to sync | `github.com`, through GitHub's OAuth device flow |
 | Encrypted vault file and its name | sent, when you push or merge | `api.github.com`, as `vaults/<vault name>.lily` in a private repository named `lilypad-vault-<your GitHub username>` that Lilypad creates on your account |
 | First five characters of each password's SHA-1 hash | sent, when you run the breach check | `api.pwnedpasswords.com`, with padding enabled; the answer is compared on your machine |
+
+The preferences folder is `~/.config/Colony/Lilypad` on Linux and the data
+folder `~/.local/share/Colony/Lilypad`; on Windows both are
+`%LOCALAPPDATA%\Colony\Lilypad`, and on macOS both are
+`~/Library/Application Support/Colony/Lilypad`. `LILYPAD_DATA_DIR`, or
+`--data-dir` for the CLI, keeps the whole profile in another folder instead,
+GitHub sign-in included. Releases up to 0.2 kept everything in one folder,
+which the first start of a newer release moves: see
+[where Lilypad keeps your data](docs/guide/data-location.md).
 
 Lilypad connects to no server except the ones in this table, and only for the
 action named there. GitHub sees the vault's name, its size and when it
@@ -193,8 +211,9 @@ How sync works, step by step: [docs/guide/sync.md](docs/guide/sync.md).
 GPL-3.0-or-later. See [LICENSE](LICENSE). By submitting a patch you agree that
 it is distributed under the same terms.
 
-The JetBrains Mono Nerd Font files in `ui/desktop/assets/fonts/` are
-third-party assets under the SIL Open Font License 1.1, with icon glyphs under
-their own licences, and are not covered by the GPL. See
-[`OFL.txt`](ui/desktop/assets/fonts/OFL.txt) and
-[`NERD-FONTS-NOTICE.md`](ui/desktop/assets/fonts/NERD-FONTS-NOTICE.md).
+The desktop app embeds the Project Colony fonts (JetBrains Mono Nerd Font,
+OpenDyslexic and Font Awesome 6 Free) through the
+[`colony-ui`](https://crates.io/crates/colony-ui) crate. They are third-party
+assets under their own licences (the SIL Open Font License 1.1 for the
+typefaces), shipped with their licence texts in that crate, and are not
+covered by the GPL.

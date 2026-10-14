@@ -12,7 +12,7 @@ system library is needed on any platform.
 ## The dev loop
 
 ```bash
-cargo run -p lilypad-desktop            # the desktop app
+cargo run -p lilypad                    # the desktop app
 cargo run -p lilypad-tui                # the TUI
 cargo run -p lilypad-cli -- --help      # the CLI
 ```
@@ -21,12 +21,13 @@ Point a development run at a throwaway data folder so it never touches your
 real vaults:
 
 ```bash
-LILYPAD_DATA_DIR=/tmp/lilypad-dev cargo run -p lilypad-desktop
+LILYPAD_DATA_DIR=/tmp/lilypad-dev cargo run -p lilypad
 ```
 
-`LILYPAD_DATA_DIR` moves everything except the GitHub sign-in token (see
-[data-location.md](../guide/data-location.md)), so sync from a development
-build still uses your real GitHub sign-in if you have one.
+`LILYPAD_DATA_DIR` holds the whole profile, preferences and GitHub sign-in
+included (see [data-location.md](../guide/data-location.md)), so a
+development run starts signed out of GitHub and never reads or changes your
+real sign-in. The CLI also takes `--data-dir`.
 
 Sync needs a GitHub OAuth App client ID compiled in. Set
 `LILYPAD_GITHUB_CLIENT_ID` when you build, to the client ID of an OAuth App of
@@ -44,9 +45,15 @@ cargo fmt --all -- --check
 Unit tests sit next to the code they test, integration tests in each crate's
 `tests/`. Two suites guard compatibility and deserve care:
 
-- the vaults under `tests/fixtures/pre-crypto-upgrade/` were written before the
-  RustCrypto upgrade, and must keep opening with the same content;
+- the vaults under `crates/lilypad-core/tests/fixtures/pre-crypto-upgrade/`
+  were written before the RustCrypto upgrade, and must keep opening with the
+  same content;
 - the CLI integration tests drive the real `lilypad-cli` binary end to end.
+
+The interface strings are checked too: `en.json` and `fr.json` in
+`config/i18n/` must have the same keys and placeholders (unit tests in
+`crates/lilypad-core/src/i18n.rs`), and `crates/lilypad-core/tests/i18n_keys.rs`
+fails when the code asks for a key that does not exist or a key goes unused.
 
 The network side of sync (sign-in, push, pull against GitHub) has no
 automated test: it needs real credentials. The safety logic around it

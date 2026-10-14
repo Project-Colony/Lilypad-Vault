@@ -51,16 +51,14 @@ allow = [
     "MPL-2.0",
 ]
 
-# Lilypad's own workspace crates, which are GPL-3.0-or-later. An exception is
-# scoped to a single named crate, so this grant cannot leak to a dependency.
+# Lilypad's own workspace crates and colony-ui (the Project Colony design
+# system, same licence), which are GPL-3.0-or-later. An exception is scoped to
+# a single named crate, so this grant cannot leak to another dependency.
 exceptions = [
-    { name = "lilypad-app", allow = ["GPL-3.0-or-later"] },
+    { name = "colony-ui", allow = ["GPL-3.0-or-later"] },
+    { name = "lilypad", allow = ["GPL-3.0-or-later"] },
     { name = "lilypad-cli", allow = ["GPL-3.0-or-later"] },
-    { name = "lilypad-common", allow = ["GPL-3.0-or-later"] },
     { name = "lilypad-core", allow = ["GPL-3.0-or-later"] },
-    { name = "lilypad-desktop", allow = ["GPL-3.0-or-later"] },
-    { name = "lilypad-oauth", allow = ["GPL-3.0-or-later"] },
-    { name = "lilypad-storage", allow = ["GPL-3.0-or-later"] },
     { name = "lilypad-tui", allow = ["GPL-3.0-or-later"] },
 ]
 
