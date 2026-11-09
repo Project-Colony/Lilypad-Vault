@@ -107,7 +107,7 @@ cd Lilypad-Vault
 cargo build --release
 ```
 
-Requires Rust 1.89 or newer and a C compiler. Nothing else: HTTPS goes
+Requires Rust 1.99 or newer and a C compiler. Nothing else: HTTPS goes
 through rustls with the operating system's certificate store, so no system
 OpenSSL is needed. The three programs land in `target/release/`.
 
