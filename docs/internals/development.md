@@ -5,7 +5,7 @@ out. How to open a pull request is in [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ## Toolchain
 
-Rust 1.89 or newer (`rust-version` in `Cargo.toml`, checked by the MSRV job)
+Rust 1.99 or newer (`rust-version` in `Cargo.toml`, checked by the MSRV job)
 and a C compiler, which builds aws-lc, the cryptography behind rustls. No
 system library is needed on any platform.
 
@@ -73,7 +73,7 @@ Every pull request runs, and must pass, before it can merge:
 | Test (Linux, macOS, Windows) | `cargo test --workspace`; on Linux the OAuth tests again with a client ID compiled in; on Windows a check of each `.exe`'s version resource |
 | Clippy | `cargo clippy --workspace --all-targets -- -D warnings` |
 | Format | `cargo fmt --all -- --check` |
-| MSRV | `cargo check --workspace --all-targets --locked` on Rust 1.89 |
+| MSRV | `cargo check --workspace --all-targets --locked` on Rust 1.99 |
 | Dependency Check | `cargo deny check` against `deny.toml`: licences, advisories, sources |
 | Security Audit | RustSec advisories |
 | Code Coverage | `cargo llvm-cov`, uploaded to Codecov |
