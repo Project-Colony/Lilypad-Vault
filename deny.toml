@@ -13,6 +13,13 @@
 # only appear deeper in the tree where we cannot act on them.
 unmaintained = "workspace"
 yanked = "warn"
+ignore = [
+    # chrono is unmaintained and every version is affected; there is no fixed
+    # release to move to. lilypad-core uses it in time.rs (local date format)
+    # and storage.rs (backup file names). Moving to jiff or time is a code
+    # change of its own, outside the scope of a dependency update.
+    { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained and no fixed release exists" },
+]
 
 [licenses]
 # Third-party dependencies must be licensed compatibly with GPL-3.0-or-later and
