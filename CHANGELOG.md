@@ -6,6 +6,14 @@ From 0.2.0 on, entries are written by release-please from the Conventional
 Commits merged into main. The project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1](https://github.com/Project-Colony/Lilypad-Vault/compare/v0.3.0...v0.3.1) (2026-11-24)
+
+
+### Fixes
+
+* **deps:** update dependencies and Rust to 1.100 ([#34](https://github.com/Project-Colony/Lilypad-Vault/issues/34)) ([48e5517](https://github.com/Project-Colony/Lilypad-Vault/commit/48e55179c34e782f0407265ccd53615620d7d173))
+* **deps:** update dependencies and Rust to 1.99 ([#28](https://github.com/Project-Colony/Lilypad-Vault/issues/28)) ([39352d5](https://github.com/Project-Colony/Lilypad-Vault/commit/39352d548b6fa2f9f88339630bac2834694ab72a))
+
 ## [0.3.0](https://github.com/Project-Colony/Lilypad-Vault/compare/v0.2.0...v0.3.0) (2026-10-12)
 
 
